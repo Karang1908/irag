@@ -4,6 +4,7 @@
 gives any agent persistent, fact-checked knowledge of your codebase —
 instead of a flat `CLAUDE.md` that silently rots.
 
+![CI](https://github.com/Karang1908/iRag/actions/workflows/ci.yml/badge.svg)
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Zero dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen)
 ![License: MIT](https://img.shields.io/badge/license-MIT-yellow)

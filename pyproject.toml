@@ -26,6 +26,12 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/Karang1908/iRag"
+Repository = "https://github.com/Karang1908/iRag"
+Changelog = "https://github.com/Karang1908/iRag/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Karang1908/iRag/issues"
+
 [project.scripts]
 irag = "irag.cli:main"
 
