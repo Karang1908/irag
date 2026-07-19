@@ -1,117 +1,145 @@
-# irag — Project Knowledge Base
+# irag
 
-**Relational memory for AI coding agents.** irag replaces the flat context
-file (`CLAUDE.md`, `.cursorrules`, agent memory files) with a SQLite
-database that lives in your repo, is fed by git, audited by a linter, and
-projected back into prose on demand.
+**Verified relational memory for AI coding agents.** One SQLite file that
+gives any agent persistent, fact-checked knowledge of your codebase —
+instead of a flat `CLAUDE.md` that silently rots.
 
 ```
-pip install -e ./irag     # stdlib-only core, Python >= 3.11
-cd your-project && irag init   # works with or without git
+Claude Code   →     irag      →   agy / any LLM CLI
+the operator      the memory        the scribe
+(reads free)    (never thinks)   (writes on a cheap quota)
 ```
+
+Your expensive coding agent never spends tokens exploring or summarizing.
+It reads memory through zero-LLM SQL queries; a *separate, cheap* model
+writes the summaries; and a deterministic linter fact-checks every claim
+against the actual code — so what the agent reads is **verified, not just
+remembered**.
 
 ## Why
 
-Flat context files are Karpathy's "LLM Wiki" in miniature — and they rot
-the same way: stale claims nobody notices, links to files that no longer
-exist, no way to ask *when* something became true or *why* the file says
-it. These are not prose problems. They are **storage problems**, and a
-relational substrate solves all of them.
+Flat context files (`CLAUDE.md`, `.cursorrules`, memory files) rot:
+stale claims nobody notices, links to files that no longer exist, no way
+to ask *when* something became true or *why* the file says it. These are
+not prose problems — they are **storage problems**, and a relational
+substrate solves all of them:
 
-irag unifies the three kinds of memory a coding agent needs — and is the
-only layer where memory is *verified*:
-
-| Memory | Question it answers | How |
+| Memory | Question it answers | How irag does it |
 |---|---|---|
-| Structural | "how is the code shaped?" | deterministic AST/regex scan → `irag map`, `irag impact` (zero LLM tokens) |
-| Semantic | "what is true here, and why?" | LLM-synthesized module pages, versioned, **lint-verified against the code** |
-| Episodic | "what did we decide and learn?" | `irag record-decision`, `irag learn` — served in every context |
+| Structural | "how is the code shaped?" | deterministic AST/regex scan → `irag map`, `irag impact` — **zero LLM tokens** |
+| Semantic | "what is true here, and why?" | LLM-written page per file & folder, append-only versioned, **lint-verified against the code** |
+| Episodic | "what happened in past sessions?" | every agent conversation logged with the exact per-file changes it made |
 
-irag is built on two principles:
+Two principles drive every design decision:
 
 1. **The model never does bookkeeping.** Locating, counting, dating,
-   diffing, scheduling, and verifying are SQL. The model only writes prose
-   and (optionally) compares prose to facts.
-2. **Memory is data with a prose projection — not prose.** `CLAUDE.md`
-   and `AGENTS.md` (the cross-tool convention read by Codex, Antigravity,
-   and others) become generated build artifacts (`irag export`), never a
-   hand-edited source of truth.
+   diffing, scheduling, verifying — all SQL. The LLM only writes prose.
+2. **Memory is data with a prose projection.** `CLAUDE.md` and
+   `AGENTS.md` are generated build artifacts (`irag export`), never
+   hand-edited sources of truth. The database is the only truth.
 
-## The three layers
+## The token economics (read this)
 
-| Layer | What | Where |
-|---|---|---|
-| 1 — Ground truth | The repository itself: files, git history, manifests, tests | your repo |
-| 2 — Synthesis | Per-module context pages, LLM-written, append-only versioned | `pages`, `revisions` |
-| 3 — Audit | Event queue (commits → events) + contradictions table (linter output) | `events`, `contradictions` |
+irag's costs are asymmetric by design:
 
-Memory is per-file and per-folder: every file gets its own verified
-page, every folder a bottom-up rollup, the root a summary of summaries
-(exclude anything with a `.iragignore`). Changes become events two ways — git commits (via hooks, when a repo
-exists) or working-tree snapshots (content fingerprints, no git needed;
-`[ingest].mode = auto|git|snapshot`). Either way, `irag synthesize` sends a
-diff-aware prompt to your LLM (default: `claude -p`, fully pluggable) and
-stores the returned page as a new revision — a SQLite trigger advances the
-current-revision pointer and resets staleness, no application code
-involved. `irag lint` then checks every claim it can verify (paths,
-versions, symbols) against the code; a failure is not a mystery, it is **a
-queryable row**.
+- **Read path — free.** `context`, `search`, `map`, `impact`, `recap`,
+  `why` are pure SQL. A fresh session starts with a ~3k-token injected
+  briefing instead of 20–100k tokens of grep-and-read exploration.
+- **Write path — pluggable.** Summaries are written by whatever CLI you
+  configure in `.irag/config.toml`. Point it at a **cheap or free
+  model** and the bookkeeping stops competing with your coding agent's
+  quota entirely:
+
+```toml
+# .irag/config.toml — the write path runs on Gemini's free quota
+[llm]
+command = "agy --dangerously-skip-permissions -p {prompt}"
+model_label = "antigravity"
+timeout = 600
+```
+
+Any CLI with the same contract works — `claude -p` (default), a local
+model behind a script, anything that takes a prompt and prints markdown
+(`{prompt}` argv / `{promptfile}` / stdin delivery all supported). The
+linter that fact-checks the output is model-agnostic, so a cheaper
+scribe never weakens the trust layer. Verify your command once with
+`irag doctor --probe-llm` before the first big run.
 
 ## Quickstart
 
 ```bash
-irag init                       # db + config + git hook + history sync
-irag update                    # one shot: sync + new page versions + lint + export
-irag ask "how does auth work"  # AI search (answers with page citations)
-irag lint                       # verify claims against ground truth
-irag context --open src/auth/login.py --query "auth flow"
-irag export                     # regenerate CLAUDE.md + AGENTS.md
-irag check                      # CI gate: exit 1 on contradictions / staleness
-irag obsidian                   # render the db as an Obsidian vault (graph view)
+pip install -e .            # zero dependencies, Python 3.11+
+cd your-project
+irag init                   # works with or without git
+irag doctor --probe-llm     # verify the LLM command works
+irag update                 # first full synthesis (one call per file+folder)
+irag claude-setup           # wire Claude Code hooks (optional, recommended)
 ```
 
-## What irag has that memory layers don't
+After `claude-setup` the loop is fully automatic: **SessionStart** opens
+the conversation log and injects ranked context + a recap of previous
+sessions, **Stop** runs `irag update` after every turn, **SessionEnd**
+writes the diary entry. Other agents (Cursor, Antigravity IDE, Codex)
+get the same instructions through the generated `AGENTS.md` and log
+sessions manually with `irag session-begin` / `session-end`.
+
+Daily driver commands:
+
+```bash
+irag update                     # sync → synthesize → fact-check → export
+irag search "auth token"        # SQL full-text search (instant, free)
+irag ask "how does login work?" # AI answer with page citations
+irag recap                      # "previously on this project"
+irag check                      # CI gate: exit 1 if memory disagrees with code
+```
+
+## What makes it different
 
 - **Contradiction linting against ground truth** — hallucinated paths,
-  wrong version pins, and phantom symbols become rows in a
-  `contradictions` table, with severity and provenance.
+  wrong version pins, phantom symbols become queryable rows with
+  severity; contradicted pages are never served without a warning;
+  fixed claims auto-resolve; `irag check` fails CI while memory and
+  code disagree. *No other memory tool has this.*
 - **Full provenance** — `irag why "we use JWT"` traces any claim to the
-  revision that introduced it and the commit that triggered that revision.
-- **Zero-token structural queries** — staleness, search, relevance
-  scoring, and time travel (`irag asof`) cost no LLM tokens.
-- **Non-destructive rollback** — `irag rollback src/auth 3` re-issues the
-  old body as a *new* revision; history is never rewritten.
-- **A CI gate** — `irag check` fails the build when memory disagrees with
-  code.
-- **A deterministic code map** — `irag map` (symbols, imports, importers)
-  and `irag impact` (transitive blast radius) replace agent grepping; the
-  same facts ground synthesis prompts and give the linter exact symbol
-  verification.
-- **One-command Claude Code integration** — `irag claude-setup` installs a
-  SessionStart hook so every session begins with ranked, budgeted context
-  automatically, and teaches the agent (via generated CLAUDE.md) to use
-  `irag map`/`impact`/`why` and to log lessons back with `irag learn`.
-- **A conversation diary** — every coding session is logged as a row:
-  which files changed *and the exact per-file change summary for each*
-  (redundantly with `revisions`, so no join is ever needed), decisions
-  made, plus an LLM narrative. `irag recap` (and every fresh session's
-  injected context) answers "what was I doing?" so a new chat resumes
-  instantly instead of re-exploring the codebase.
-- **A live dashboard** — `irag dashboard`: real-time token burn and
-  activity, health with one-click contradiction resolution, an
-  interactive Obsidian-style dependency graph (pan, zoom, drag nodes,
-  hover to trace imports), the session diary with per-file change detail,
-  in-app docs, and a knowledge-base chat that auto-routes each message to
-  SQL search or AI search.
-- **Production operability** — `irag doctor` (full install diagnosis,
-  CI-friendly), `irag status --json` (metrics for dashboards/benchmarks),
-  `irag diff` (review what synthesis changed), `irag backup` (online
-  snapshots), and `--json` on context/map/contradictions.
-- **An Obsidian projection** — `irag obsidian` renders the database as a
-  vault: module notes, revision chains as graph nodes, contradictions as
-  warning callouts. Same data, visual view.
+  revision that introduced it and the commit that triggered it.
+  `irag asof 2026-06-01` time-travels; `irag rollback` is
+  non-destructive (history is never rewritten).
+- **A conversation diary with receipts** — every session is a row:
+  which files changed *and the exact per-file change summary for each*,
+  decisions, lessons, plus an LLM narrative. A brand-new chat resumes
+  for ~150 tokens.
+- **A deterministic code map** — symbols, imports, transitive blast
+  radius (`irag impact`), parsed from the code, always current, zero
+  tokens.
+- **Everything is one SQLite file** — `.irag/memory.db`. Query it, back
+  it up (`irag backup`), mount it from any machine, audit it
+  (`irag doctor`).
 
-## Command overview (34 commands)
+## The dashboard
+
+`irag dashboard` — a local, zero-dependency web UI:
+
+- **Map** — an interactive, Obsidian-style dependency graph: drag to
+  pan, scroll to zoom, drag nodes, hover to trace imports.
+- **Sessions** — the conversation log with per-file change detail.
+- **Overview** — live token burn, metric cards, activity feed.
+- **Health** — open contradictions with one-click resolve, staleness.
+- **Chat** — auto-routes lookups to instant SQL search and questions to
+  AI answers with citations.
+- **Docs** — this documentation, rendered in-app.
+
+## How it compares
+
+| | Graphify | claude-mem | irag |
+|---|---|---|---|
+| Kind of memory | structural | episodic | structural + semantic + episodic |
+| Can it be wrong? | rarely (a parse) | yes, silently, forever | yes — **and it detects, records, and gates on it** |
+| Cost scales with | commits (free) | conversation volume | repo churn — on whatever cheap model you configure |
+
+Full honest comparison (including where the others win):
+[docs/COMPARISON.md](docs/COMPARISON.md).
+
+## Commands (34)
 
 `init` · `claude-setup` · `doctor` — setup ·
 `sync` · `ingest-commit` · `scan` — detect ·
@@ -120,31 +148,41 @@ irag obsidian                   # render the db as an Obsidian vault (graph view
 `search` · `map` · `impact` · `stale` · `status` · `diff` ·
 `contradictions` · `asof` — read (SQL, zero tokens) ·
 `ask` · `context` — read (AI) ·
-`session-begin` · `session-end` · `sessions` · `recap` — conversation log ·
+`session-begin` · `session-end` · `sessions` · `recap` — diary ·
 `pin` · `unpin` · `export` · `check` · `backup` — admin ·
-`dashboard` · `obsidian` · `why` — views & provenance.
-Full reference in [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md);
-`irag --version` prints the installed version.
+`dashboard` · `obsidian` · `why` — views & provenance
+
+Full reference: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
 ## Documentation
 
-- [docs/SETUP.md](docs/SETUP.md) — installation, initialization, daily
-  workflow, CI gate examples
+- [docs/SETUP.md](docs/SETUP.md) — install, LLM configuration (incl.
+  the agy/Antigravity split), hooks, CI gate
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — schema, data flows,
   retrieval scoring, design principles
-- [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) — every command and flag
-- [docs/COMPARISON.md](docs/COMPARISON.md) — honest comparison vs
-  Graphify and claude-mem, and benchmark designs
+- [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) — every command & flag
+- [docs/COMPARISON.md](docs/COMPARISON.md) — vs Graphify & claude-mem
+- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — contributing /
+  non-negotiables
+- [CHANGELOG.md](CHANGELOG.md)
+
+## Testing
+
+```bash
+sh tests/test_smoke.sh    # end-to-end against a deterministic mock LLM — no tokens
+```
+
+CI runs the same suite plus pyflakes and a package build on every push
+(Python 3.11–3.13).
 
 ## Roadmap
 
-- MCP server (context/map/why/learn as tools)
-- Confidence scoring updates driven by lint history
+- MCP server (context / map / why / learn as tools)
+- Confidence scoring driven by lint history
 - CI webhooks (post contradictions to PRs)
 - Schema migration system (today: additive column guards only)
-- Real-LLM evaluation of summary quality (all automated tests use a
-  deterministic mock)
+- Real-LLM evaluation of summary quality
 
 ## License
 
-MIT
+[MIT](LICENSE)
