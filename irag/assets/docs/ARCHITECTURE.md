@@ -1,0 +1,260 @@
+# irag — Architecture
+
+## Lineage
+
+irag generalizes a pattern first built as a relational re-implementation of
+Karpathy's "LLM Wiki" (April 2026): where the original stored LLM-written
+wiki pages as markdown files, the relational version stored them as rows —
+and every integrity flaw of the file-based approach (link rot, no
+structured query, no provenance, no access control, unobservable
+hallucination) turned out to be a **storage problem** the database solves.
+irag applies the same substrate to the memory files AI coding agents rely
+on.
+
+## Principles
+
+1. **The model never does bookkeeping.** Locating, counting, dating,
+   diffing, scheduling, verifying — SQL. The model writes prose, and
+   optionally compares prose to facts. Nothing else.
+2. **Memory is data with a prose projection — not prose.** The context
+   file agents read (`CLAUDE.md`) is generated from the database by
+   `irag export` and carries a do-not-edit header.
+
+## The three layers
+
+```
+Layer 1  GROUND TRUTH   the repository: files, git, manifests, tests
+            │  post-commit hook / irag sync
+            ▼
+Layer 3  AUDIT          events (queue)  ──►  contradictions (linter output)
+            │  irag synthesize                       ▲
+            ▼                                       │ irag lint
+Layer 2  SYNTHESIS      pages ──► revisions (append-only, versioned)
+            │
+            ▼
+         irag context / irag export / irag obsidian
+```
+
+## Schema (SQLite, `.irag/memory.db`, WAL)
+
+Core relations plus an FTS5 inverted index:
+
+- **meta** — key/value (e.g. `last_synced` commit hash,
+  `last_scanned_head`, `snap_seq`)
+- **pages** — one row per subject (file, folder, or log page):
+  `subject_id` (e.g. `src/auth/login.py`, `src/auth`, `.`),
+  `current_revision_id`, `staleness_score`, `pinned`, `confidence`
+- **revisions** — append-only page bodies: `version_number`,
+  `body_markdown`, `change_summary`, `triggered_by_event_id`,
+  `llm_model_used`, `tokens_used`
+- **links** — page-to-page edges; `imports` rows rebuilt wholesale by
+  the structural scan, `related` rows are manual/permanent
+- **events** — the audit queue: `event_type`
+  (commit/snapshot/decision/session/rollback/…), `source_ref`
+  (commit hash), `subject_id`, JSON `payload`, `status`
+  (queued→processing→completed/failed)
+- **contradictions** — linter output: `claim`, `truth`, `ctype`
+  (missing_path / version_mismatch / missing_symbol / llm_flagged),
+  `severity`, `detected_by`, `resolved_at`
+- **sessions** — the conversation diary: one row per agent conversation
+  with ID high-water marks (`start_event_id`/`start_revision_id` — not
+  timestamps, so same-second sessions can't steal each other's rows),
+  summary, and `changes_detail` (the full per-file
+  `{subject_id, version_number, change_summary}` list, deliberately
+  redundant with `revisions` so reading a session never needs a join)
+- **symbols / deps** — the deterministic structural map, rebuilt by the
+  scanner, gated on a working-tree content fingerprint (not git HEAD,
+  so uncommitted edits are seen)
+- **tree_state** — path→sha1 fingerprints for snapshot-mode ingestion
+  and scan gating
+- **revisions_fts** — FTS5 external-content table over `body_markdown`,
+  kept in sync by triggers
+
+### The signature trigger
+
+```sql
+CREATE TRIGGER revisions_advance AFTER INSERT ON revisions BEGIN
+  UPDATE pages
+     SET current_revision_id = new.revision_id,
+         last_updated_at     = datetime('now'),
+         staleness_score     = 0
+   WHERE page_id = new.page_id;
+END;
+```
+
+Inserting a revision *is* publishing it. No application code moves
+pointers or resets staleness — the invariant lives in the database.
+
+### The structural map (Layer 1½)
+
+`irag.structure.scan` parses source into two relations — ``symbols`` (name,
+kind, file:line per module) and ``deps`` (module→module import edges,
+counted) — Python via `ast`, JS/TS/Go/Rust via regex, rebuilt only when
+HEAD changes. It is pure parsing: deterministic, local, free. The map is
+load-bearing everywhere: `map`/`impact` answer structural questions
+without token spend; synthesis prompts embed the facts as ground truth
+(fewer hallucinations at the source); the linter verifies symbol claims
+exactly against it; retrieval boosts dependency neighbors (+20) and
+attaches a map block to every FULL page; dep edges project into `links`
+(retrieval link-hop + Obsidian graph edges).
+
+## Data flows
+
+### Granularity: files and folders
+
+Subjects exist at two levels. Every tracked file has a `file` page;
+every folder (including the root `.`) has a `folder` page that rolls up
+its direct children. Change events target file pages and bump ancestor
+folders at half weight; synthesis runs file pages first, then folders
+deepest-first, so each folder prompt reads fresh child summaries — the
+root page is a summary of summaries. Ignoring: [modules].ignore segments,
+`.iragignore` patterns (names/prefixes/globs), hidden paths, and binary
+extensions.
+
+### Ingestion (Layer 1 → Layer 3)
+
+Two triggers, one queue. **Git mode:** `git show --name-only` per commit.
+**Snapshot mode** (plain folders, or forced via config): every file is
+content-hashed (SHA-1, first 1MB) into `tree_state`; sync diffs current
+vs stored fingerprints and emits per-module `snapshot` events (with
+add/edit/delete lists) under a monotonic `snap:N` ref. The page revision
+chain (v1, v2, ...) is the memory's own version control either way — the
+trigger only decides *when* a new version is warranted.
+
+`git show --name-only` on each commit; every changed **file** is its own
+subject (no grouping — a file's page is about that file), and each of its
+ancestor folders (up to the root `"."`) is bumped at half weight so
+rollup pages refresh too. Per touched file: one queued `commit` event
+(payload: files + message) and a staleness bump (+10 per commit, +20 extra
+when a dependency manifest such as `package.json` or `requirements.txt` is
+among the files). irag's own artifacts (`CLAUDE.md`, `AGENTS.md`, `irag_vault/`) never generate events,
+preventing an export→commit→staleness feedback loop. Ingestion is
+idempotent on `(source_ref, subject_id)`,
+so the hook and `irag sync` can overlap safely. `sync` walks
+`git rev-list --reverse last..HEAD` and records the new head in `meta`.
+
+### Synthesis (Layer 3 → Layer 2)
+
+A page is *pending* when it is not pinned and either has never been
+synthesized but has queued events, or its staleness score has reached the
+threshold. The prompt is diff-aware: module name, changed-file list,
+commit messages, capped contents of up to 5 changed files (~6000 chars
+total), and the current body ("none — write the first version"). The
+configured command receives the prompt on stdin and must return the full
+updated markdown on stdout. Queued events move to `processing`, then
+`completed` (or `failed`); the new revision records which event triggered
+it and which model wrote it.
+
+### Linting (Layer 2 vs Layer 1)
+
+The static tier is deterministic and free:
+
+| Check | Extraction | Verified against | ctype / severity |
+|---|---|---|---|
+| Paths | backticked path-like tokens with code/doc extensions | filesystem | `missing_path` / high |
+| Versions | `name@X.Y.Z` and "name version X.Y.Z" | package.json (deps+dev), requirements.txt (`==`) | `version_mismatch` / medium |
+| Symbols | backticked `identifier()` | exact lookup in the `symbols` table (repo-wide); grep fallback when no scan data | `missing_symbol` / low |
+
+Identical open claims are deduped; static claims that stop failing are
+auto-resolved on the next lint. The optional LLM tier
+(`irag lint --llm`) audits each page against a file listing and records
+`llm_flagged` rows. Resolution is explicit: `irag resolve <id> --notes`.
+
+### Retrieval scoring (zero LLM tokens)
+
+Per page:
+
+| Signal | Weight |
+|---|---|
+| module matches an open file's module | +50 (parent/child +25) |
+| FTS hit for the query | up to +30 (rank-decayed) |
+| one link-hop from a top-3 seed | +15 |
+| updated within 7 days | +10 |
+| staleness over threshold | −20 |
+| open contradictions | −40 + warning banner |
+
+### Serving (tiered, budget-gated)
+
+Pages under `min_score` are relegated to the index. Within the token
+budget (`token_budget` ≈ chars/4): **FULL** — top pages (max `full_max`),
+complete bodies, each headed `### title (vN, updated date)`; **DIGEST** —
+change summary or first 200 chars; **INDEX** — one line each with score
+and staleness. A page with open contradictions is *never* served without a
+warning banner. `serve()` also returns a machine-readable dict for
+programmatic consumers.
+
+### Session knowledge (episodic layer)
+
+`irag learn` and `irag record-decision` are deterministic appends (event +
+new revision on the `lessons`/`decisions` pages) — zero tokens, full
+provenance like everything else. Both page types carry a +25 relevance
+boost so they surface in every context serve: decisions stop being
+re-litigated, gotchas stop being re-discovered. The `irag claude-setup`
+integration teaches agents to call these themselves.
+
+The conversation diary sits on top: `session-begin` opens a row and
+records ID high-water marks; `session-end` closes it with a
+deterministic digest of everything the window produced (files, page
+versions with their per-file change summaries, decisions, lessons,
+commit messages), optionally re-narrated by the LLM into 2–5 sentences
+(deterministic fallback if the LLM is unavailable). `recap_block()`
+renders the last N sessions as markdown and is injected at the top of
+every `irag context` — this is why a brand-new chat resumes for ~150
+tokens instead of re-exploring.
+
+### Provenance & time travel
+
+- `why CLAIM` — FTS-locate the best revision, print page/version/author
+  and the triggering event chain (commit hash, message, files) or
+  "human/rollback".
+- `asof DATE` — per page, the latest revision at that date; `--show`
+  prints a full body. Append-only storage makes this a single query.
+- `rollback SUBJECT N` — inserts the v*N* body as a **new** revision via a
+  `rollback` event. History is immutable.
+- `record-decision` — deterministic append to a `decisions` page (no
+  LLM), backed by a `decision` event.
+
+### The Obsidian projection
+
+`irag obsidian` is a second prose projection (the first is `irag export`):
+one markdown note per page, one per revision, wikilinked so Obsidian's
+graph renders the knowledge structure — module map when versions are
+filtered out (`-tag:#version`), full history chains when not. Health is
+visible at a glance: `#contradicted` pages carry warning callouts,
+`#stale` pages are flagged in frontmatter tags. The vault is wiped and
+rebuilt each run behind a marker-file guard; the database remains the
+sole source of truth.
+
+### The CI gate
+
+`irag check` prints open-contradiction count, over-max-staleness pages, and
+never-synthesized pages; exits 1 per config. Memory that disagrees with
+code fails the build.
+
+## Package layout
+
+```
+irag/
+├── irag/
+│   ├── db.py           schema, triggers, shared helpers
+│   ├── structure.py    deterministic code map (symbols, deps, impact)
+│   ├── config.py       defaults + TOML deep-merge
+│   ├── ingest.py       git commits / snapshots → events
+│   ├── synthesis.py    events → revisions (LLM, fixpoint folder sweep)
+│   ├── linter.py       revisions vs ground truth → contradictions
+│   ├── retrieval.py    scoring + tiered serving + FTS search
+│   ├── provenance.py   why / asof / rollback / pin
+│   ├── sessions.py     conversation diary (begin/end/recap)
+│   ├── export.py       db → CLAUDE.md + AGENTS.md
+│   ├── stats.py        shared metrics for CLI + dashboard
+│   ├── check.py        CI gate
+│   ├── doctor.py       install diagnostics
+│   ├── hooks.py        git hook installers
+│   ├── obsidian.py     db → Obsidian vault
+│   ├── dashboard.py    stdlib HTTP server + /api/* JSON
+│   ├── assets/         dashboard.html SPA + in-app docs copies
+│   └── cli.py          argparse entry point
+├── hooks/post-commit   installed template
+├── docs/               this documentation (source of truth)
+└── tests/              mock LLM + end-to-end smoke test
+```

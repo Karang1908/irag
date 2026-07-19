@@ -1,0 +1,795 @@
+"""irag.cli — command-line interface.
+
+Every command resolves the repo root via git and opens ``.irag/memory.db``.
+Commands are thin wrappers over the library modules; all state lives in
+SQLite.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sqlite3
+import sys
+from pathlib import Path
+
+from . import (check, config, db, export as export_mod, hooks, ingest,
+               linter, provenance, retrieval, synthesis)
+
+
+def _open(require_init: bool = True) -> tuple[sqlite3.Connection, dict, Path]:
+    root = ingest.repo_root()
+    db_path = root / ".irag" / "memory.db"
+    if require_init and not db_path.exists():
+        raise SystemExit("irag: not initialized here — run 'irag init' first")
+    cfg = config.load(root)
+    conn = db.ensure_db(db_path)
+    return conn, cfg, root
+
+
+# ------------------------------------------------------------------
+# command implementations
+# ------------------------------------------------------------------
+def cmd_init(args) -> int:
+    root = ingest.repo_root()
+    if not ingest.has_git_repo():
+        print("note: no git repo here — running in snapshot mode "
+              "(changes detected by content fingerprint; 'git init' any "
+              "time to upgrade to commit-based ingestion)")
+    (root / ".irag").mkdir(exist_ok=True)
+    db_path = root / ".irag" / "memory.db"
+    conn = db.ensure_db(db_path)
+    cfg_path = config.write_default(root)
+    cfg = config.load(root)
+    hooks.install(root)
+    n = ingest.sync(conn, cfg, root)
+    from . import structure
+    stats = structure.scan(conn, cfg, root)
+    print(f"initialized: {db_path}")
+    print(f"config     : {cfg_path}")
+    print(f"ingested   : {n} event(s) from git history")
+    print(f"scanned    : {stats['symbols']} symbols, {stats['deps']} "
+          "dependency edge(s)")
+    print("next steps : review .irag/config.toml (llm.command), then "
+          "'irag synthesize'")
+    return 0
+
+
+def cmd_sync(args) -> int:
+    conn, cfg, root = _open()
+    n = ingest.sync(conn, cfg, root)
+    from . import structure
+    stats = structure.scan(conn, cfg, root)
+    extra = "" if stats["skipped"] else \
+        f"; scanned {stats['symbols']} symbols, {stats['deps']} dep edges"
+    print(f"ingested {n} new event(s){extra}")
+    if n:
+        print("  -> run 'irag update' to synthesize these into page "
+              "versions (sync only detects changes, it doesn't write "
+              "them)")
+    return 0
+
+
+def cmd_ingest_commit(args) -> int:
+    conn, cfg, root = _open()
+    n = ingest.ingest_commit(conn, cfg, args.ref, root)
+    print(f"ingested {n} event(s) from {args.ref}")
+    return 0
+
+
+def cmd_synthesize(args) -> int:
+    conn, cfg, root = _open()
+    synthesis.sweep(conn, cfg, root, dry_run=args.dry_run,
+                    limit=args.limit, subject=args.subject)
+    return 0
+
+
+def _dirty_count(root: Path) -> int:
+    import subprocess
+    try:
+        out = subprocess.run(["git", "status", "--porcelain"], cwd=root,
+                             capture_output=True, text=True).stdout
+        skip = (".irag/", ".claude/", "irag_vault/", "CLAUDE.md",
+                "AGENTS.md")
+        return len([ln for ln in out.splitlines() if ln.strip()
+                    and not ln[3:].startswith(skip)])
+    except OSError:
+        return 0
+
+
+def cmd_context(args) -> int:
+    conn, cfg, root = _open()
+    ingest.sync(conn, cfg, root)      # hash-only when idle; zero LLM
+    from . import structure
+    structure.scan(conn, cfg, root)      # no-op when HEAD unchanged
+    md, machine = retrieval.serve(conn, cfg, open_files=args.open,
+                                  query=args.query,
+                                  budget_tokens=args.budget)
+    from . import sessions
+    recap = sessions.recap_block(conn, n=2)
+    if recap:
+        md = md.replace("# Project Context (irag)",
+                        f"# Project Context (irag)\n\n{recap}", 1)
+        machine["recap"] = recap
+    dirty = _dirty_count(root)
+    if dirty:
+        note = (f"note: {dirty} uncommitted change(s) in the working tree — "
+                "pages and map reflect the last commit")
+        md = md.replace("# Project Context (irag)",
+                        f"# Project Context (irag)\n\n_{note}_", 1)
+        machine["dirty_files"] = dirty
+    if args.json:
+        print(json.dumps(machine, indent=2, default=str))
+    else:
+        print(md)
+    return 0
+
+
+def cmd_status(args) -> int:
+    from . import stats
+    conn, cfg, root = _open()
+    s = stats.status_dict(conn, cfg, root, dirty_files=_dirty_count(root))
+    if args.json:
+        print(json.dumps(s, indent=2, default=str))
+        return 0
+    print("irag status")
+    print("-" * 44)
+    print(f"pages (file/folder)      : {s['file_pages']} / "
+          f"{s['folder_pages']}  ({s['revisions']} versions)")
+    print(f"symbols / dep edges      : {s['symbols']} / {s['dep_edges']}")
+    print(f"queue (queued/failed)    : {s['events_queued']} / "
+          f"{s['events_failed']}")
+    print(f"open contradictions      : {s['open_contradictions']}")
+    print(f"pages due for synthesis  : {s['pages_due']}")
+    print(f"est. LLM tokens spent    : {s['est_tokens_spent']}")
+    print(f"uncommitted changes      : {s['dirty_files']}")
+    print(f"db size                  : {s['db_bytes'] / 1024:.0f} KB")
+    print(f"synced @ {(s['last_synced'] or '-')[:10]}   "
+          f"scanned @ {(s['last_scanned_head'] or '-')[:10]}")
+    return 0
+
+
+def cmd_diff(args) -> int:
+    import difflib
+    conn, _, _ = _open()
+    page = conn.execute("SELECT * FROM pages WHERE subject_id=?",
+                        (args.subject,)).fetchone()
+    if not page:
+        raise SystemExit(f"irag: no page for subject {args.subject!r}")
+    revs = conn.execute(
+        "SELECT version_number v, body_markdown b FROM revisions "
+        "WHERE page_id=? ORDER BY version_number", (page["page_id"],),
+    ).fetchall()
+    if len(revs) < 2 and (args.v1 is None or args.v2 is None):
+        raise SystemExit(f"irag: {args.subject} has fewer than 2 revisions")
+    by_v = {r["v"]: r["b"] for r in revs}
+    v2 = args.v2 if args.v2 is not None else revs[-1]["v"]
+    v1 = args.v1 if args.v1 is not None else revs[-2]["v"]
+    for v in (v1, v2):
+        if v not in by_v:
+            raise SystemExit(f"irag: {args.subject} has no version {v}")
+    diff = difflib.unified_diff(
+        by_v[v1].splitlines(keepends=True), by_v[v2].splitlines(keepends=True),
+        fromfile=f"{args.subject} v{v1}", tofile=f"{args.subject} v{v2}")
+    out = "".join(diff)
+    print(out if out else f"v{v1} and v{v2} are identical")
+    return 0
+
+
+def cmd_backup(args) -> int:
+    import datetime
+    conn, _, root = _open()
+    if args.path:
+        dest = Path(args.path).expanduser()
+    else:
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        dest = root / ".irag" / "backups" / f"memory-{stamp}.db"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    import sqlite3 as _sq
+    target = _sq.connect(dest)
+    with target:
+        conn.backup(target)
+    target.close()
+    print(f"backup written: {dest} "
+          f"({dest.stat().st_size / 1024:.0f} KB)")
+    return 0
+
+
+def cmd_doctor(args) -> int:
+    from . import doctor
+    conn, cfg, root = _open()
+    return doctor.run(conn, cfg, root, probe_llm=args.probe_llm)
+
+
+def cmd_scan(args) -> int:
+    conn, cfg, root = _open()
+    from . import structure
+    stats = structure.scan(conn, cfg, root, force=True)
+    print(f"scanned: {stats['symbols']} symbols, {stats['deps']} "
+          "dependency edge(s)")
+    return 0
+
+
+def cmd_map(args) -> int:
+    conn, cfg, root = _open()
+    ingest.sync(conn, cfg, root)      # hash-only when idle; zero LLM
+    from . import structure
+    structure.scan(conn, cfg, root)
+    if args.json:
+        if args.subject:
+            print(json.dumps(structure.module_facts(conn, args.subject,
+                                                    max_symbols=1000),
+                             indent=2))
+        else:
+            mods = [r["subject_id"] for r in conn.execute(
+                "SELECT DISTINCT subject_id FROM symbols").fetchall()]
+            deps = [dict(r) for r in conn.execute(
+                "SELECT source_subject, target_subject, import_count "
+                "FROM deps").fetchall()]
+            print(json.dumps({"modules": mods, "deps": deps}, indent=2))
+        return 0
+    if not args.subject:
+        print(structure.overview(conn))
+        return 0
+    facts = structure.module_facts(conn, args.subject, max_symbols=200)
+    if not facts["files"]:
+        print(f"no structural data for {args.subject!r} "
+              "(unsupported language or wrong subject?)")
+        return 0
+    print(f"MODULE {args.subject}")
+    for f in facts["files"]:
+        print(f"  {f}")
+    print("SYMBOLS:")
+    for s in facts["symbols"]:
+        print(f"  {s['kind']:<9} {s['name']}  ({s['file']}:{s['line']})")
+    if facts["imports"]:
+        print("imports → " + ", ".join(facts["imports"]))
+    if facts["imported_by"]:
+        print("imported by ← " + ", ".join(facts["imported_by"]))
+    return 0
+
+
+def cmd_impact(args) -> int:
+    conn, cfg, root = _open()
+    ingest.sync(conn, cfg, root)      # hash-only when idle; zero LLM
+    from . import structure
+    structure.scan(conn, cfg, root)
+    hits = structure.impact(conn, args.subject)
+    if not hits:
+        print(f"nothing imports {args.subject} — change is contained")
+        return 0
+    print(f"changing {args.subject} can affect ({len(hits)} module(s)):")
+    for subject, hop in hits:
+        print(f"  {'  ' * (hop - 1)}{subject}  ({hop} hop{'s' if hop > 1 else ''})")
+    return 0
+
+
+def cmd_learn(args) -> int:
+    conn, cfg, _ = _open()
+    _append_log(conn, page_subject="lessons", page_type="lessons",
+                title="Lessons", event_type="session",
+                text=args.text, module=args.module)
+    print("recorded lesson")
+    return 0
+
+
+def cmd_claude_setup(args) -> int:
+    conn, cfg, root = _open()
+    settings_path = root / ".claude" / "settings.json"
+    settings_path.parent.mkdir(exist_ok=True)
+    settings = {}
+    if settings_path.exists():
+        try:
+            settings = json.loads(settings_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            raise SystemExit(f"irag: {settings_path} is not valid JSON — "
+                             "fix or remove it first")
+    hooks = settings.setdefault("hooks", {})
+    changed = False
+    wanted = {
+        "SessionStart": ("irag session-begin >/dev/null 2>&1; "
+                         "irag context --budget 3000 2>/dev/null || true",
+                         120, "memory in: opens the conversation log and "
+                         "injects ranked context + the last sessions' "
+                         "recap"),
+        "Stop": ("irag update --limit 50 >/dev/null 2>&1 || true",
+                 600, "memory out: changes are synthesized automatically "
+                 "when Claude finishes a turn"),
+        "SessionEnd": ("irag session-end >/dev/null 2>&1 || true",
+                       600, "diary: the conversation is summarized and "
+                       "logged with everything it changed"),
+    }
+    for event, (command, timeout, why) in wanted.items():
+        entries = hooks.setdefault(event, [])
+        already = any("irag " in h.get("command", "")
+                      for e in entries for h in e.get("hooks", []))
+        if already:
+            print(f"{event} hook already installed")
+            continue
+        entries.append({"hooks": [{
+            "type": "command",
+            "command": command,
+            "timeout": timeout,
+        }]})
+        changed = True
+        print(f"installed {event} hook ({why})")
+    if changed:
+        settings_path.write_text(json.dumps(settings, indent=2) + "\n",
+                                 encoding="utf-8")
+    path = export_mod.export(conn, cfg, root)
+    print(f"regenerated {path} (includes agent instructions)")
+    print("the loop is now mechanical: SessionStart injects memory, the "
+          "Stop hook runs 'irag update' after every turn (a no-op when "
+          "nothing changed), and CLAUDE.md carries the standing orders "
+          "as backup")
+    return 0
+
+
+def _append_log(conn, page_subject: str, page_type: str, title: str,
+                event_type: str, text: str, module: str | None) -> None:
+    conn.execute(
+        "INSERT INTO events(event_type, subject_id, payload, status, "
+        "processed_at) VALUES(?, ?, ?, 'completed', datetime('now'))",
+        (event_type, module or "", json.dumps({"text": text})),
+    )
+    event_id = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
+    page = db.get_or_create_page(conn, page_subject, subject_type="log",
+                                 page_type=page_type, title=title)
+    body = db.current_body(conn, page["page_id"]) or f"# {title}\n"
+    entry = f"\n- {text}"
+    if module:
+        entry += f" _(module: {module})_"
+    next_version = conn.execute(
+        "SELECT COALESCE(MAX(version_number),0)+1 v FROM revisions "
+        "WHERE page_id=?", (page["page_id"],),
+    ).fetchone()["v"]
+    conn.execute(
+        "INSERT INTO revisions(page_id, version_number, body_markdown, "
+        "change_summary, triggered_by_event_id, llm_model_used) "
+        "VALUES(?,?,?,?,?, 'human')",
+        (page["page_id"], next_version, body + entry,
+         f"{event_type} recorded", event_id),
+    )
+    conn.commit()
+
+
+def cmd_search(args) -> int:
+    conn, _, _ = _open()
+    hits = retrieval.search(conn, args.query)
+    if not hits:
+        print("no matches")
+        return 0
+    for h in hits:
+        tag = "current" if h["current"] else f"v{h['version']}"
+        print(f"- {h['title']} ({h['subject']}, {tag}): {h['snippet']}")
+    return 0
+
+
+def cmd_lint(args) -> int:
+    conn, cfg, root = _open()
+    n = linter.lint(conn, cfg, root, subject_id=args.subject)
+    if args.llm:
+        n += linter.lint_llm(conn, cfg, root, subject_id=args.subject)
+    print(f"{n} new contradiction(s) recorded")
+    return 0
+
+
+def cmd_contradictions(args) -> int:
+    conn, _, _ = _open()
+    where = "WHERE resolved_at IS NOT NULL" if args.resolved \
+        else "WHERE resolved_at IS NULL"
+    rows = conn.execute(
+        f"""SELECT c.*, p.subject_id FROM contradictions c
+            JOIN pages p ON p.page_id=c.page_id {where}
+            ORDER BY c.detected_at""").fetchall()
+    if args.json:
+        print(json.dumps([dict(r) for r in rows], indent=2, default=str))
+        return 0
+    if not rows:
+        print("none")
+        return 0
+    for r in rows:
+        state = f"resolved {r['resolved_at']}" if r["resolved_at"] else "OPEN"
+        print(f"[{r['contradiction_id']}] {r['subject_id']} "
+              f"({r['ctype']}, {r['severity']}, {state})")
+        print(f"    claim: {r['claim']}")
+        print(f"    truth: {r['truth']}")
+        if r["resolution_notes"]:
+            print(f"    notes: {r['resolution_notes']}")
+    return 0
+
+
+def cmd_resolve(args) -> int:
+    conn, _, _ = _open()
+    linter.resolve(conn, args.id, notes=args.notes)
+    print(f"resolved contradiction {args.id}")
+    return 0
+
+
+def cmd_stale(args) -> int:
+    conn, cfg, _ = _open()
+    threshold = int(cfg["staleness"]["threshold"])
+    rows = conn.execute(
+        "SELECT subject_id, staleness_score, pinned FROM pages "
+        "ORDER BY staleness_score DESC").fetchall()
+    if not rows:
+        print("no pages yet")
+        return 0
+    for r in rows:
+        flag = " (pinned)" if r["pinned"] else ""
+        due = " ← due" if r["staleness_score"] >= threshold else ""
+        print(f"{r['staleness_score']:>5}  {r['subject_id']}{flag}{due}")
+    return 0
+
+
+def cmd_why(args) -> int:
+    conn, _, _ = _open()
+    provenance.why(conn, args.claim)
+    return 0
+
+
+def cmd_asof(args) -> int:
+    conn, _, _ = _open()
+    provenance.asof(conn, args.date, show=args.show)
+    return 0
+
+
+def cmd_rollback(args) -> int:
+    conn, _, _ = _open()
+    provenance.rollback(conn, args.subject, args.version)
+    return 0
+
+
+def cmd_pin(args) -> int:
+    conn, _, _ = _open()
+    provenance.pin(conn, args.subject, True)
+    return 0
+
+
+def cmd_unpin(args) -> int:
+    conn, _, _ = _open()
+    provenance.pin(conn, args.subject, False)
+    return 0
+
+
+def cmd_export(args) -> int:
+    conn, cfg, root = _open()
+    path = export_mod.export(conn, cfg, root)
+    print(f"wrote {path} (+ AGENTS.md, same content)")
+    return 0
+
+
+def cmd_check(args) -> int:
+    conn, cfg, _ = _open()
+    return check.run(conn, cfg)
+
+
+def cmd_obsidian(args) -> int:
+    from . import obsidian
+    conn, cfg, root = _open()
+    out = Path(args.out).expanduser().resolve() if args.out else None
+    vault = obsidian.export_vault(conn, cfg, root, out=out,
+                                  versions=not args.no_versions)
+    print(f"vault written: {vault}")
+    print("open it in Obsidian: File -> Open Vault -> Open folder as vault")
+    print("graph setup: see _meta/graph_settings.md inside the vault")
+    return 0
+
+
+def cmd_update(args) -> int:
+    """One command for agents: sync -> synthesize -> lint -> export."""
+    conn, cfg, root = _open()
+    n = ingest.sync(conn, cfg, root)
+    from . import structure
+    structure.scan(conn, cfg, root)
+    print(f"sync       : {n} new event(s)")
+    done = synthesis.sweep(conn, cfg, root, limit=args.limit)
+    new_contras = linter.lint(conn, cfg, root)
+    open_contras = conn.execute(
+        "SELECT COUNT(*) c FROM contradictions WHERE resolved_at IS NULL"
+    ).fetchone()["c"]
+    print(f"lint       : {new_contras} new, {open_contras} open "
+          "contradiction(s)")
+    path = export_mod.export(conn, cfg, root)
+    print(f"export     : {path}")
+    print(f"update done: {done} page version(s) written")
+    return 0
+
+
+ASK_INSTRUCTION = """Answer the question using ONLY the project context below. Rules:
+- Cite the page paths you used, in backticks.
+- If the context does not contain the answer, say exactly what is missing
+  and suggest which irag command would find it (search/map/why) — do not
+  guess.
+- Treat any page marked with a contradiction warning as unreliable and
+  say so if you must rely on it.
+- Be concise and concrete."""
+
+
+def cmd_ask(args) -> int:
+    """AI search: retrieval + the configured LLM answers the question."""
+    conn, cfg, root = _open()
+    ingest.sync(conn, cfg, root)
+    from . import structure
+    structure.scan(conn, cfg, root)
+    md, _ = retrieval.serve(conn, cfg, open_files=args.open,
+                            query=args.question,
+                            budget_tokens=args.budget or 6000)
+    prompt = (f"{ASK_INSTRUCTION}\n\nPROJECT CONTEXT:\n{md}\n\n"
+              f"QUESTION: {args.question}\n\nANSWER:")
+    print(synthesis.run_llm(cfg, prompt))
+    return 0
+
+
+def cmd_session_begin(args) -> int:
+    from . import sessions
+    conn, _, _ = _open()
+    sid = sessions.begin(conn, agent=args.agent)
+    print(f"session {sid} opened")
+    return 0
+
+
+def cmd_session_end(args) -> int:
+    from . import sessions
+    conn, cfg, _ = _open()
+    rec = sessions.end(conn, cfg, narrate=not args.no_narrate)
+    if rec is None:
+        print("no open session")
+        return 0
+    print(f"session {rec['session_id']} logged: {rec['summary'][:200]}")
+    return 0
+
+
+def cmd_sessions(args) -> int:
+    from . import sessions
+    conn, _, _ = _open()
+    rows = conn.execute(
+        "SELECT * FROM sessions ORDER BY session_id DESC LIMIT ?",
+        (args.n,)).fetchall()
+    if args.json:
+        print(json.dumps([sessions.row_to_dict(r) for r in rows],
+                         indent=2, default=str))
+        return 0
+    if not rows:
+        print("no sessions logged yet")
+        return 0
+    for r in rows:
+        when = (r["started_at"] or "")[:16]
+        files = len(json.loads(r["files_changed"] or "[]"))
+        print(f"[{r['session_id']}] {when}  {r['status']:<11} "
+              f"{files} file(s), {r['versions_written']} version(s), "
+              f"{r['decisions']}d/{r['lessons']}l")
+        if r["summary"]:
+            print(f"    {r['summary'][:300]}")
+    return 0
+
+
+def cmd_recap(args) -> int:
+    from . import sessions
+    conn, _, _ = _open()
+    block = sessions.recap_block(conn, n=args.n)
+    print(block if block else "no sessions logged yet — the diary starts "
+          "with the first completed session")
+    return 0
+
+
+def cmd_dashboard(args) -> int:
+    from . import dashboard
+    _conn, _cfg, root = _open()
+    dashboard.serve(root, port=args.port, open_browser=not args.no_open)
+    return 0
+
+
+def cmd_record_decision(args) -> int:
+    conn, cfg, _ = _open()
+    _append_log(conn, page_subject="decisions", page_type="decisions",
+                title="Decisions", event_type="decision",
+                text=args.text, module=args.module)
+    print("recorded decision")
+    return 0
+
+
+# ------------------------------------------------------------------
+# parser
+# ------------------------------------------------------------------
+def build_parser() -> argparse.ArgumentParser:
+    from . import __version__
+    p = argparse.ArgumentParser(
+        prog="irag",
+        description="Project Knowledge Base — relational memory for AI "
+                    "coding agents.",
+    )
+    p.add_argument("--version", action="version",
+                   version=f"irag {__version__}")
+    sub = p.add_subparsers(dest="command", required=True)
+
+    sub.add_parser("init", help="initialize irag in this repo").set_defaults(
+        func=cmd_init)
+    sub.add_parser("sync", help="ingest commits since last sync").set_defaults(
+        func=cmd_sync)
+
+    sp = sub.add_parser("ingest-commit", help="ingest a single commit")
+    sp.add_argument("ref")
+    sp.set_defaults(func=cmd_ingest_commit)
+
+    sp = sub.add_parser("synthesize", help="update pending pages via the LLM")
+    sp.add_argument("--dry-run", action="store_true",
+                    help="print prompts instead of calling the LLM")
+    sp.add_argument("--limit", type=int)
+    sp.add_argument("--subject", help="synthesize one subject only")
+    sp.set_defaults(func=cmd_synthesize)
+
+    sp = sub.add_parser("context", help="serve tiered context markdown")
+    sp.add_argument("--open", action="append", default=[],
+                    metavar="FILE", help="currently open file (repeatable)")
+    sp.add_argument("--query", default="")
+    sp.add_argument("--budget", type=int,
+                    help="token budget override (e.g. 3000 for hooks)")
+    sp.add_argument("--json", action="store_true",
+                    help="machine-readable output")
+    sp.set_defaults(func=cmd_context)
+
+    sp = sub.add_parser("status", help="one-screen health dashboard")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_status)
+
+    sp = sub.add_parser("diff", help="diff two revisions of a page")
+    sp.add_argument("subject")
+    sp.add_argument("v1", nargs="?", type=int)
+    sp.add_argument("v2", nargs="?", type=int)
+    sp.set_defaults(func=cmd_diff)
+
+    sp = sub.add_parser("backup", help="online backup of the database")
+    sp.add_argument("path", nargs="?")
+    sp.set_defaults(func=cmd_backup)
+
+    sp = sub.add_parser("doctor", help="diagnose the install (exit 1 on "
+                                       "failures)")
+    sp.add_argument("--probe-llm", action="store_true",
+                    help="actually invoke the LLM command once")
+    sp.set_defaults(func=cmd_doctor)
+
+    sub.add_parser("scan", help="rebuild the structural map").set_defaults(
+        func=cmd_scan)
+
+    sp = sub.add_parser("map", help="code map: files, symbols, dependencies")
+    sp.add_argument("subject", nargs="?")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_map)
+
+    sp = sub.add_parser("impact",
+                        help="what could break if this module changes")
+    sp.add_argument("subject")
+    sp.set_defaults(func=cmd_impact)
+
+    sp = sub.add_parser("learn", help="log a lesson/gotcha (no LLM)")
+    sp.add_argument("text")
+    sp.add_argument("--module")
+    sp.set_defaults(func=cmd_learn)
+
+    sp = sub.add_parser("update", help="sync + synthesize + lint + export "
+                                       "in one shot (the agent trigger)")
+    sp.add_argument("--limit", type=int)
+    sp.set_defaults(func=cmd_update)
+
+    sp = sub.add_parser("ask", help="AI search: answer a question from the "
+                                    "knowledge base via the configured LLM")
+    sp.add_argument("question")
+    sp.add_argument("--open", action="append", default=[], metavar="FILE")
+    sp.add_argument("--budget", type=int)
+    sp.set_defaults(func=cmd_ask)
+
+    sp = sub.add_parser("session-begin", help="open a conversation log "
+                        "entry (hooks call this)")
+    sp.add_argument("--agent", default="claude-code")
+    sp.set_defaults(func=cmd_session_begin)
+
+    sp = sub.add_parser("session-end", help="close + summarize the open "
+                        "conversation (hooks call this)")
+    sp.add_argument("--no-narrate", action="store_true",
+                    help="skip the LLM narrative; deterministic digest only")
+    sp.set_defaults(func=cmd_session_end)
+
+    sp = sub.add_parser("sessions", help="list the conversation log")
+    sp.add_argument("-n", type=int, default=10)
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_sessions)
+
+    sp = sub.add_parser("recap", help="'previously on this project' — "
+                        "the fresh-start command")
+    sp.add_argument("-n", type=int, default=3)
+    sp.set_defaults(func=cmd_recap)
+
+    sp = sub.add_parser("dashboard", help="local web dashboard: live "
+                        "metrics, chat, health, docs")
+    sp.add_argument("--port", type=int, default=7777)
+    sp.add_argument("--no-open", action="store_true",
+                    help="don't open the browser")
+    sp.set_defaults(func=cmd_dashboard)
+
+    sub.add_parser("claude-setup",
+                   help="wire irag into Claude Code (SessionStart hook + "
+                        "agent instructions)").set_defaults(
+        func=cmd_claude_setup)
+
+    sp = sub.add_parser("search", help="full-text search the wiki")
+    sp.add_argument("query")
+    sp.set_defaults(func=cmd_search)
+
+    sp = sub.add_parser("lint", help="check pages against ground truth")
+    sp.add_argument("--subject")
+    sp.add_argument("--llm", action="store_true",
+                    help="also run the optional LLM audit tier")
+    sp.set_defaults(func=cmd_lint)
+
+    sp = sub.add_parser("contradictions", help="list contradictions")
+    sp.add_argument("--resolved", action="store_true")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_contradictions)
+
+    sp = sub.add_parser("resolve", help="resolve a contradiction")
+    sp.add_argument("id", type=int)
+    sp.add_argument("--notes")
+    sp.set_defaults(func=cmd_resolve)
+
+    sub.add_parser("stale", help="show staleness scores").set_defaults(
+        func=cmd_stale)
+
+    sp = sub.add_parser("why", help="trace a claim to its source")
+    sp.add_argument("claim")
+    sp.set_defaults(func=cmd_why)
+
+    sp = sub.add_parser("asof", help="wiki state as of a date")
+    sp.add_argument("date", help="ISO date, e.g. 2026-06-01")
+    sp.add_argument("--show", metavar="SUBJECT",
+                    help="print that subject's full body")
+    sp.set_defaults(func=cmd_asof)
+
+    sp = sub.add_parser("rollback", help="non-destructive rollback")
+    sp.add_argument("subject")
+    sp.add_argument("version", type=int)
+    sp.set_defaults(func=cmd_rollback)
+
+    sp = sub.add_parser("pin", help="pin a page (skip synthesis)")
+    sp.add_argument("subject")
+    sp.set_defaults(func=cmd_pin)
+
+    sp = sub.add_parser("unpin", help="unpin a page")
+    sp.add_argument("subject")
+    sp.set_defaults(func=cmd_unpin)
+
+    sub.add_parser("export",
+                   help="write generated CLAUDE.md + AGENTS.md").set_defaults(
+        func=cmd_export)
+
+    sp = sub.add_parser("obsidian",
+                        help="project the database into an Obsidian vault")
+    sp.add_argument("--out", help="vault directory (default: <repo>/irag_vault)")
+    sp.add_argument("--no-versions", action="store_true",
+                    help="omit revision-history nodes")
+    sp.set_defaults(func=cmd_obsidian)
+    sub.add_parser("check", help="CI gate (exit 1 on failure)").set_defaults(
+        func=cmd_check)
+
+    sp = sub.add_parser("record-decision", help="log a decision (no LLM)")
+    sp.add_argument("text")
+    sp.add_argument("--module")
+    sp.set_defaults(func=cmd_record_decision)
+
+    return p
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        sys.exit(args.func(args))
+    except KeyboardInterrupt:
+        sys.exit(130)
+    except BrokenPipeError:
+        # output piped to head/less that closed early — not an error
+        import os
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except OSError:
+            pass
+        sys.exit(0)

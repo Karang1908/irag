@@ -1,0 +1,3 @@
+#!/bin/sh
+# irag post-commit hook
+irag ingest-commit HEAD >/dev/null 2>&1 || true

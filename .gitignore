@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.DS_Store
+
+# per-project irag state — never the package's own concern
+.irag/
+irag_vault/
