@@ -33,13 +33,14 @@ PAGES = [
     ("comparison", "Comparison", "docs/COMPARISON.md"),
     ("story", "The Story", "docs/STORY.md"),
     ("development", "Development", "docs/DEVELOPMENT.md"),
-    ("handoff", "AI Handoff", "docs/HANDOFF.md"),
     ("changelog", "Changelog", "CHANGELOG.md"),
 ]
+# NOTE: docs/HANDOFF.md is deliberately NOT published — it is the
+# internal handoff for AI agents developing irag itself, not user docs.
 SECTIONS = [
     ("Using irag", ["quickstart", "setup", "cli-reference"]),
     ("Understanding it", ["architecture", "comparison", "story"]),
-    ("Contributing", ["development", "handoff", "changelog"]),
+    ("Contributing", ["development", "changelog"]),
 ]
 # markdown links to these sources get rewritten to site URLs
 MD_LINK_MAP = {Path(src).name: slug for slug, _t, src in PAGES}
