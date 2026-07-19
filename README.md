@@ -10,6 +10,27 @@ instead of a flat `CLAUDE.md` that silently rots.
 ![License: MIT](https://img.shields.io/badge/license-MIT-yellow)
 ![Version](https://img.shields.io/badge/version-4.2.0-purple)
 
+**Why you'll want this:**
+
+- 🔌 **Pluggable memory** — one `pip install`, one `irag init`. The
+  entire memory is a single SQLite file in your repo: no service, no
+  cloud, no API keys, any agent on any machine can mount it.
+- 🚫 **Your agent never greps again** — stop paying tokens for the same
+  re-exploration every session. Search, code map, blast radius, and
+  context come from SQL, not from the model reading your tree.
+- 🔍 **Memory that can't quietly lie** — the only memory tool that
+  fact-checks its own claims against your code, flags what's wrong, and
+  fails CI while memory and code disagree.
+- 💸 **Costs ~nothing to run** — reads are zero-token; writes go on
+  whatever cheap or free model you point it at. Your expensive coding
+  agent just reads a ~3k-token briefing.
+- ⏮ **Every chat resumes where the last one ended** — a ~150-token
+  recap of what previous sessions did and changed, injected
+  automatically. No more "let me look around the codebase first."
+- 🤝 **Works with every agent** — Claude Code hooks make it fully
+  automatic; generated `AGENTS.md` reaches Codex, Antigravity, and
+  Cursor; git is optional.
+
 ```
 Claude Code   →     irag      →   agy / any LLM CLI
 the operator      the memory        the scribe

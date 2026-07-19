@@ -409,6 +409,14 @@ any agent for near-zero tokens.</p>
 <a class="btn" href="{GITHUB}" target="_blank" rel="noopener">Star on GitHub</a>
 </div>
 <div class="install"><code>pip install -e ./irag &nbsp;&&&nbsp; irag init</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
+<ul class="sell" aria-label="Why irag">
+<li><b>Pluggable memory</b> — one SQLite file in your repo; no service, no cloud, no keys</li>
+<li><b>Your agent never greps again</b> — map, search &amp; context are SQL, not model calls</li>
+<li><b>Memory that can't quietly lie</b> — fact-checked against the code, gated in CI</li>
+<li><b>Reads cost ~nothing</b> — a 3k-token briefing instead of 100k of re-exploration</li>
+<li><b>Every chat resumes instantly</b> — a ~150-token recap of what past sessions did</li>
+<li><b>Any agent</b> — Claude Code hooks, <code>AGENTS.md</code> for Codex / Antigravity / Cursor</li>
+</ul>
 </section>
 <section class="chain" aria-label="How the pieces relate">
 <div class="chain-box"><b>Claude Code</b><span>the operator</span><i>reads memory for free</i></div>

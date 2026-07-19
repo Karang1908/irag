@@ -146,6 +146,12 @@ article tr:last-child td{border-bottom:none}
 .install{position:relative;display:inline-block;margin:26px auto 0;background:var(--bg-inset);
   border:1px solid var(--border);border-radius:var(--r-md);padding:12px 92px 12px 18px}
 .install code{background:none;border:none;font-size:14px;color:#d5dde5}
+.sell{list-style:none;display:flex;flex-wrap:wrap;justify-content:center;gap:10px 12px;
+  max-width:880px;margin:34px auto 0;padding:0}
+.sell li{border:1px solid var(--border);border-radius:99px;padding:7px 16px;
+  font-size:13.5px;color:var(--text-dim);background:rgba(20,26,34,.6)}
+.sell li b{color:var(--text);font-weight:600}
+.sell li code{font-size:.9em;padding:0 4px}
 .chain{display:flex;align-items:stretch;justify-content:center;gap:14px;padding:54px 0 10px;flex-wrap:wrap}
 .chain-box{background:linear-gradient(180deg,var(--panel),#10161d);border:1px solid var(--border);
   border-radius:var(--r-lg);padding:18px 26px;text-align:center;min-width:190px}
