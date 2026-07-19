@@ -24,91 +24,42 @@
     }
   }
 
-  /* ---------- hero constellation canvas ---------- */
-  var net = document.getElementById("net");
-  if (net && net.getContext) {
-    var ctx = net.getContext("2d");
-    var DPR = Math.min(window.devicePixelRatio || 1, 2);
-    var COLORS = ["88,166,255", "200,162,255", "63,185,80"];
-    var W = 0, H = 0, pts = [], raf = 0, visible = true;
-
-    var sizeNet = function () {
-      var r = net.getBoundingClientRect();
-      W = r.width; H = r.height;
-      net.width = Math.round(W * DPR);
-      net.height = Math.round(H * DPR);
-      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    };
-    var seed = function () {
-      sizeNet();
-      var n = Math.max(24, Math.min(72, Math.floor(W * H / 16000)));
-      pts = [];
-      for (var i = 0; i < n; i++) {
-        pts.push({
-          x: Math.random() * W, y: Math.random() * H,
-          vx: (Math.random() - 0.5) * 0.25,
-          vy: (Math.random() - 0.5) * 0.25,
-          r: 1.2 + Math.random() * 1.6,
-          c: COLORS[i % COLORS.length]
-        });
-      }
-    };
-    var draw = function (step) {
-      ctx.clearRect(0, 0, W, H);
-      var i, j, a, b, dx, dy, d;
-      for (i = 0; i < pts.length; i++) {
-        a = pts[i];
-        if (step) {
-          a.x += a.vx; a.y += a.vy;
-          if (a.x < -10) a.x = W + 10; else if (a.x > W + 10) a.x = -10;
-          if (a.y < -10) a.y = H + 10; else if (a.y > H + 10) a.y = -10;
-        }
-        for (j = i + 1; j < pts.length; j++) {
-          b = pts[j];
-          dx = a.x - b.x; dy = a.y - b.y;
-          d = dx * dx + dy * dy;
-          if (d < 12100) {
-            ctx.strokeStyle = "rgba(122,140,160," +
-              (0.28 * (1 - d / 12100)).toFixed(3) + ")";
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(a.x, a.y);
-            ctx.lineTo(b.x, b.y);
-            ctx.stroke();
-          }
-        }
-      }
-      for (i = 0; i < pts.length; i++) {
-        a = pts[i];
-        ctx.fillStyle = "rgba(" + a.c + ",.8)";
-        ctx.beginPath();
-        ctx.arc(a.x, a.y, a.r, 0, 6.2832);
-        ctx.fill();
-      }
-    };
-    var loop = function () {
-      draw(true);
-      raf = requestAnimationFrame(loop);
-    };
-    seed();
-    if (REDUCE) {
-      draw(false);           // static constellation, no motion
-    } else {
-      loop();
-      if ("IntersectionObserver" in window) {
-        new IntersectionObserver(function (entries) {
-          entries.forEach(function (en) {
-            if (en.isIntersecting && !visible) { visible = true; loop(); }
-            else if (!en.isIntersecting && visible) {
-              visible = false; cancelAnimationFrame(raf);
-            }
-          });
-        }).observe(net);
-      }
-      window.addEventListener("resize", function () {
-        seed();
-        if (REDUCE) draw(false);
-      });
+  /* ---------- hero intro (anime.js, progressive enhancement) ----------
+     Markup is authored in its final state; anime sets the from-state at
+     runtime, so with no JS / no anime / reduced motion nothing is hidden. */
+  var heroName = document.querySelector(".hero-name");
+  if (heroName && window.anime && !REDUCE) {
+    var letters = heroName.querySelectorAll("span");
+    var gp = document.querySelectorAll(".gp");
+    var gn = document.querySelectorAll(".gn");
+    var gl = document.querySelectorAll(".glabels text");
+    anime.set(letters, { translateY: "112%" });
+    anime.set(".hero-eyebrow,.lede,.hero .cta,.hero .install",
+      { opacity: 0, translateY: 14 });
+    anime.set(".stat", { opacity: 0, translateY: 16 });
+    if (gn.length) anime.set(gn, { scale: 0 });
+    if (gl.length) anime.set(gl, { opacity: 0 });
+    var tl = anime.timeline({ easing: "easeOutExpo" });
+    tl.add({ targets: ".hero-eyebrow", opacity: 1, translateY: 0,
+      duration: 500 }, 0)
+      .add({ targets: letters, translateY: "0%", duration: 800,
+        delay: anime.stagger(55) }, 60)
+      .add({ targets: ".lede", opacity: 1, translateY: 0,
+        duration: 600 }, 300)
+      .add({ targets: ".hero .cta", opacity: 1, translateY: 0,
+        duration: 600 }, 420)
+      .add({ targets: ".hero .install", opacity: 1, translateY: 0,
+        duration: 600 }, 510)
+      .add({ targets: ".stat", opacity: 1, translateY: 0, duration: 550,
+        delay: anime.stagger(70) }, 600);
+    if (gp.length) {
+      tl.add({ targets: gp, strokeDashoffset: [anime.setDashoffset, 0],
+        easing: "easeInOutSine", duration: 850,
+        delay: anime.stagger(45) }, 300)
+        .add({ targets: gn, scale: 1, easing: "easeOutBack",
+          duration: 500, delay: anime.stagger(40) }, 750)
+        .add({ targets: gl, opacity: 1, duration: 400,
+          delay: anime.stagger(30) }, 1100);
     }
   }
 

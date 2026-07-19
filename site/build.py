@@ -372,15 +372,26 @@ def sidebar(rel: str, active: str) -> str:
               "</div></nav>")
 
 
+FONTS = ('<link rel="preconnect" href="https://api.fontshare.com">\n'
+         '<link rel="preconnect" href="https://cdn.fontshare.com" '
+         'crossorigin>\n'
+         '<link rel="stylesheet" href="https://api.fontshare.com/v2/css'
+         '?f[]=satoshi@400,500,700&f[]=clash-display@500,600,700'
+         '&display=swap">')
+
+
 def page_shell(title: str, desc: str, body: str, rel: str,
-               extra_class: str = "", path: str = "") -> str:
+               extra_class: str = "", path: str = "",
+               anime: bool = False) -> str:
+    anime_tag = (f'<script src="{rel}anime.min.js" defer></script>\n'
+                 if anime else "")
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="#0b0f14">
+<meta name="theme-color" content="#08090c">
 <meta name="description" content="{esc(desc)}">
 <link rel="canonical" href="{BASE}{path}">
 <meta property="og:type" content="website">
@@ -391,12 +402,13 @@ def page_shell(title: str, desc: str, body: str, rel: str,
 <meta name="twitter:card" content="summary_large_image">
 <title>{esc(title)}</title>
 <link rel="icon" href="{FAVICON}">
+{FONTS}
 <link rel="stylesheet" href="{rel}style.css">
 </head>
 <body class="{extra_class}">
 <a class="skip" href="#main">Skip to content</a>
 {body}
-<script src="{rel}app.js" defer></script>
+{anime_tag}<script src="{rel}app.js" defer></script>
 </body>
 </html>"""
 
@@ -440,42 +452,52 @@ rel="noopener">Edit this page on GitHub</a></footer>
 # ---------------------------------------------------------------------
 # landing page
 # ---------------------------------------------------------------------
+GRAPH_NODES = [
+    # (cx, cy, r, label, lx, ly)
+    (296, 64, 3.5, "api.py", 306, 60),
+    (138, 84, 3, "auth.py", 88, 76),
+    (218, 178, 5, "db.py", 234, 172),
+    (352, 150, 3, "models.py", 362, 146),
+    (92, 190, 3, "worker.py", 28, 180),
+    (172, 272, 3, "cache.py", 116, 288),
+    (334, 262, 3, "cli.py", 344, 258),
+    (64, 306, 2.5, "tests/", 40, 326),
+    (252, 332, 2.5, "config.toml", 262, 340),
+]
+GRAPH_EDGES = [(0, 1), (0, 2), (0, 3), (1, 2), (2, 3), (2, 4), (4, 5),
+               (2, 5), (0, 6), (2, 6), (0, 7), (6, 8), (4, 8)]
+
+
+def hero_graph() -> str:
+    n = GRAPH_NODES
+    edges = "".join(
+        f'<path class="gp" d="M{n[a][0]} {n[a][1]} L{n[b][0]} {n[b][1]}"/>'
+        for a, b in GRAPH_EDGES)
+    nodes = "".join(
+        f'<circle class="gn" cx="{cx}" cy="{cy}" r="{r}" '
+        f'fill="{"#58a6ff" if r >= 5 else "#dfe3e8"}"/>'
+        for cx, cy, r, _l, _x, _y in n)
+    labels = "".join(
+        f'<text x="{lx}" y="{ly}">{label}</text>'
+        for _cx, _cy, _r, label, lx, ly in n)
+    return (
+        '<svg class="ggraph" viewBox="0 0 440 380" fill="none" '
+        'role="presentation">'
+        f'<g stroke="rgba(242,243,245,.15)" stroke-width="1">{edges}</g>'
+        '<circle class="gn" cx="218" cy="178" r="11" fill="none" '
+        'stroke="#58a6ff" stroke-opacity=".35"/>'
+        f"<g>{nodes}</g>"
+        '<g class="glabels" font-family="ui-monospace,Menlo,monospace" '
+        f'font-size="10.5" fill="#707885">{labels}</g></svg>')
+
+
 def landing() -> str:
     rel = ""
-    features = [
-        ("Verified, not just remembered",
-         "A deterministic linter checks every LLM claim against the "
-         "filesystem, manifests, and symbol table. Wrong claims become "
-         "queryable contradiction rows — and <code>irag check</code> "
-         "fails CI while memory and code disagree."),
-        ("Zero-token reads",
-         "Search, code map, blast radius, provenance, and session recaps "
-         "are pure SQL. A fresh agent session starts with a ~3k-token "
-         "briefing instead of 20–100k tokens of re-exploration."),
-        ("Bring a cheap scribe",
-         "The write path is one pluggable CLI command. Point it at a "
-         "free-quota model and bookkeeping stops competing with your "
-         "coding agent's rate limits entirely."),
-        ("A diary with receipts",
-         "Every agent conversation is logged with the exact per-file "
-         "changes it made. A brand-new chat resumes for ~150 tokens "
-         "with <code>irag recap</code>."),
-        ("History as a first-class object",
-         "Append-only page versions. <code>why</code> traces any claim "
-         "to the commit that caused it; <code>asof</code> time-travels; "
-         "rollback never rewrites history."),
-        ("One SQLite file, zero deps",
-         "The entire memory is <code>.irag/memory.db</code> — query it, "
-         "back it up, mount it anywhere. Pure-stdlib Python, no runtime "
-         "dependencies, works with or without git."),
-    ]
-    cards = "".join(
-        f'<div class="feat reveal"><h3>{t}</h3><p>{d}</p></div>'
-        for t, d in features)
     body = f"""<header class="hero-nav">
 <a class="side-brand" href="index.html">{LOGO}<b>irag</b></a>
 <nav aria-label="Site">
-<a href="#why">Why</a>
+<a class="nav-sec" href="#why">Why</a>
+<a class="nav-sec" href="#how">How</a>
 <a href="docs/quickstart/">Docs</a>
 <a href="docs/changelog/">Changelog</a>
 <a href="{GITHUB}" target="_blank" rel="noopener">GitHub ↗</a>
@@ -483,113 +505,154 @@ def landing() -> str:
 </header>
 <main class="landing" id="main">
 <section class="hero">
-<canvas id="net" aria-hidden="true"></canvas>
-<div class="hero-in">
-<p class="hero-badge"><span class="pulse-dot" aria-hidden="true"></span>v4.2.0 · zero dependencies · MIT</p>
-<h1 class="hero-name">irag</h1>
-<p class="hero-one">Your AI coding assistant forgets everything about your
+<div class="hero-copy">
+<p class="eyebrow hero-eyebrow">Verified memory for AI coding agents</p>
+<h1 class="hero-name" aria-label="irag"><span>i</span><span>r</span><span>a</span><span>g</span><span class="hn-dot">.</span></h1>
+<p class="lede">Your AI coding assistant forgets everything about your
 project the moment a chat ends. <b>irag is the memory it keeps</b> — what
 every file does, what changed and why, what past sessions decided — saved
-in one small file inside your repo and checked against your real code, so
-it can never quietly go stale.</p>
+in one small file inside your repo and checked against the real code, so
+it can never quietly lie.</p>
 <div class="cta">
-<a class="btn primary" href="docs/quickstart/">Get started in 2 minutes</a>
-<a class="btn" href="{GITHUB}" target="_blank" rel="noopener">Star on GitHub</a>
+<a class="btn primary" href="docs/quickstart/">Get started</a>
+<a class="btn ghost" href="{GITHUB}" target="_blank" rel="noopener">GitHub ↗</a>
 </div>
-<div class="install"><code>pip install -e ./irag &nbsp;&&&nbsp; irag init</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
+<div class="install"><code>pip install -e ./irag && irag init</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
 </div>
+<figure class="hero-graph" aria-hidden="true">
+{hero_graph()}
+<figcaption class="mono-cap">your codebase, as irag maps it — parsed, never guessed</figcaption>
+</figure>
 </section>
-<section class="hero-visual" aria-label="How irag works">
+<section class="stats" aria-label="irag in numbers">
+<div class="stat"><b>3k</b><span>tokens to brief a fresh session —
+instead of 20–100k of re-exploration</span></div>
+<div class="stat"><b>~150</b><span>tokens to resume any past
+conversation, with its per-file changes</span></div>
+<div class="stat"><b>1 file</b><span>the entire memory — SQLite,
+inside your repo, mounts anywhere</span></div>
+<div class="stat"><b>0</b><span>runtime dependencies, services,
+or API keys</span></div>
+</section>
+<section class="sec" id="why">
+<p class="eyebrow">01 — Why it exists</p>
+<h2 class="sec-t">Context files rot. Databases don't.</h2>
+<div class="why-cols">
+<p>Every coding agent ships the same fix for amnesia: a markdown file it
+re-reads at startup. Claims go stale, nobody notices, and the agent keeps
+trusting them. irag treats memory as a <b>storage problem, not a prompt
+problem</b> — version every claim, fact-check it against the code
+mechanically, and let the expensive model read instead of re-explore.</p>
+<p>It began as a database-systems assignment: a law-firm knowledge base,
+where a wrong court date is a real failure, not a bad chatbot answer.
+That discipline stuck when it was pointed at code —
+<a href="docs/story/">the full story</a>.</p>
+</div>
+<div class="table-wrap cmp reveal">
+<table>
+<tr><th></th><th>Graphify</th><th>claude-mem</th><th class="hl">irag</th></tr>
+<tr><td>Remembers</td><td>structure</td><td>conversations</td>
+<td class="hl">structure + meaning + history</td></tr>
+<tr><td>Can it be wrong?</td><td>rarely — it's a parse</td>
+<td>yes — silently, forever</td>
+<td class="hl">yes — and it detects, records, and gates CI on it</td></tr>
+<tr><td>Cost</td><td>free</td><td>scales with chat volume</td>
+<td class="hl">reads free · writes on any cheap model</td></tr>
+</table>
+</div>
+<p class="fineprint"><b>irag's trade-offs, honestly:</b> writes cost LLM
+calls (pluggable — point them at a free-quota model), it needs Python
+3.11+, and the linter verifies checkable claims — paths, symbols,
+versions — not opinions. <a href="docs/comparison/">Full comparison →</a></p>
+</section>
+<section class="sec" id="how">
+<p class="eyebrow">02 — How it runs</p>
+<h2 class="sec-t">Three actors. One loop.</h2>
 <div class="pipe">
-<div class="pipe-node reveal">
-<span class="pn-icon" aria-hidden="true">⌘</span>
-<b>your agent</b><span>Claude Code · Cursor · Codex</span><i>reads memory — free</i>
+<em class="pd1" aria-hidden="true"></em><em class="pd2" aria-hidden="true"></em>
+<div class="pipe-col reveal">
+<p class="mono-cap">reads · zero tokens</p>
+<h3>Your agent</h3>
+<p>Claude Code, Cursor, Codex — starts every session already briefed,
+through SQL. It never greps to remember.</p>
 </div>
-<div class="pipe-track t-read" aria-hidden="true"><em></em><em></em><em></em><small>reads · zero tokens</small></div>
-<div class="pipe-node pipe-mem reveal">
-<span class="stack" aria-hidden="true"><span class="plate p1"></span><span class="plate p2"></span><span class="plate p3"></span></span>
-<b>irag</b><span>one SQLite file in your repo</span><i>pure SQL — never thinks</i>
+<div class="pipe-col mid reveal">
+<p class="mono-cap">the memory</p>
+<h3>irag</h3>
+<p>One SQLite file in your repo. Versions every page, logs every session,
+fact-checks every claim. Never calls a model itself.</p>
 </div>
-<div class="pipe-track t-write" aria-hidden="true"><em></em><em></em><em></em><small>writes · cheap model</small></div>
-<div class="pipe-node reveal">
-<span class="pn-icon pn-icon-w" aria-hidden="true">✎</span>
-<b>a cheap scribe</b><span>any LLM CLI you configure</span><i>writes summaries — pluggable</i>
+<div class="pipe-col reveal">
+<p class="mono-cap">writes · cheap quota</p>
+<h3>The scribe</h3>
+<p>Any LLM CLI you configure writes the summaries — on a free-quota
+model, so bookkeeping never touches your agent's limits.</p>
 </div>
 </div>
 <div class="term reveal tilt" role="img" aria-label="Terminal demo: irag init creates the memory, irag update fact-checks it, and a new agent session starts fully briefed">
-<div class="term-bar" aria-hidden="true"><span class="tb r"></span><span class="tb y"></span><span class="tb g"></span><span class="term-title">~/your-project</span></div>
+<div class="term-bar" aria-hidden="true"><span class="tb"></span><span class="tb"></span><span class="tb"></span><span class="term-title">~/your-project</span></div>
 <pre class="term-body" id="term-body" aria-hidden="true"></pre>
 </div>
 </section>
-<section class="why reveal" id="why">
-<h2>The why</h2>
-<p class="why-lead">Every coding agent ships the same fix for amnesia: a
-markdown file it re-reads at startup. Those files rot — claims go stale,
-nobody notices, and the agent keeps trusting them. irag treats memory as a
-<b>storage problem, not a prompt problem</b>: version every claim,
-fact-check it against the code mechanically, and let your expensive agent
-read instead of re-explore. It began as a database-systems assignment — a
-law-firm knowledge base, where a wrong court date is a real failure — and
-kept that discipline when it was pointed at code.</p>
-<div class="why-grid">
-<div class="why-card reveal"><h3>Graphify</h3><p class="wc-sub">maps your code's structure</p>
-<p><b>Where it wins:</b> deterministic and free — a parse is almost never
-wrong.</p>
-<p><b>Where it stops:</b> structure only. It can't say <em>why</em> the
-code is shaped this way, or what last week's session decided.</p></div>
-<div class="why-card reveal"><h3>claude-mem</h3><p class="wc-sub">remembers your conversations</p>
-<p><b>Where it wins:</b> zero config, rich recall of everything you
-discussed.</p>
-<p><b>Where it stops:</b> nothing verifies what it stored. A wrong claim
-is remembered forever — confidently.</p></div>
-<div class="why-card is-irag reveal"><h3>irag</h3><p class="wc-sub">structure + meaning + history — verified</p>
-<p><b>Where it wins:</b> the only one that fact-checks its own memory
-against your code and fails CI while they disagree.</p>
-<p><b>Honest trade-offs:</b> writes cost LLM calls (pluggable — point them
-at a free-quota model), it needs Python 3.11+, and the linter verifies
-checkable claims — paths, symbols, versions — not opinions.</p></div>
-</div>
-<p class="why-more"><a href="docs/comparison/">Read the full, honest comparison →</a></p>
+<section class="sec">
+<p class="eyebrow">03 — What you get</p>
+<h2 class="sec-t">Built like a database, because it is one.</h2>
+<ol class="featlist">
+<li class="reveal"><span>01</span><h3>Verified, not just remembered</h3>
+<p>A deterministic linter checks every claim against the code. Wrong
+memory becomes a visible contradiction — and <code>irag check</code>
+fails CI until it's resolved.</p></li>
+<li class="reveal"><span>02</span><h3>Reads cost nothing</h3>
+<p>Search, code map, blast radius, recaps — pure SQL. A session starts
+briefed in ~3k tokens instead of re-reading the tree.</p></li>
+<li class="reveal"><span>03</span><h3>Writes go on a cheap model</h3>
+<p>The scribe is one pluggable CLI command. Point it at a free quota;
+your agent's rate limits stay untouched.</p></li>
+<li class="reveal"><span>04</span><h3>A diary with receipts</h3>
+<p>Every session is logged with the exact per-file changes it made.
+Any new chat resumes in ~150 tokens.</p></li>
+<li class="reveal"><span>05</span><h3>History you can query</h3>
+<p><code>why</code> traces a claim to the commit that caused it.
+<code>asof</code> time-travels. Rollback never rewrites.</p></li>
+<li class="reveal"><span>06</span><h3>One file, zero dependencies</h3>
+<p>The whole memory is <code>.irag/memory.db</code>. Pure-stdlib Python,
+works with or without git, any agent can mount it.</p></li>
+</ol>
 </section>
-<section class="reveal">
-<ul class="sell" aria-label="Why irag">
-<li><b>Pluggable memory</b> — one SQLite file in your repo; no service, no cloud, no keys</li>
-<li><b>Your agent never greps again</b> — map, search &amp; context are SQL, not model calls</li>
-<li><b>Memory that can't quietly lie</b> — fact-checked against the code, gated in CI</li>
-<li><b>Reads cost ~nothing</b> — a 3k-token briefing instead of 100k of re-exploration</li>
-<li><b>Every chat resumes instantly</b> — a ~150-token recap of what past sessions did</li>
-<li><b>Any agent</b> — Claude Code hooks, <code>AGENTS.md</code> for Codex / Antigravity / Cursor</li>
-</ul>
-</section>
-<section class="feats">{cards}</section>
-<section class="shots">
+<section class="sec">
+<p class="eyebrow">04 — The dashboard</p>
+<h2 class="sec-t">See what it knows.</h2>
+<div class="shots">
 <figure class="tilt reveal"><img src="assets/dashboard-overview.jpg" alt="irag dashboard overview" loading="lazy">
-<figcaption>Live dashboard: token burn, health, activity</figcaption></figure>
+<figcaption>live dashboard — token burn, health, activity</figcaption></figure>
 <figure class="tilt reveal"><img src="assets/dependency-graph.jpg" alt="Interactive dependency graph" loading="lazy">
-<figcaption>Obsidian-style dependency graph — pan, zoom, trace imports</figcaption></figure>
+<figcaption>dependency graph — pan, zoom, trace imports</figcaption></figure>
+</div>
 </section>
-<section class="story-quote reveal">
-<blockquote>"It should be a <b>database system with an AI layer</b>,
-not an AI system with a database attached."</blockquote>
-<p>irag started as a Database Systems assignment that outgrew its
-domain — a law-firm knowledge base where a wrong court date is a real
-failure, not a bad chatbot answer.
-<a href="docs/story/">Read the story →</a></p>
+<section class="quote reveal">
+<blockquote>"A <b>database system with an AI layer</b> — not an AI system
+with a database attached."</blockquote>
+<span class="mono-cap">the design rule every table follows ·
+<a href="docs/story/">read the story</a></span>
 </section>
 <section class="closing reveal">
-<p>The database is the only source of truth. <code>CLAUDE.md</code> and
-<code>AGENTS.md</code> are generated projections. The model never does
-bookkeeping.</p>
-<a class="btn primary" href="docs/quickstart/">Read the docs</a>
+<h2 class="sec-t">Give your agent a memory.</h2>
+<div class="cta">
+<a class="btn primary" href="docs/quickstart/">Get started</a>
+<a class="btn ghost" href="docs/architecture/">Read the architecture</a>
+</div>
 </section>
-<footer class="foot center">MIT licensed ·
-<a href="{GITHUB}" target="_blank" rel="noopener">Karang1908/iRag</a></footer>
+<footer class="foot land">
+<span>MIT · <a href="{GITHUB}" target="_blank"
+rel="noopener">Karang1908/iRag</a></span>
+<span>v4.2.0 · zero dependencies</span>
+</footer>
 </main>"""
     return page_shell(
         "irag — verified memory for AI coding agents",
         "A local, zero-dependency knowledge base that gives AI coding "
         "agents persistent, fact-checked memory of your codebase.",
-        body, rel, extra_class="is-landing")
+        body, rel, extra_class="is-landing", anime=True)
 
 
 # ---------------------------------------------------------------------
@@ -605,6 +668,8 @@ def build(out: Path) -> int:
         shutil.copy(asset, out / "assets" / asset.name)
     for static in ("style.css", "app.js"):
         shutil.copy(SITE / static, out / static)
+    for vend in (SITE / "vendor").glob("*"):
+        shutil.copy(vend, out / vend.name)
 
     search_index = []
     titles = {s: t for s, t, _p in PAGES}
@@ -641,14 +706,15 @@ def build(out: Path) -> int:
     (out / ".nojekyll").write_text("")
 
     # 404 (served by GitHub Pages at any depth -> absolute links)
-    body_404 = f"""<main class="landing" id="main"><section class="hero">
-<h1>404</h1>
-<p class="tag">That page doesn't exist (or moved when the docs were
-regenerated).</p>
+    body_404 = f"""<main class="landing" id="main">
+<section class="hero"><div class="hero-copy">
+<p class="eyebrow">Error 404</p>
+<h1 class="sec-t">This page doesn't exist.</h1>
+<p class="lede">It may have moved when the docs were regenerated.</p>
 <div class="cta">
 <a class="btn primary" href="{BASE}">Home</a>
-<a class="btn" href="{BASE}docs/quickstart/">Docs</a>
-</div></section></main>"""
+<a class="btn ghost" href="{BASE}docs/quickstart/">Docs</a>
+</div></div></section></main>"""
     (out / "404.html").write_text(
         page_shell("Page not found — irag", "Page not found",
                    body_404, BASE, extra_class="is-landing",
