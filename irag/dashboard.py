@@ -217,10 +217,14 @@ def make_handler(state: _State):
                         else route_query(question)
                     if mode == "sql":
                         hits = retrieval.search(conn, question)
-                        if hits:
+                        # an explicit SQL choice is honored even on a miss:
+                        # it stays local and spends no tokens (the UI shows
+                        # "No matches."). Only *auto*-routing falls through
+                        # to the AI pipeline when a keyword search misses.
+                        if hits or forced == "sql":
                             return self._json({"mode": "sql",
                                                "results": hits})
-                        mode = "ai"   # keyword miss -> fall through
+                        mode = "ai"   # auto keyword miss -> fall through
                     with state.lock:
                         structure.scan(conn, state.cfg, state.root)
                         md, _ = retrieval.serve(conn, state.cfg,

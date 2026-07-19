@@ -870,7 +870,13 @@ function inline(s){
   const spans=[];
   s=s.replace(/`([^`]+)`/g,(_,c)=>{spans.push(`<code>${c}</code>`);return `\x00${spans.length-1}\x00`});
   s=s.replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
-     .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank">$1</a>');
+     // only linkify safe, well-formed http(s)/mailto URLs — a crafted
+     // javascript:/data: scheme or a quote/space in the URL (which would
+     // break out of the href attribute, since esc() upstream leaves quotes
+     // intact) falls back to plain text
+     .replace(/\[([^\]]+)\]\(([^)]+)\)/g,(_,t,u)=>
+       /^(https?:\/\/|mailto:)[^\s"'<>]+$/i.test(u)
+         ? `<a href="${u}" target="_blank" rel="noopener">${t}</a>` : t);
   return s.replace(/\x00(\d+)\x00/g,(_,i)=>spans[Number(i)]);
 }
 

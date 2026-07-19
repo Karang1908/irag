@@ -4,6 +4,27 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## Unreleased
+
+### Fixed
+- **Dashboard chat: explicit "SQL" mode no longer falls through to the AI
+  pipeline on a miss.** Selecting SQL and searching for something with no
+  page match now returns an instant "No matches." (local, zero tokens)
+  instead of silently spending an LLM call — which, on a project whose
+  summarizer command is slow or misconfigured, surfaced as a hang or an
+  error where a plain "no results" was expected. Auto-routing still falls
+  through to AI on a keyword miss, as designed.
+- **Dashboard chat: markdown link rendering hardened.** The in-chat
+  renderer now only linkifies well-formed `http(s)`/`mailto` URLs; a
+  `javascript:`/`data:` scheme or a quote/space that could break out of
+  the `href` attribute renders as plain text, and real links get
+  `rel="noopener"`.
+
+### Changed
+- Dashboard restyled to match the documentation site's editorial design
+  system (Clash Display + Satoshi, near-black surface, hairline stat
+  ledger, single-accent token-burn chart). Presentation only.
+
 ## 4.2.0 — 2026-07-19
 
 ### Changed — **directory-wise project scoping** (behavior change)
