@@ -31,13 +31,14 @@ PAGES = [
     ("architecture", "Architecture", "docs/ARCHITECTURE.md"),
     ("cli-reference", "CLI Reference", "docs/CLI_REFERENCE.md"),
     ("comparison", "Comparison", "docs/COMPARISON.md"),
+    ("story", "The Story", "docs/STORY.md"),
     ("development", "Development", "docs/DEVELOPMENT.md"),
     ("handoff", "AI Handoff", "docs/HANDOFF.md"),
     ("changelog", "Changelog", "CHANGELOG.md"),
 ]
 SECTIONS = [
     ("Using irag", ["quickstart", "setup", "cli-reference"]),
-    ("Understanding it", ["architecture", "comparison"]),
+    ("Understanding it", ["architecture", "comparison", "story"]),
     ("Contributing", ["development", "handoff", "changelog"]),
 ]
 # markdown links to these sources get rewritten to site URLs
@@ -254,15 +255,22 @@ def md_to_html(src: str, rel: str) -> tuple[str, list, str]:
             i += 1
             continue
 
-        # blockquote
+        # blockquote (consecutive '>' lines merge into one paragraph so
+        # inline formatting can span soft-wrapped lines)
         if ln.startswith(">"):
             close_lists()
             if not in_quote:
                 out.append("<blockquote>")
                 in_quote = True
-            out.append(f"<p>{_inline(esc(ln.lstrip('> ')), rel)}</p>")
-            plain.append(ln.lstrip("> "))
-            i += 1
+            quote = [ln.lstrip("> ")]
+            j = i + 1
+            while j < n and lines[j].startswith(">") and lines[j].lstrip("> "):
+                quote.append(lines[j].lstrip("> "))
+                j += 1
+            text = " ".join(quote)
+            out.append(f"<p>{_inline(esc(text), rel)}</p>")
+            plain.append(text)
+            i = j
             continue
         close_quote()
 
@@ -505,6 +513,14 @@ any agent for near-zero tokens.</p>
 <figcaption>Live dashboard: token burn, health, activity</figcaption></figure>
 <figure><img src="assets/dependency-graph.jpg" alt="Interactive dependency graph" loading="lazy">
 <figcaption>Obsidian-style dependency graph — pan, zoom, trace imports</figcaption></figure>
+</section>
+<section class="story-quote">
+<blockquote>"It should be a <b>database system with an AI layer</b>,
+not an AI system with a database attached."</blockquote>
+<p>irag started as a Database Systems assignment that outgrew its
+domain — a law-firm knowledge base where a wrong court date is a real
+failure, not a bad chatbot answer.
+<a href="docs/story/">Read the story →</a></p>
 </section>
 <section class="closing">
 <p>The database is the only source of truth. <code>CLAUDE.md</code> and

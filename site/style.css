@@ -188,6 +188,11 @@ article tbody tr:hover td{background:rgba(27,33,41,.5)}
 .shots figure{margin:0}
 .shots img{width:100%;border-radius:var(--r-lg);border:1px solid var(--border)}
 .shots figcaption{color:var(--text-faint);font-size:13px;margin-top:8px;text-align:center}
+.story-quote{max-width:680px;margin:0 auto;padding:48px 0 8px;text-align:center}
+.story-quote blockquote{font-size:clamp(20px,2.6vw,26px);font-weight:600;letter-spacing:-.015em;
+  line-height:1.4;color:var(--text);text-wrap:balance}
+.story-quote blockquote b{color:var(--purple)}
+.story-quote p{margin-top:16px;color:var(--text-dim);font-size:15px;text-wrap:pretty}
 .closing{text-align:center;padding:54px 0 26px}
 .closing p{max-width:56ch;margin:0 auto 22px;color:var(--text-dim);font-size:17px}
 

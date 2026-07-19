@@ -72,7 +72,7 @@ def _docs_index() -> list[dict]:
             title = f.stem.replace("_", " ")
             out.append({"id": f.stem, "title": title})
     order = {"QUICKSTART": 0, "README": 1, "SETUP": 2, "ARCHITECTURE": 3,
-             "CLI_REFERENCE": 4, "COMPARISON": 5}
+             "CLI_REFERENCE": 4, "COMPARISON": 5, "STORY": 6}
     out.sort(key=lambda d: order.get(d["id"], 99))
     return out
 
