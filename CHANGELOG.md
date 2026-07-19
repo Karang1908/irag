@@ -75,7 +75,7 @@ in spirit (no public API contract yet beyond the CLI).
 ### Changed
 - `irag sync` now prints a hint to run `irag update` whenever it queued
   events — closing the long-standing "I ran sync, why didn't the page
-  update" trap (HANDOFF §8.1). Silent when idle.
+  update" trap. Silent when idle.
 - `irag sessions --json` parses `files_changed`/`changes_detail` into
   real JSON arrays instead of double-encoded strings (shared
   `sessions.row_to_dict` used by both CLI and dashboard).
