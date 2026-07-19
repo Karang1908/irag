@@ -600,25 +600,27 @@ model, so bookkeeping never touches your agent's limits.</p>
 <p class="eyebrow">03 — What you get</p>
 <h2 class="sec-t">Built like a database, because it is one.</h2>
 <ol class="featlist">
-<li class="reveal"><span>01</span><h3>Verified, not just remembered</h3>
-<p>A deterministic linter checks every claim against the code. Wrong
-memory becomes a visible contradiction — and <code>irag check</code>
-fails CI until it's resolved.</p></li>
-<li class="reveal"><span>02</span><h3>Reads cost nothing</h3>
-<p>Search, code map, blast radius, recaps — pure SQL. A session starts
-briefed in ~3k tokens instead of re-reading the tree.</p></li>
-<li class="reveal"><span>03</span><h3>Writes go on a cheap model</h3>
-<p>The scribe is one pluggable CLI command. Point it at a free quota;
-your agent's rate limits stay untouched.</p></li>
-<li class="reveal"><span>04</span><h3>A diary with receipts</h3>
-<p>Every session is logged with the exact per-file changes it made.
-Any new chat resumes in ~150 tokens.</p></li>
-<li class="reveal"><span>05</span><h3>History you can query</h3>
-<p><code>why</code> traces a claim to the commit that caused it.
-<code>asof</code> time-travels. Rollback never rewrites.</p></li>
-<li class="reveal"><span>06</span><h3>One file, zero dependencies</h3>
-<p>The whole memory is <code>.irag/memory.db</code>. Pure-stdlib Python,
-works with or without git, any agent can mount it.</p></li>
+<li class="reveal"><span>01</span><h3>Pluggable memory</h3>
+<p>One <code>pip install</code>, one <code>irag init</code>. The whole
+memory is a single SQLite file in your repo — no service, no cloud, no
+keys. Unplug it, move it, mount it from any agent on any machine.</p></li>
+<li class="reveal"><span>02</span><h3>Your agent never greps again</h3>
+<p>Search, code map, blast radius, and context come from SQL — not from
+the model re-reading your tree.</p></li>
+<li class="reveal"><span>03</span><h3>Memory that can't quietly lie</h3>
+<p>The only memory tool that fact-checks its own claims against your
+code, records what's wrong, and fails CI while memory and code
+disagree.</p></li>
+<li class="reveal"><span>04</span><h3>Reads cost ~nothing</h3>
+<p>A ~3k-token briefing replaces 20–100k tokens of re-exploration —
+and writes go on whatever cheap or free model you point at it.</p></li>
+<li class="reveal"><span>05</span><h3>Every chat resumes where the last ended</h3>
+<p>A ~150-token recap of what previous sessions did and changed,
+injected automatically.</p></li>
+<li class="reveal"><span>06</span><h3>Works with every agent</h3>
+<p>Claude Code hooks make it fully automatic; the generated
+<code>AGENTS.md</code> reaches Codex, Antigravity, and Cursor. Git is
+optional.</p></li>
 </ol>
 </section>
 <section class="sec">
