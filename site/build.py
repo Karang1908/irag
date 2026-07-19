@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE = Path(__file__).resolve().parent
 
 GITHUB = "https://github.com/Karang1908/iRag"
+BASE = "https://karang1908.github.io/iRag/"
 
 # (slug, sidebar title, source path relative to repo root)
 PAGES = [
@@ -50,6 +51,63 @@ MD_LINK_MAP = {Path(src).name: slug for slug, _t, src in PAGES}
 def esc(s: str) -> str:
     return (s.replace("&", "&amp;").replace("<", "&lt;")
              .replace(">", "&gt;"))
+
+
+# build-time syntax highlighting for the languages the docs actually use
+# (GitHub-dark token colors; unknown languages stay plain)
+TOKEN_DEFS = {
+    "bash": [
+        ("c", r"#[^\n]*"),
+        ("s", r'"(?:\\.|[^"\\\n])*"|\'[^\'\n]*\''),
+        ("v", r"\$\{[^}\n]+\}|\$\w+"),
+        ("k", r"^ *(?:pip|irag|git|python3?|cd|sh|curl|gh|npm|node|export|"
+              r"rm|cp|mkdir|grep|cat|uses|run)\b"),
+    ],
+    "toml": [
+        ("c", r"#[^\n]*"),
+        ("f", r"^\[[^\]\n]+\]"),
+        ("s", r'"(?:\\.|[^"\\\n])*"'),
+        ("k", r"^[A-Za-z0-9_.-]+(?= *=)"),
+        ("n", r"\b\d+\b|\btrue\b|\bfalse\b"),
+    ],
+    "yaml": [
+        ("c", r"#[^\n]*"),
+        ("s", r'"(?:\\.|[^"\\\n])*"'),
+        ("k", r"^ *-? *[\w.{}$ /-]+(?=:)"),
+        ("n", r"\b\d+\b"),
+    ],
+    "sql": [
+        ("c", r"--[^\n]*"),
+        ("s", r"'[^'\n]*'"),
+        ("k", r"\b(?:SELECT|FROM|WHERE|JOIN|ON|AND|OR|ORDER|BY|GROUP|"
+              r"LIMIT|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|"
+              r"NOT|NULL|AS|COUNT|IS|DESC|ASC)\b"),
+        ("n", r"\b\d+\b"),
+    ],
+}
+
+
+def highlight(code: str, lang: str) -> str:
+    """Earliest-match-wins token scanner; everything HTML-escaped."""
+    defs = TOKEN_DEFS.get(lang)
+    if not defs:
+        return esc(code)
+    pats = [(cls, re.compile(p, re.M)) for cls, p in defs]
+    out: list[str] = []
+    i = 0
+    while i < len(code):
+        best, best_cls = None, None
+        for cls, rx in pats:
+            m = rx.search(code, i)
+            if m and m.group(0) and (best is None or m.start() < best.start()):
+                best, best_cls = m, cls
+        if best is None:
+            out.append(esc(code[i:]))
+            break
+        out.append(esc(code[i:best.start()]))
+        out.append(f'<span class="tk-{best_cls}">{esc(best.group(0))}</span>')
+        i = best.end()
+    return "".join(out)
 
 
 def slugify(text: str, used: set) -> str:
@@ -144,7 +202,8 @@ def md_to_html(src: str, rel: str) -> tuple[str, list, str]:
                 f'<div class="code-block">{label}'
                 f'<button class="code-copy" type="button" '
                 f'aria-label="Copy code">copy</button>'
-                f"<pre><code>{esc(chr(10).join(body))}</code></pre></div>")
+                f"<pre><code>{highlight(chr(10).join(body), lang)}"
+                f"</code></pre></div>")
             continue
 
         # table
@@ -277,30 +336,35 @@ FAVICON = ("data:image/svg+xml," +
 
 
 def sidebar(rel: str, active: str) -> str:
-    items = [f'<a class="side-brand" href="{rel}index.html">{LOGO}'
-             f"<b>irag</b><span class=\"side-docs\">docs</span></a>",
-             '<div class="search-box"><input id="search" type="search" '
-             'placeholder="Search docs…" autocomplete="off" '
-             'aria-label="Search documentation">'
-             '<div id="search-results" hidden></div></div>']
+    head = [f'<a class="side-brand" href="{rel}index.html">{LOGO}'
+            f"<b>irag</b><span class=\"side-docs\">docs</span></a>",
+            '<button class="menu-btn" type="button" aria-expanded="false" '
+            'aria-controls="side-links">Menu</button>',
+            '<div class="search-box"><input id="search" type="search" '
+            'placeholder="Search docs…" autocomplete="off" '
+            'aria-label="Search documentation"><kbd class="skbd">/</kbd>'
+            '<div id="search-results" hidden></div></div>']
+    links: list[str] = []
     for section, slugs in SECTIONS:
-        items.append(f'<div class="side-sec">{section}</div>')
+        links.append(f'<div class="side-sec">{section}</div>')
         for slug in slugs:
             title = next(t for s, t, _p in PAGES if s == slug)
             cur = ' aria-current="page"' if slug == active else ""
-            items.append(f'<a class="side-link" href="{rel}docs/{slug}/"'
+            links.append(f'<a class="side-link" href="{rel}docs/{slug}/"'
                          f"{cur}>{title}</a>")
-    items.append(f'<div class="side-sec">Project</div>'
+    links.append(f'<div class="side-sec">Project</div>'
                  f'<a class="side-link" href="{GITHUB}" target="_blank" '
                  f'rel="noopener">GitHub ↗</a>'
                  f'<a class="side-link" href="{GITHUB}/releases" '
                  f'target="_blank" rel="noopener">Releases ↗</a>')
-    return "<nav class=\"side\" aria-label=\"Documentation\">" \
-        + "".join(items) + "</nav>"
+    return ("<nav class=\"side\" aria-label=\"Documentation\">"
+            + "".join(head)
+            + f'<div class="side-links" id="side-links">{"".join(links)}'
+              "</div></nav>")
 
 
 def page_shell(title: str, desc: str, body: str, rel: str,
-               extra_class: str = "") -> str:
+               extra_class: str = "", path: str = "") -> str:
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -309,11 +373,19 @@ def page_shell(title: str, desc: str, body: str, rel: str,
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#0b0f14">
 <meta name="description" content="{esc(desc)}">
+<link rel="canonical" href="{BASE}{path}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{esc(title)}">
+<meta property="og:description" content="{esc(desc)}">
+<meta property="og:url" content="{BASE}{path}">
+<meta property="og:image" content="{BASE}assets/dashboard-overview.jpg">
+<meta name="twitter:card" content="summary_large_image">
 <title>{esc(title)}</title>
 <link rel="icon" href="{FAVICON}">
 <link rel="stylesheet" href="{rel}style.css">
 </head>
 <body class="{extra_class}">
+<a class="skip" href="#main">Skip to content</a>
 {body}
 <script src="{rel}app.js" defer></script>
 </body>
@@ -321,7 +393,7 @@ def page_shell(title: str, desc: str, body: str, rel: str,
 
 
 def doc_page(slug: str, title: str, html: str,
-             toc: list, prev_next: tuple) -> str:
+             toc: list, prev_next: tuple, src: str) -> str:
     rel = "../../"
     toc_html = ""
     h2s = [(t, a) for lvl, t, a in toc if lvl == 2]
@@ -341,17 +413,19 @@ def doc_page(slug: str, title: str, html: str,
                      f"<span>Next</span><b>{nt}</b></a>")
     body = f"""<div class="wrap">
 {sidebar(rel, slug)}
-<main class="doc">
+<main class="doc" id="main">
 <article>{html}</article>
 <div class="pagers">{prev_html}{next_html}</div>
 <footer class="foot">MIT licensed · built from
 <a href="{GITHUB}" target="_blank" rel="noopener">Karang1908/iRag</a>
-— docs generated by <code>site/build.py</code> (stdlib, zero deps)</footer>
+· <a href="{GITHUB}/blob/main/{src}" target="_blank"
+rel="noopener">Edit this page on GitHub</a></footer>
 </main>
 {toc_html}
 </div>"""
     return page_shell(f"{title} — irag docs",
-                      f"irag documentation — {title}", body, rel)
+                      f"irag documentation — {title}", body, rel,
+                      path=f"docs/{slug}/")
 
 
 # ---------------------------------------------------------------------
@@ -397,7 +471,7 @@ def landing() -> str:
 <a href="{GITHUB}" target="_blank" rel="noopener">GitHub ↗</a>
 </nav>
 </header>
-<main class="landing">
+<main class="landing" id="main">
 <section class="hero">
 <h1>Verified memory for<br>AI coding agents</h1>
 <p class="tag">irag replaces the flat context file with a relational
@@ -473,7 +547,8 @@ def build(out: Path) -> int:
         page = doc_page(
             slug, title, html, toc,
             ((prev_slug, titles[prev_slug]) if prev_slug else None,
-             (next_slug, titles[next_slug]) if next_slug else None))
+             (next_slug, titles[next_slug]) if next_slug else None),
+            src)
         d = out / "docs" / slug
         d.mkdir()
         (d / "index.html").write_text(page, encoding="utf-8")
@@ -494,6 +569,32 @@ def build(out: Path) -> int:
     (out / "search-index.json").write_text(
         json.dumps(search_index), encoding="utf-8")
     (out / ".nojekyll").write_text("")
+
+    # 404 (served by GitHub Pages at any depth -> absolute links)
+    body_404 = f"""<main class="landing" id="main"><section class="hero">
+<h1>404</h1>
+<p class="tag">That page doesn't exist (or moved when the docs were
+regenerated).</p>
+<div class="cta">
+<a class="btn primary" href="{BASE}">Home</a>
+<a class="btn" href="{BASE}docs/quickstart/">Docs</a>
+</div></section></main>"""
+    (out / "404.html").write_text(
+        page_shell("Page not found — irag", "Page not found",
+                   body_404, BASE, extra_class="is-landing",
+                   path="404.html"),
+        encoding="utf-8")
+
+    # sitemap + robots
+    urls = [BASE] + [f"{BASE}docs/{slug}/" for slug, _t, _s in PAGES]
+    sitemap = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+               '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+               + "".join(f"<url><loc>{u}</loc></url>" for u in urls)
+               + "</urlset>")
+    (out / "sitemap.xml").write_text(sitemap, encoding="utf-8")
+    (out / "robots.txt").write_text(
+        f"User-agent: *\nAllow: /\nSitemap: {BASE}sitemap.xml\n",
+        encoding="utf-8")
     n = len(list(out.rglob("*.html")))
     print(f"built {n} page(s) -> {out}")
     return n

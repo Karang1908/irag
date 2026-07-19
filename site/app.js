@@ -2,6 +2,16 @@
 (function () {
   "use strict";
 
+  /* ---------- mobile menu ---------- */
+  var menuBtn = document.querySelector(".menu-btn");
+  if (menuBtn) {
+    menuBtn.addEventListener("click", function () {
+      var side = menuBtn.closest(".side");
+      var open = side.classList.toggle("open");
+      menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    });
+  }
+
   /* ---------- copy buttons ---------- */
   document.querySelectorAll(".code-copy").forEach(function (btn) {
     btn.addEventListener("click", function () {
