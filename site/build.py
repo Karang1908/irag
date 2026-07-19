@@ -470,11 +470,12 @@ def landing() -> str:
          "dependencies, works with or without git."),
     ]
     cards = "".join(
-        f'<div class="feat"><h3>{t}</h3><p>{d}</p></div>'
+        f'<div class="feat reveal"><h3>{t}</h3><p>{d}</p></div>'
         for t, d in features)
     body = f"""<header class="hero-nav">
 <a class="side-brand" href="index.html">{LOGO}<b>irag</b></a>
 <nav aria-label="Site">
+<a href="#why">Why</a>
 <a href="docs/quickstart/">Docs</a>
 <a href="docs/changelog/">Changelog</a>
 <a href="{GITHUB}" target="_blank" rel="noopener">GitHub ↗</a>
@@ -482,16 +483,75 @@ def landing() -> str:
 </header>
 <main class="landing" id="main">
 <section class="hero">
-<h1>Verified memory for<br>AI coding agents</h1>
-<p class="tag">irag replaces the flat context file with a relational
-knowledge base that lives in your repo — LLM-written, versioned,
-<b>mechanically fact-checked against the code</b>, and served back to
-any agent for near-zero tokens.</p>
+<canvas id="net" aria-hidden="true"></canvas>
+<div class="hero-in">
+<p class="hero-badge"><span class="pulse-dot" aria-hidden="true"></span>v4.2.0 · zero dependencies · MIT</p>
+<h1 class="hero-name">irag</h1>
+<p class="hero-one">Your AI coding assistant forgets everything about your
+project the moment a chat ends. <b>irag is the memory it keeps</b> — what
+every file does, what changed and why, what past sessions decided — saved
+in one small file inside your repo and checked against your real code, so
+it can never quietly go stale.</p>
 <div class="cta">
-<a class="btn primary" href="docs/quickstart/">Get started</a>
+<a class="btn primary" href="docs/quickstart/">Get started in 2 minutes</a>
 <a class="btn" href="{GITHUB}" target="_blank" rel="noopener">Star on GitHub</a>
 </div>
 <div class="install"><code>pip install -e ./irag &nbsp;&&&nbsp; irag init</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
+</div>
+</section>
+<section class="hero-visual" aria-label="How irag works">
+<div class="pipe">
+<div class="pipe-node reveal">
+<span class="pn-icon" aria-hidden="true">⌘</span>
+<b>your agent</b><span>Claude Code · Cursor · Codex</span><i>reads memory — free</i>
+</div>
+<div class="pipe-track t-read" aria-hidden="true"><em></em><em></em><em></em><small>reads · zero tokens</small></div>
+<div class="pipe-node pipe-mem reveal">
+<span class="stack" aria-hidden="true"><span class="plate p1"></span><span class="plate p2"></span><span class="plate p3"></span></span>
+<b>irag</b><span>one SQLite file in your repo</span><i>pure SQL — never thinks</i>
+</div>
+<div class="pipe-track t-write" aria-hidden="true"><em></em><em></em><em></em><small>writes · cheap model</small></div>
+<div class="pipe-node reveal">
+<span class="pn-icon pn-icon-w" aria-hidden="true">✎</span>
+<b>a cheap scribe</b><span>any LLM CLI you configure</span><i>writes summaries — pluggable</i>
+</div>
+</div>
+<div class="term reveal tilt" role="img" aria-label="Terminal demo: irag init creates the memory, irag update fact-checks it, and a new agent session starts fully briefed">
+<div class="term-bar" aria-hidden="true"><span class="tb r"></span><span class="tb y"></span><span class="tb g"></span><span class="term-title">~/your-project</span></div>
+<pre class="term-body" id="term-body" aria-hidden="true"></pre>
+</div>
+</section>
+<section class="why reveal" id="why">
+<h2>The why</h2>
+<p class="why-lead">Every coding agent ships the same fix for amnesia: a
+markdown file it re-reads at startup. Those files rot — claims go stale,
+nobody notices, and the agent keeps trusting them. irag treats memory as a
+<b>storage problem, not a prompt problem</b>: version every claim,
+fact-check it against the code mechanically, and let your expensive agent
+read instead of re-explore. It began as a database-systems assignment — a
+law-firm knowledge base, where a wrong court date is a real failure — and
+kept that discipline when it was pointed at code.</p>
+<div class="why-grid">
+<div class="why-card reveal"><h3>Graphify</h3><p class="wc-sub">maps your code's structure</p>
+<p><b>Where it wins:</b> deterministic and free — a parse is almost never
+wrong.</p>
+<p><b>Where it stops:</b> structure only. It can't say <em>why</em> the
+code is shaped this way, or what last week's session decided.</p></div>
+<div class="why-card reveal"><h3>claude-mem</h3><p class="wc-sub">remembers your conversations</p>
+<p><b>Where it wins:</b> zero config, rich recall of everything you
+discussed.</p>
+<p><b>Where it stops:</b> nothing verifies what it stored. A wrong claim
+is remembered forever — confidently.</p></div>
+<div class="why-card is-irag reveal"><h3>irag</h3><p class="wc-sub">structure + meaning + history — verified</p>
+<p><b>Where it wins:</b> the only one that fact-checks its own memory
+against your code and fails CI while they disagree.</p>
+<p><b>Honest trade-offs:</b> writes cost LLM calls (pluggable — point them
+at a free-quota model), it needs Python 3.11+, and the linter verifies
+checkable claims — paths, symbols, versions — not opinions.</p></div>
+</div>
+<p class="why-more"><a href="docs/comparison/">Read the full, honest comparison →</a></p>
+</section>
+<section class="reveal">
 <ul class="sell" aria-label="Why irag">
 <li><b>Pluggable memory</b> — one SQLite file in your repo; no service, no cloud, no keys</li>
 <li><b>Your agent never greps again</b> — map, search &amp; context are SQL, not model calls</li>
@@ -501,21 +561,14 @@ any agent for near-zero tokens.</p>
 <li><b>Any agent</b> — Claude Code hooks, <code>AGENTS.md</code> for Codex / Antigravity / Cursor</li>
 </ul>
 </section>
-<section class="chain" aria-label="How the pieces relate">
-<div class="chain-box"><b>Claude Code</b><span>the operator</span><i>reads memory for free</i></div>
-<div class="chain-arrow">→</div>
-<div class="chain-box"><b>irag</b><span>the memory</span><i>SQL, never thinks</i></div>
-<div class="chain-arrow">→</div>
-<div class="chain-box"><b>any LLM CLI</b><span>the scribe</span><i>writes on a cheap quota</i></div>
-</section>
 <section class="feats">{cards}</section>
 <section class="shots">
-<figure><img src="assets/dashboard-overview.jpg" alt="irag dashboard overview" loading="lazy">
+<figure class="tilt reveal"><img src="assets/dashboard-overview.jpg" alt="irag dashboard overview" loading="lazy">
 <figcaption>Live dashboard: token burn, health, activity</figcaption></figure>
-<figure><img src="assets/dependency-graph.jpg" alt="Interactive dependency graph" loading="lazy">
+<figure class="tilt reveal"><img src="assets/dependency-graph.jpg" alt="Interactive dependency graph" loading="lazy">
 <figcaption>Obsidian-style dependency graph — pan, zoom, trace imports</figcaption></figure>
 </section>
-<section class="story-quote">
+<section class="story-quote reveal">
 <blockquote>"It should be a <b>database system with an AI layer</b>,
 not an AI system with a database attached."</blockquote>
 <p>irag started as a Database Systems assignment that outgrew its
@@ -523,7 +576,7 @@ domain — a law-firm knowledge base where a wrong court date is a real
 failure, not a bad chatbot answer.
 <a href="docs/story/">Read the story →</a></p>
 </section>
-<section class="closing">
+<section class="closing reveal">
 <p>The database is the only source of truth. <code>CLAUDE.md</code> and
 <code>AGENTS.md</code> are generated projections. The model never does
 bookkeeping.</p>
