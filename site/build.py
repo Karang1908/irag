@@ -504,15 +504,17 @@ def landing() -> str:
 </nav>
 </header>
 <main class="landing" id="main">
+<div class="spine" aria-hidden="true"><svg preserveAspectRatio="none">
+<line class="sp-track"/><line class="sp-fill"/></svg></div>
 <section class="hero">
 <div class="hero-copy">
-<p class="eyebrow hero-eyebrow">Verified memory for AI coding agents</p>
+<p class="eyebrow hero-eyebrow">Pluggable memory for AI coding agents</p>
 <h1 class="hero-name" aria-label="irag"><span>i</span><span>r</span><span>a</span><span>g</span><span class="hn-dot">.</span></h1>
-<p class="lede">Your AI coding assistant forgets everything about your
-project the moment a chat ends. <b>irag is the memory it keeps</b> — what
-every file does, what changed and why, what past sessions decided — saved
-in one small file inside your repo and checked against the real code, so
-it can never quietly lie.</p>
+<p class="lede">Plug a memory into any coding agent — Claude Code, Cursor,
+Codex — and it stops re-learning your codebase every session.
+<b>irag remembers what every file does, what changed and why, and what
+each session decided</b>: one SQLite file inside your repo, fact-checked
+against the real code, so it can never quietly lie.</p>
 <div class="cta">
 <a class="btn primary" href="docs/quickstart/">Get started</a>
 <a class="btn ghost" href="{GITHUB}" target="_blank" rel="noopener">GitHub ↗</a>
@@ -525,14 +527,14 @@ it can never quietly lie.</p>
 </figure>
 </section>
 <section class="stats" aria-label="irag in numbers">
-<div class="stat"><b>3k</b><span>tokens to brief a fresh session —
-instead of 20–100k of re-exploration</span></div>
-<div class="stat"><b>~150</b><span>tokens to resume any past
-conversation, with its per-file changes</span></div>
-<div class="stat"><b>1 file</b><span>the entire memory — SQLite,
-inside your repo, mounts anywhere</span></div>
-<div class="stat"><b>0</b><span>runtime dependencies, services,
-or API keys</span></div>
+<div class="stat"><b data-cnt="3" data-suf="k">3k</b><span>tokens to
+brief a fresh session — instead of 20–100k of re-exploration</span></div>
+<div class="stat"><b data-cnt="150" data-pre="~">~150</b><span>tokens to
+resume any past conversation, with its per-file changes</span></div>
+<div class="stat"><b data-cnt="1" data-suf=" file">1 file</b><span>the
+entire memory — SQLite, inside your repo, mounts anywhere</span></div>
+<div class="stat"><b data-cnt="0">0</b><span>runtime dependencies,
+services, or API keys</span></div>
 </section>
 <section class="sec" id="why">
 <p class="eyebrow">01 — Why it exists</p>
@@ -649,9 +651,10 @@ rel="noopener">Karang1908/iRag</a></span>
 </footer>
 </main>"""
     return page_shell(
-        "irag — verified memory for AI coding agents",
-        "A local, zero-dependency knowledge base that gives AI coding "
-        "agents persistent, fact-checked memory of your codebase.",
+        "irag — pluggable memory for AI coding agents",
+        "Pluggable, fact-checked memory for AI coding agents — one "
+        "SQLite file in your repo. Reads are free SQL; writes run on "
+        "any cheap model.",
         body, rel, extra_class="is-landing", anime=True)
 
 

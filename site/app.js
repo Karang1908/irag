@@ -132,6 +132,125 @@
     }
   }
 
+  /* ---------- scroll spine (landing) + parallax + counters ---------- */
+  var spine = document.querySelector(".spine");
+  var landingMain = document.querySelector("main.landing");
+  if (spine && landingMain) {
+    var track = spine.querySelector(".sp-track");
+    var fill = spine.querySelector(".sp-fill");
+    var svg = spine.querySelector("svg");
+    var marks = landingMain.querySelectorAll(".sec, .quote, .closing");
+    var nodes = [];
+    var spTop = 0, spH = 1;
+
+    marks.forEach(function () {
+      var c = document.createElementNS("http://www.w3.org/2000/svg",
+        "circle");
+      c.setAttribute("class", "sp-node");
+      c.setAttribute("cx", "7");
+      c.setAttribute("r", "4.5");
+      svg.appendChild(c);
+      nodes.push(c);
+    });
+    var layoutSpine = function () {
+      var stats = landingMain.querySelector(".stats");
+      var closing = landingMain.querySelector(".closing");
+      if (!stats || !closing) return;
+      spTop = stats.offsetTop;
+      spH = closing.offsetTop + closing.offsetHeight - spTop;
+      spine.style.top = spTop + "px";
+      spine.style.height = spH + "px";
+      ["x1", "x2"].forEach(function (a) {
+        track.setAttribute(a, "7");
+        fill.setAttribute(a, "7");
+      });
+      track.setAttribute("y1", "0");
+      track.setAttribute("y2", spH);
+      fill.setAttribute("y1", "0");
+      marks.forEach(function (m, i) {
+        nodes[i].setAttribute("cy",
+          Math.max(10, m.offsetTop - spTop + 112));
+      });
+    };
+    var ticking = false;
+    var onScroll = function () {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(function () {
+        ticking = false;
+        var read = window.scrollY + window.innerHeight * 0.4 -
+          (landingMain.offsetTop + spTop);
+        var p = Math.max(0, Math.min(1, read / spH));
+        fill.setAttribute("y2", p * spH);
+        nodes.forEach(function (c) {
+          c.classList.toggle("on", +c.getAttribute("cy") <= p * spH);
+        });
+        var hg = document.querySelector(".hero-graph");
+        if (hg && !REDUCE && window.innerWidth > 1000) {
+          hg.style.transform = "translateY(" +
+            Math.max(-44, -window.scrollY * 0.06).toFixed(1) + "px)";
+        }
+      });
+    };
+    layoutSpine();
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", function () {
+      layoutSpine();
+      onScroll();
+    });
+    /* re-measure once images/fonts have settled the layout */
+    window.addEventListener("load", function () {
+      layoutSpine();
+      onScroll();
+    });
+  }
+
+  /* stat count-up when the strip scrolls in */
+  var statNums = document.querySelectorAll(".stat b[data-cnt]");
+  if (statNums.length && window.anime && !REDUCE &&
+      "IntersectionObserver" in window) {
+    var counted = false;
+    new IntersectionObserver(function (entries, obs) {
+      if (counted || !entries.some(function (e) { return e.isIntersecting; }))
+        return;
+      counted = true;
+      obs.disconnect();
+      statNums.forEach(function (el) {
+        var end = +el.dataset.cnt;
+        var pre = el.dataset.pre || "";
+        var suf = el.dataset.suf || "";
+        var o = { v: 0 };
+        anime({
+          targets: o, v: end, round: 1, duration: 1100,
+          easing: "easeOutExpo",
+          update: function () { el.textContent = pre + o.v + suf; }
+        });
+      });
+    }, { threshold: 0.4 }).observe(statNums[0]);
+  }
+
+  /* ---------- docs reading progress bar ---------- */
+  if (document.querySelector(".doc") && !REDUCE) {
+    var bar = document.createElement("div");
+    bar.className = "readbar";
+    document.body.appendChild(bar);
+    var barTick = false;
+    var onRead = function () {
+      if (barTick) return;
+      barTick = true;
+      requestAnimationFrame(function () {
+        barTick = false;
+        var h = document.documentElement;
+        var max = h.scrollHeight - h.clientHeight;
+        bar.style.transform = "scaleX(" +
+          (max > 0 ? window.scrollY / max : 0).toFixed(4) + ")";
+      });
+    };
+    onRead();
+    window.addEventListener("scroll", onRead, { passive: true });
+  }
+
   /* ---------- 3D tilt on hover ---------- */
   if (!REDUCE && matchMedia("(hover: hover)").matches) {
     document.querySelectorAll(".tilt").forEach(function (el) {

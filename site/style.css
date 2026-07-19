@@ -22,6 +22,8 @@ body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
   background:
     radial-gradient(900px circle at 85% -10%, rgba(88,166,255,.05), transparent 60%),
     radial-gradient(700px circle at 0% 0%, rgba(235,240,255,.03), transparent 55%)}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:40;opacity:.05;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.5'/%3E%3C/svg%3E")}
 ::selection{background:var(--accent-dim)}
 ::-webkit-scrollbar{width:10px;height:10px}
 ::-webkit-scrollbar-thumb{background:rgba(235,240,255,.16);border-radius:6px;border:2px solid transparent;background-clip:padding-box}
@@ -154,11 +156,17 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
   background:rgba(8,9,12,.72);backdrop-filter:blur(12px)}
 .hero-nav .side-brand{padding:0}
 .hero-nav nav{display:flex;gap:26px;font-size:14px;align-items:center}
-.hero-nav nav a{color:var(--text-dim)}
+.hero-nav nav a{color:var(--text-dim);position:relative}
+.hero-nav nav a::after{content:"";position:absolute;left:0;right:0;bottom:-5px;height:1px;
+  background:var(--text);transform:scaleX(0);transform-origin:right;
+  transition:transform .28s var(--ease)}
 .hero-nav nav a:hover{color:var(--text);text-decoration:none}
+.hero-nav nav a:hover::after{transform:scaleX(1);transform-origin:left}
 .landing{max-width:1180px;margin:0 auto;padding:0 40px}
 
 .eyebrow{font:600 11px var(--mono);letter-spacing:.18em;text-transform:uppercase;color:var(--text-faint)}
+.sec>.eyebrow::before,.hero-eyebrow::before{content:"";display:inline-block;width:22px;height:1px;
+  background:var(--accent);margin-right:12px;vertical-align:4px}
 .mono-cap{font:12px var(--mono);color:var(--text-faint);letter-spacing:.03em}
 .sec{padding:104px 0 96px;border-top:1px solid var(--border)}
 .sec-t{font-family:var(--display);font-weight:600;font-size:clamp(34px,4.5vw,54px);
@@ -178,9 +186,10 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
   letter-spacing:-.01em;color:var(--text)}
 .btn:hover{text-decoration:none}
 .btn.primary{background:var(--text);color:#0a0b0e}
-.btn.primary:hover{background:#fff}
+.btn.primary:hover{background:#fff;transform:translateY(-1px);
+  box-shadow:0 10px 28px -14px rgba(242,243,245,.5)}
 .btn.ghost{border:1px solid var(--border-strong)}
-.btn.ghost:hover{border-color:var(--text-dim)}
+.btn.ghost:hover{border-color:var(--text-dim);transform:translateY(-1px)}
 .install{position:relative;display:inline-flex;align-items:center;gap:12px;margin-top:18px;
   border:1px solid var(--border);border-radius:999px;padding:10px 12px 10px 18px;max-width:100%}
 .install code{background:none;border:none;padding:0;font-size:13px;color:var(--text-dim);white-space:nowrap;
@@ -271,6 +280,20 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
   margin:0;padding:24px 0 30px;font:12.5px var(--mono)}
 .foot.land a{color:var(--text-dim)}
 
+/* scroll spine — draws down the page as you read */
+.spine{position:absolute;left:-1px;top:0;width:14px;pointer-events:none;display:none}
+.spine svg{width:14px;height:100%;overflow:visible}
+.sp-track{stroke:var(--border);stroke-width:2}
+.sp-fill{stroke:var(--accent);stroke-width:2;filter:drop-shadow(0 0 6px rgba(88,166,255,.45))}
+.sp-node{fill:var(--bg);stroke:var(--border-strong);stroke-width:2;
+  transition:stroke .3s var(--ease),fill .3s var(--ease)}
+.sp-node.on{fill:var(--accent);stroke:var(--accent)}
+@media (min-width:1280px){.spine{display:block}}
+
+/* docs reading progress bar */
+.readbar{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:var(--accent);
+  transform:scaleX(0);transform-origin:left;pointer-events:none}
+
 /* scroll reveal (gated on .js so content is never hidden without JS) */
 .js .reveal{opacity:0;transform:translateY(20px);
   transition:opacity .65s var(--ease),transform .65s var(--ease)}
@@ -318,7 +341,7 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
   .install code{white-space:normal}
 }
 @media (prefers-reduced-motion: no-preference){
-  .side-link,.btn,.pager,.code-copy{transition:background var(--dur) var(--ease),color var(--dur),border-color var(--dur),filter var(--dur)}
+  .side-link,.btn,.pager,.code-copy{transition:background var(--dur) var(--ease),color var(--dur),border-color var(--dur),filter var(--dur),transform var(--dur) var(--ease),box-shadow var(--dur)}
 }
 @media (prefers-reduced-motion: reduce){
   .ggraph{animation:none}

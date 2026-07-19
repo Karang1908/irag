@@ -1,33 +1,53 @@
-# irag
+<p align="center">
+  <img src="docs/assets/irag-banner.svg" alt="irag — pluggable memory for AI coding agents" width="100%">
+</p>
 
-**Verified relational memory for AI coding agents.** One SQLite file that
-gives any agent persistent, fact-checked knowledge of your codebase —
-instead of a flat `CLAUDE.md` that silently rots.
+<p align="center">
+  <b>Plug a memory into any coding agent — it stops re-learning your
+  codebase every session.</b><br>
+  <sub>reads are free SQL &nbsp;·&nbsp; writes run on any cheap model
+  &nbsp;·&nbsp; every claim fact-checked against the real code</sub>
+</p>
 
-![CI](https://github.com/Karang1908/iRag/actions/workflows/ci.yml/badge.svg)
-![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
-![Zero dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen)
-![License: MIT](https://img.shields.io/badge/license-MIT-yellow)
-![Version](https://img.shields.io/badge/version-4.2.0-purple)
+<p align="center">
+  <img src="https://github.com/Karang1908/iRag/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
+  <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
+  <img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT">
+  <img src="https://img.shields.io/badge/version-4.2.0-purple" alt="Version 4.2.0">
+</p>
+
+<p align="center">
+  <a href="https://karang1908.github.io/iRag/"><b>Docs site</b></a> ·
+  <a href="https://karang1908.github.io/iRag/docs/quickstart/">Quickstart</a> ·
+  <a href="https://karang1908.github.io/iRag/docs/architecture/">Architecture</a> ·
+  <a href="https://karang1908.github.io/iRag/docs/comparison/">Comparison</a>
+</p>
+
+```bash
+pip install -e ./irag && irag init      # that's the whole setup
+```
+
+| **3k** | **~150** | **1 file** | **0** |
+|:--:|:--:|:--:|:--:|
+| tokens to brief a fresh session | tokens to resume any past chat | SQLite — the entire memory | runtime deps, services, keys |
 
 **Why you'll want this:**
 
-- 🔌 **Pluggable memory** — one `pip install`, one `irag init`. The
-  entire memory is a single SQLite file in your repo: no service, no
-  cloud, no API keys, any agent on any machine can mount it.
-- 🚫 **Your agent never greps again** — stop paying tokens for the same
-  re-exploration every session. Search, code map, blast radius, and
-  context come from SQL, not from the model reading your tree.
-- 🔍 **Memory that can't quietly lie** — the only memory tool that
-  fact-checks its own claims against your code, flags what's wrong, and
-  fails CI while memory and code disagree.
-- 💸 **Costs ~nothing to run** — reads are zero-token; writes go on
-  whatever cheap or free model you point it at. Your expensive coding
-  agent just reads a ~3k-token briefing.
-- ⏮ **Every chat resumes where the last one ended** — a ~150-token
-  recap of what previous sessions did and changed, injected
-  automatically. No more "let me look around the codebase first."
-- 🤝 **Works with every agent** — Claude Code hooks make it fully
+- **Pluggable memory** — one `pip install`, one `irag init`. The whole
+  memory is a single SQLite file in your repo: no service, no cloud, no
+  keys. Unplug it, move it, mount it from any agent on any machine.
+- **Your agent never greps again** — search, code map, blast radius, and
+  context come from SQL, not from the model re-reading your tree.
+- **Memory that can't quietly lie** — the only memory tool that
+  fact-checks its own claims against your code, records what's wrong,
+  and fails CI while memory and code disagree.
+- **Reads cost ~nothing** — a ~3k-token briefing replaces 20–100k tokens
+  of re-exploration; writes go on whatever cheap or free model you point
+  at it.
+- **Every chat resumes where the last one ended** — a ~150-token recap
+  of what previous sessions did and changed, injected automatically.
+- **Works with every agent** — Claude Code hooks make it fully
   automatic; generated `AGENTS.md` reaches Codex, Antigravity, and
   Cursor; git is optional.
 
