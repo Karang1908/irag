@@ -4,12 +4,14 @@
 <meta charset="utf-8">
 <title>irag — knowledge base dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0b0f14">
 <style>
 :root{
   /* ---- color: GitHub-dark-derived, restrained (accent = action/state only) ---- */
   --bg:#0b0f14; --bg-inset:#080b0f; --panel:#141a22; --panel-2:#1b2129;
   --border:#262d38; --border-strong:#3a434f;
-  --text:#e6edf3; --text-dim:#9aa4b2; --text-faint:#6b7480;
+  --text:#e6edf3; --text-dim:#9aa4b2; --text-faint:#7d8590;
   --accent:#58a6ff; --accent-2:#7cc0ff; --accent-dim:rgba(88,166,255,.13); --accent-ring:rgba(88,166,255,.5);
   --green:#3fb950; --green-dim:#0f2318; --green-bd:#1f4630;
   --red:#f85149; --red-dim:#2a1416; --red-bd:#4c2326;
@@ -110,9 +112,10 @@ section.show{display:block}
     transition:transform var(--dur) var(--ease),border-color var(--dur),box-shadow var(--dur)}
   .card:hover{transform:translateY(-3px);border-color:var(--border-strong);box-shadow:0 12px 30px -14px rgba(0,0,0,.8)}}
 @keyframes card-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
-.card-h{display:flex;align-items:center;gap:var(--sp-2);color:var(--text-dim)}
-.card-ic{display:flex;color:var(--text-faint)}.card-ic svg{width:14px;height:14px}
-.card .label{font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:.05em}
+.card-h{display:flex;align-items:center;gap:var(--sp-2);color:var(--text-dim);min-width:0}
+.card-ic{display:flex;color:var(--text-faint);flex-shrink:0}.card-ic svg{width:14px;height:14px}
+.card .label{font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:.05em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card .value{font-size:var(--fs-2xl);font-weight:680;margin-top:var(--sp-3);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
 .card .value.burn{color:var(--purple)}
 .card .value.bad{color:var(--red)}
@@ -146,9 +149,9 @@ table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
 th{color:var(--text-dim);text-align:left;font-weight:600;padding:var(--sp-2);border-bottom:1px solid var(--border);
   font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:.04em}
 td{padding:var(--sp-2);border-bottom:1px solid var(--panel-2);font-family:var(--mono);font-size:var(--fs-xs)}
-tbody tr[onclick]{cursor:pointer}
-@media (prefers-reduced-motion: no-preference){tbody tr[onclick]{transition:background var(--dur)}}
-tbody tr[onclick]:hover{background:var(--panel-2)}
+tbody tr[onclick],tbody tr[data-subject]{cursor:pointer}
+@media (prefers-reduced-motion: no-preference){tbody tr[onclick],tbody tr[data-subject]{transition:background var(--dur)}}
+tbody tr[onclick]:hover,tbody tr[data-subject]:hover{background:var(--panel-2)}
 .sev-high{color:var(--red)}.sev-medium{color:var(--orange)}.sev-low{color:var(--text-dim)}
 .bar{height:5px;border-radius:3px;background:var(--panel-2);overflow:hidden;min-width:44px}
 .bar>span{display:block;height:100%;border-radius:3px}
@@ -160,8 +163,13 @@ button.primary{position:relative;background:linear-gradient(180deg,var(--accent)
   border-radius:var(--r-md);padding:9px 17px;font-weight:650;cursor:pointer;font-size:var(--fs-sm);font-family:inherit;
   box-shadow:0 4px 16px -6px var(--accent-ring)}
 button.primary:hover{filter:brightness(1.06)}
+button.primary:active{filter:brightness(.96)}
 button.primary:disabled{opacity:.5;cursor:default;box-shadow:none}
-@media (prefers-reduced-motion: no-preference){button.mini,button.primary{transition:border-color var(--dur),filter var(--dur),color var(--dur)}}
+button.mini:active{background:var(--border)}
+button.mini:disabled{opacity:.5;cursor:default;border-color:var(--border)}
+@media (prefers-reduced-motion: no-preference){
+  button.mini,button.primary{transition:border-color var(--dur),filter var(--dur),color var(--dur),transform 80ms ease}
+  button.primary:active,button.mini:active{transform:scale(.98)}}
 
 .badge{display:inline-flex;align-items:center;gap:5px;font-size:var(--fs-2xs);font-weight:700;letter-spacing:.03em;
   padding:2px 9px;border-radius:99px}
@@ -275,6 +283,7 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
 .graph-ctrl button:hover{color:var(--text);border-color:var(--accent)}
 
 /* ---------- narrow viewport ---------- */
+@media (max-width:900px){#tb-stat{display:none}}
 @media (max-width:760px){
   .app{grid-template-columns:1fr}
   .sidebar{position:sticky;top:0;height:auto;flex-direction:row;align-items:center;border-right:none;
@@ -302,17 +311,18 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
       </svg>
       <b>irag</b><span class="dot" id="live-dot" title="live"></span>
     </div>
-    <nav class="tabs">
-      <button data-tab="overview" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Overview</span></button>
-      <button data-tab="chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Chat</span></button>
-      <button data-tab="health"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Health</span></button>
-      <button data-tab="map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.8"/><circle cx="6" cy="12" r="2.8"/><circle cx="18" cy="19" r="2.8"/><line x1="8.4" y1="13.4" x2="15.6" y2="17.6"/><line x1="15.6" y1="6.4" x2="8.4" y2="10.6"/></svg><span>Map</span></button>
-      <button data-tab="sessions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg><span>Sessions</span></button>
-      <button data-tab="docs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg><span>Docs</span></button>
+    <nav class="tabs" aria-label="Dashboard sections">
+      <button data-tab="overview" aria-label="Overview" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Overview</span></button>
+      <button data-tab="chat" aria-label="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Chat</span></button>
+      <button data-tab="health" aria-label="Health"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Health</span></button>
+      <button data-tab="map" aria-label="Map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.8"/><circle cx="6" cy="12" r="2.8"/><circle cx="18" cy="19" r="2.8"/><line x1="8.4" y1="13.4" x2="15.6" y2="17.6"/><line x1="15.6" y1="6.4" x2="8.4" y2="10.6"/></svg><span>Map</span></button>
+      <button data-tab="sessions" aria-label="Sessions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg><span>Sessions</span></button>
+      <button data-tab="docs" aria-label="Docs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg><span>Docs</span></button>
     </nav>
     <div class="sidebar-foot">
       <span class="ver" id="foot-ver">irag</span>
       <span>local · 127.0.0.1</span>
+      <span title="keyboard shortcuts">keys 1–6 switch tabs</span>
     </div>
   </aside>
 
@@ -358,13 +368,13 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
       <h3>Knowledge base
         <span class="pill">auto-routes: <b style="color:var(--green)">SQL</b> · <b style="color:var(--purple)">AI</b></span>
       </h3>
-      <div id="chat-log">
+      <div id="chat-log" aria-live="polite">
         <div class="msg bot"><span class="badge sql">HOW IT WORKS</span>
         Type a file name, symbol, or keywords → instant <b>SQL</b> full-text search.
         Ask a question ("how does auth work?") → <b>AI</b> answers from the verified pages, with citations.</div>
       </div>
       <form id="chat-form">
-        <select id="chat-mode"><option value="auto">auto</option><option value="sql">SQL</option><option value="ai">AI</option></select>
+        <select id="chat-mode" aria-label="Answer mode"><option value="auto">auto</option><option value="sql">SQL</option><option value="ai">AI</option></select>
         <input id="chat-input" placeholder="Ask anything, or type keywords / a file path…" autocomplete="off">
         <button class="primary">Send</button>
       </form>
@@ -472,13 +482,27 @@ const perTab={
   health:refreshHealth, map:refreshMap, sessions:refreshSessions,
   docs:()=>{if(!docsLoaded)loadDocs()},
 };
-document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>{
-  document.querySelectorAll("nav.tabs button").forEach(x=>x.classList.remove("active"));
+function switchTab(name){
+  const b=document.querySelector(`nav.tabs button[data-tab="${name}"]`);if(!b)return;
+  document.querySelectorAll("nav.tabs button").forEach(x=>{
+    x.classList.remove("active");x.removeAttribute("aria-current")});
   document.querySelectorAll("main section").forEach(s=>s.classList.remove("show"));
-  b.classList.add("active");$("#"+b.dataset.tab).classList.add("show");
-  $("#crumb-tab").textContent=TITLES[b.dataset.tab]||"";
-  (perTab[b.dataset.tab]||(()=>{}))();
-  if(GRAPH&&b.dataset.tab!=="map")GRAPH.stop();   // pause the sim off-tab
+  b.classList.add("active");b.setAttribute("aria-current","page");
+  $("#"+name).classList.add("show");
+  $("#crumb-tab").textContent=TITLES[name]||"";
+  (perTab[name]||(()=>{}))();
+  if(GRAPH&&name!=="map")GRAPH.stop();   // pause the sim off-tab
+}
+document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+document.querySelector('nav.tabs button.active')?.setAttribute("aria-current","page");
+/* keyboard: 1-6 switch tabs (ignored while typing) */
+const TAB_ORDER=["overview","chat","health","map","sessions","docs"];
+addEventListener("keydown",e=>{
+  if(e.metaKey||e.ctrlKey||e.altKey)return;
+  const t=e.target;
+  if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT"||t.isContentEditable))return;
+  const i=Number(e.key)-1;
+  if(i>=0&&i<TAB_ORDER.length){switchTab(TAB_ORDER[i])}
 });
 
 /* ---------- count-up ---------- */
@@ -568,12 +592,22 @@ async function refreshFeed(){
     :`<div class="empty">No activity yet — run <code>irag update</code> to synthesize the first pages.</div>`;
 }
 $("#run-update").onclick=async()=>{
-  $("#run-update").disabled=true;
-  await api("/api/update",{method:"POST",body:"{}"});
+  const btn=$("#run-update");btn.disabled=true;
+  try{
+    await api("/api/update",{method:"POST",body:"{}"});
+  }catch(e){
+    $("#update-log").textContent="update failed to start — is the server running?";
+    btn.disabled=false;return;
+  }
   const poll=setInterval(async()=>{
-    const u=await api("/api/update-log");
-    $("#update-log").textContent=u.log.slice(-2).join("  ·  ");
-    if(!u.running){clearInterval(poll);$("#run-update").disabled=false;refreshStatus();refreshBurn();refreshFeed()}
+    try{
+      const u=await api("/api/update-log");
+      $("#update-log").textContent=u.log.slice(-2).join("  ·  ");
+      if(!u.running){clearInterval(poll);btn.disabled=false;refreshStatus();refreshBurn();refreshFeed()}
+    }catch(e){
+      clearInterval(poll);btn.disabled=false;
+      $("#update-log").textContent="lost contact with the server";
+    }
   },800);
 };
 
@@ -623,11 +657,15 @@ async function refreshHealth(){
   $("#staletab tbody").innerHTML=st.length?st.slice(0,30).map(p=>{
     const w=Math.round(p.staleness_score/mx*100);
     const col=p.staleness_score>=mx*.66?"var(--red)":p.staleness_score>=mx*.33?"var(--orange)":"var(--accent)";
-    return `<tr onclick="viewPage('${esc(p.subject_id)}')"><td>${esc(p.subject_id)}</td><td>${p.page_type}</td>
+    return `<tr data-subject="${esc(p.subject_id).replace(/"/g,"&quot;")}"><td>${esc(p.subject_id)}</td><td>${p.page_type}</td>
       <td><div style="display:flex;align-items:center;gap:8px"><div class="bar"><span style="width:${w}%;background:${col}"></span></div>${p.staleness_score}${p.pinned?" 📌":""}</div></td></tr>`}).join("")
     :`<tr><td colspan="3">no pages yet</td></tr>`;
 }
 window.resolveC=async id=>{await api("/api/resolve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});refreshHealth();refreshStatus()};
+$("#staletab tbody").addEventListener("click",e=>{
+  const tr=e.target.closest("tr[data-subject]");
+  if(tr)viewPage(tr.dataset.subject);
+});
 window.viewPage=async s=>{
   const p=await api("/api/page?subject="+encodeURIComponent(s));
   const v=$("#page-view");v.style.display="block";
@@ -645,7 +683,10 @@ async function refreshMap(){
   $("#mapfiles tbody").innerHTML=m.files.length?m.files.map(f=>`<tr><td>${esc(f.subject_id)}</td><td style="color:var(--text-dim)">${f.n} symbol(s)</td></tr>`).join(""):"<tr><td>no scan data</td></tr>";
   $("#mapdeps tbody").innerHTML=m.deps.length?m.deps.map(d=>`<tr><td>${esc(d.s)}</td><td style="color:var(--text-dim)">→</td><td>${esc(d.t)}</td><td style="color:var(--text-dim)">×${d.n}</td></tr>`).join(""):"<tr><td>no edges</td></tr>";
   if(!GRAPH)GRAPH=createGraph(document.getElementById("graph"));
-  GRAPH.setData(m.files,m.deps);GRAPH.start();
+  GRAPH.setData(m.files,m.deps);
+  // the fetch is async — only (re)start the sim if Map is still the
+  // visible tab by the time the data lands
+  if($("#map").classList.contains("show"))GRAPH.start();
 }
 function renderLegend(nodes){
   const segs=[...new Set(nodes.map(n=>n.id.split("/")[0]||n.id))].slice(0,7);
@@ -729,7 +770,8 @@ function createGraph(container){
   function nodeAt(x,y){const w=toWorld(x,y);let best=null,bd=1e9;nodes.forEach(n=>{const d=Math.hypot(n.x-w.x,n.y-w.y);if(d<=n.r+4&&d<bd){bd=d;best=n}});return best}
   function pos(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
   function nInfo(n){const imp=links.filter(l=>l.s===n).length,ib=links.filter(l=>l.t===n).length;setInfo(`<b>${esc(n.id)}</b> · ${n.n} symbol(s) · imports ${imp} · imported by ${ib}`)}
-  canvas.addEventListener("mousedown",e=>{const p=pos(e),n=nodeAt(p.x,p.y);
+  canvas.addEventListener("mousedown",e=>{if(e.button!==0)return;
+    const p=pos(e),n=nodeAt(p.x,p.y);
     if(n){drag=n;const w=toWorld(p.x,p.y);drag._ox=w.x-n.x;drag._oy=w.y-n.y;n.fx=n.x;n.fy=n.y;reheat()}else panning=true;
     last=p;container.classList.add("grabbing")});
   addEventListener("mousemove",e=>{if(!running)return;const p=pos(e);
@@ -756,12 +798,18 @@ async function refreshSessions(){
     $("#sess-detail").innerHTML=`<div class="empty">Nothing to show yet.</div>`;return;
   }
   list.innerHTML=rows.map(r=>
-    `<div class="sess-row" data-id="${r.session_id}" onclick="viewSession(${r.session_id})">
+    `<div class="sess-row" data-id="${r.session_id}" tabindex="0" role="button"
+          aria-label="Session ${r.session_id}" onclick="viewSession(${r.session_id})">
        <div class="sess-row-top"><span class="badge status-${r.status}">${r.status}</span>
          <span class="pill">${esc(r.agent||"")}</span><span class="sess-time">${(r.started_at||"").slice(0,16)}</span></div>
        <div class="sess-summary">${esc((r.summary||"(no summary)").slice(0,140))}</div>
        <div class="sess-meta">${r.files_changed.length} file(s) · ${r.versions_written} version(s) · ${r.decisions}d/${r.lessons}l</div>
      </div>`).join("");
+  list.onkeydown=e=>{
+    if(e.key!=="Enter"&&e.key!==" ")return;
+    const row=e.target.closest(".sess-row");
+    if(row){e.preventDefault();viewSession(Number(row.dataset.id))}
+  };
   viewSession(rows[0].session_id);
 }
 window.viewSession=id=>{
@@ -803,7 +851,7 @@ function md(src){
       const cells=ln.slice(1,-1).split("|").map(c=>inline(c.trim()));
       out.push("<tr><td>"+cells.join("</td><td>")+"</td></tr>");continue}
     if(inTable){out.push("</table>");inTable=false}
-    if(/^#{1,3} /.test(ln)){flush();const l=ln.match(/^#+/)[0].length;out.push(`<h${l}>${inline(ln.slice(l+1))}</h${l}>`);continue}
+    if(/^#{1,4} /.test(ln)){flush();const l=ln.match(/^#+/)[0].length;out.push(`<h${l}>${inline(ln.slice(l+1))}</h${l}>`);continue}
     if(/^[-*] /.test(ln)){if(!inList){out.push("<ul>");inList=true}out.push("<li>"+inline(ln.slice(2))+"</li>");continue}
     if(inList&&ln.trim()===""){out.push("</ul>");inList=false;continue}
     if(ln.trim()==="")continue;
@@ -812,10 +860,14 @@ function md(src){
   flush();if(inCode)out.push("</code></pre>");
   return out.join("");
 }
-function inline(s){return s
-  .replace(/`([^`]+)`/g,"<code>$1</code>")
-  .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
-  .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank">$1</a>')}
+function inline(s){
+  // protect code spans first so *,[ inside them are never styled
+  const spans=[];
+  s=s.replace(/`([^`]+)`/g,(_,c)=>{spans.push(`<code>${c}</code>`);return `\x00${spans.length-1}\x00`});
+  s=s.replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
+     .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank">$1</a>');
+  return s.replace(/\x00(\d+)\x00/g,(_,i)=>spans[Number(i)]);
+}
 
 /* ---------- init + polling ---------- */
 let resizeT;

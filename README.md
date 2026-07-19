@@ -175,6 +175,11 @@ Full reference: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
 ## Documentation
 
+**📖 Full docs site: [karang1908.github.io/iRag](https://karang1908.github.io/iRag/)**
+— searchable, with a quickstart, architecture deep-dive, and full CLI
+reference. Built by `site/build.py` (stdlib, zero deps) and deployed by
+CI on every push. The same content lives in this repo:
+
 - [docs/SETUP.md](docs/SETUP.md) — install, LLM configuration (incl.
   the agy/Antigravity split), hooks, CI gate
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — schema, data flows,

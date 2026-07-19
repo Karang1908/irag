@@ -10,3 +10,4 @@ venv/
 # per-project irag state — never the package's own concern
 .irag/
 irag_vault/
+_site/
