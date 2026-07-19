@@ -27,12 +27,28 @@ cd your-project
 irag init
 ```
 
-Git is optional. With a git repo, irag follows commits (richer provenance
-— commit messages feed synthesis) and installs hooks. In a plain folder,
-irag runs in **snapshot mode**: it fingerprints every file and `irag
-sync` detects adds/edits/deletes by content hash — no commits needed.
-`git init` later and it upgrades automatically (`[ingest].mode = "auto"`).
-Set `mode = "snapshot"` to track uncommitted work even inside a git repo.
+**The directory you run `init` in becomes the project — nothing above
+it.** Git is optional. When the directory is itself a git repo's top
+level, irag follows commits (richer provenance — commit messages feed
+synthesis) and installs hooks. In a plain folder — or a folder that
+sits *inside* some larger git repository (a versioned home directory,
+a monorepo you only want one corner of) — irag runs in **snapshot
+mode**: it fingerprints every file and `irag sync` detects
+adds/edits/deletes by content hash, without touching the enclosing
+repo. `git init` the project itself later and it upgrades automatically
+(`[ingest].mode = "auto"`). Set `mode = "snapshot"` to track
+uncommitted work even inside a git repo.
+
+### Multiple projects & hierarchy
+
+Every project keeps its own `.irag/`; commands operate on the nearest
+one above your current directory, so you can work several projects in
+parallel — each `irag dashboard` shows only its own project (and picks
+the next free port automatically if you run more than one). Because
+each project exports its own `CLAUDE.md`/`AGENTS.md`, agent context
+composes hierarchically the way Claude Code reads it: global
+(`~/.claude/CLAUDE.md`) → any parent directory's file → the project's
+generated one.
 
 This does four things:
 

@@ -1,28 +1,38 @@
 # irag — CLI Reference
 
-Every command resolves the project root (via git when a repo exists,
-otherwise the current directory in snapshot mode) and operates on
-`.irag/memory.db`. All commands except `init` require prior
-initialization and print a friendly error otherwise. Exit code is 0 on
-success; `check` uses 1 to signal a failed gate. `irag --version`
+Project resolution is **directory-wise**: every command operates on the
+nearest ancestor directory (including the current one) that contains
+`.irag`. An enclosing git repository is never adopted as the project —
+a versioned home/Desktop directory can't silently become one. Projects
+nest and multiply; whichever `.irag` is nearest to where you run the
+command is the one you operate on. All commands except `init` require
+prior initialization and print a friendly error otherwise. Exit code is
+0 on success; `check` uses 1 to signal a failed gate. `irag --version`
 prints the installed version.
 
 ---
 
 ### `irag init`
 
-Initialize irag in the current repository: create `.irag/memory.db` and
-`.irag/config.toml` (defaults, only if absent), install the `post-commit`
-hook (never clobbers a foreign hook — prints append instructions
-instead), and ingest the existing git history.
+Initialize **the directory you run it in** as a project: create
+`.irag/memory.db` and `.irag/config.toml` (defaults, only if absent),
+and ingest what's there. When the directory *is* a git repo's top
+level, git hooks are installed (never clobbering a foreign hook) and
+history is ingested. When it sits inside a *larger* git repository,
+init prints a scoping note and runs in snapshot mode — the enclosing
+repo is not touched and gets no hooks; `git init` the project itself
+any time to upgrade it to commit-based ingestion.
 
 ### `irag sync`
 
 Catch up on changes. In git mode: all commits since the last synced hash
-(idempotent; survives rebases via full re-scan). In snapshot mode (no git,
-or `[ingest].mode = "snapshot"`): diffs content fingerprints of the
-working tree — adds, edits, and deletions each become events, no commit
-required. `auto` (default) picks git when a repo exists.
+(idempotent; survives rebases via full re-scan). In snapshot mode (no
+git at the project root, or `[ingest].mode = "snapshot"`): diffs content
+fingerprints of the working tree — adds, edits, and deletions each
+become events, no commit required. `auto` (default) picks git only when
+the project root **is** a git repository's top level; a project scoped
+to a subdirectory of a larger repo always snapshots (git's paths are
+toplevel-relative and would not match the project's subjects).
 
 `sync` only *detects* changes (queues events) — it never writes a new
 page version. If it queued anything, it prints a reminder to run `irag

@@ -118,4 +118,29 @@ python3 -m irag obsidian
   || { echo "FAIL: obsidian vault incomplete"; exit 1; }
 python3 -m irag obsidian   # rerun exercises the wipe-and-rebuild path
 
+# --- directory-wise scoping: init inside a subdir of a larger git repo
+# must scope to that subdir (snapshot mode), never adopt the parent ---
+MEGA="$(mktemp -d)"
+mkdir -p "$MEGA/other" "$MEGA/proj/src"
+( cd "$MEGA" && git init -q && git config user.email t@t \
+  && git config user.name t \
+  && echo "junk=1" > other/junk.py \
+  && printf 'def inner(): pass\n' > proj/src/inner.py \
+  && git add -A && git commit -qm mega )
+( cd "$MEGA/proj" && python3 -m irag init > "$MEGA/init_out.txt" 2>&1 )
+grep -q "scoping the project to THIS directory" "$MEGA/init_out.txt" \
+  || { echo "FAIL: nested init should print the scoping note"; exit 1; }
+[ -d "$MEGA/proj/.irag" ] || { echo "FAIL: .irag missing in subproject"; exit 1; }
+[ ! -d "$MEGA/.irag" ] || { echo "FAIL: .irag leaked to enclosing repo root"; exit 1; }
+[ ! -f "$MEGA/.git/hooks/post-commit" ] \
+  || { echo "FAIL: hooks installed into enclosing repo"; exit 1; }
+( cd "$MEGA/proj" && python3 -m irag status --json ) \
+  | python3 -c "
+import json, sys
+s = json.load(sys.stdin)
+assert s['file_pages'] == 1, f\"nested project should track 1 file, got {s['file_pages']}\"
+print('nested scoping ok')
+" || { echo "FAIL: nested project page scoping"; exit 1; }
+rm -rf "$MEGA"
+
 echo "SMOKE TEST PASSED"

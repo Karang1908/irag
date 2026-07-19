@@ -318,7 +318,7 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
 
   <div class="content">
     <div class="topbar">
-      <div class="crumb">irag <span style="color:var(--text-faint)">/</span> <b id="crumb-tab">Overview</b></div>
+      <div class="crumb"><span id="crumb-project">irag</span> <span style="color:var(--text-faint)">/</span> <b id="crumb-tab">Overview</b></div>
       <div class="tb-right">
         <span id="tb-stat"></span>
         <span class="tb-live" id="tb-live"><span class="d"></span><span id="tb-live-txt">live · 3s</span></span>
@@ -521,7 +521,14 @@ async function refreshStatus(){
   });
   const total=s.file_pages+s.folder_pages;
   $("#tb-stat").textContent=`${total} pages · ${s.revisions} versions · ${(s.db_bytes/1024).toFixed(0)} KB`;
-  $("#foot-ver").textContent="irag · "+total+" pages";
+  if(s.project){
+    $("#crumb-project").textContent=s.project;
+    $("#crumb-project").title=s.root||"";
+    document.title=`${s.project} — irag dashboard`;
+    $("#foot-ver").textContent=s.project+" · "+total+" pages";
+  }else{
+    $("#foot-ver").textContent="irag · "+total+" pages";
+  }
   const dot=$("#live-dot");
   if(lastTokens!==null&&s.est_tokens_spent>lastTokens){dot.classList.add("burning");setTimeout(()=>dot.classList.remove("burning"),1000)}
   lastTokens=s.est_tokens_spent;

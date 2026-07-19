@@ -4,6 +4,40 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.2.0 — 2026-07-19
+
+### Changed — **directory-wise project scoping** (behavior change)
+- **Root resolution no longer consults the enclosing git repository.**
+  The project root is the nearest ancestor (including cwd) containing
+  `.irag`, else cwd. Previously, `git rev-parse --show-toplevel` won —
+  so running any irag command inside a versioned home/Desktop directory
+  silently adopted the *entire* enclosing repo as the project (a real
+  incident: 1,376 pages of a user's whole Desktop). That is now
+  structurally impossible.
+- **`irag init` initializes the directory you run it in. Period.** If
+  that directory sits inside a larger git repo, init prints a scoping
+  note, uses snapshot mode (content fingerprints), and does **not**
+  install hooks into the enclosing repo. `git init` the project itself
+  any time to upgrade it to commit-based ingestion.
+- Git-based ingestion (and hook installation, doctor's hook checks,
+  the dirty-file count) now require the project root to *be* a git
+  toplevel (`ingest.git_rooted`); forcing `[ingest].mode = "git"` on a
+  nested project fails with a clear error instead of mis-ingesting
+  toplevel-relative paths.
+- Projects nest and multiply: each keeps its own `.irag`; whichever is
+  nearest to where you run a command is the one you operate on. The
+  generated per-project `CLAUDE.md`/`AGENTS.md` compose hierarchically
+  with global/parent context files in Claude Code.
+
+### Added
+- The dashboard is per-project and says so: the project name appears in
+  the top bar, sidebar, and tab title (`/api/status` gains `project` +
+  `root`). Running dashboards for several projects at once works — if
+  the port is taken, the next free one (up to +20) is used
+  automatically.
+- Smoke-test coverage for nested scoping (init inside a larger repo
+  must not leak `.irag` or hooks to the parent).
+
 ## 4.1.2 — 2026-07-19
 
 ### Added

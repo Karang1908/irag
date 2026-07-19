@@ -123,8 +123,10 @@ def make_handler(state: _State):
                         encoding="utf-8")
                     return self._html(page)
                 if url.path == "/api/status":
-                    return self._json(stats.status_dict(
-                        conn, state.cfg, state.root))
+                    s = stats.status_dict(conn, state.cfg, state.root)
+                    s["project"] = state.root.name or str(state.root)
+                    s["root"] = str(state.root)
+                    return self._json(s)
                 if url.path == "/api/tokens":
                     return self._json(stats.token_series(conn))
                 if url.path == "/api/activity":
@@ -282,9 +284,21 @@ def make_handler(state: _State):
 
 def serve(root: Path, port: int = 7777, open_browser: bool = True) -> None:
     state = _State(root)
-    server = ThreadingHTTPServer(("127.0.0.1", port), make_handler(state))
+    # multiple projects run multiple dashboards — if the port is taken
+    # (another project's dashboard), walk forward to the next free one
+    server = None
+    for candidate in range(port, port + 20):
+        try:
+            server = ThreadingHTTPServer(("127.0.0.1", candidate),
+                                         make_handler(state))
+            port = candidate
+            break
+        except OSError:
+            continue
+    if server is None:
+        raise SystemExit(f"irag: no free port in {port}-{port + 19}")
     url = f"http://127.0.0.1:{port}"
-    print(f"irag dashboard: {url}  (Ctrl-C to stop)")
+    print(f"irag dashboard [{root.name or root}]: {url}  (Ctrl-C to stop)")
     if open_browser:
         import webbrowser
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()

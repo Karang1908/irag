@@ -26,7 +26,7 @@ so a brand-new chat can resume a project for ~150 tokens instead of
 thousands of tokens of re-exploration. Everything lives in one SQLite
 file (`.irag/memory.db`) that any agent, on any machine, can mount.
 
-Current version: **4.1.2**. ~4,200 lines of Python, zero runtime
+Current version: **4.2.0**. ~4,300 lines of Python, zero runtime
 dependencies (stdlib only — `sqlite3`, `http.server`, `ast`, `tomllib`).
 Package name `irag`, console command `irag`, config dir `.irag/`.
 
@@ -165,7 +165,7 @@ or write to `revisions_fts` directly in Python; always go through
 | `hooks.py` | git hook installer (post-commit/post-merge/post-checkout); never clobbers a foreign hook |
 | `obsidian.py` | db → Obsidian vault projection (wipe-and-rebuild behind a `.irag-vault` marker guard) |
 | `dashboard.py` + `assets/dashboard.html` | stdlib `http.server` + a single hand-written SPA; `/api/chat` implements the SQL-vs-AI auto-router (`route_query`) |
-| `cli.py` | argparse wiring; every command resolves the project root then opens `.irag/memory.db` |
+| `cli.py` | argparse wiring; every command resolves the project root then opens `.irag/memory.db`. Root resolution is DIRECTORY-WISE (`ingest.repo_root`): nearest ancestor with `.irag`, else cwd — the enclosing git repo is never consulted (see gotcha #9) |
 
 ## 6. Command inventory (34 commands, current as of 4.1.1)
 
@@ -284,6 +284,21 @@ windows.
    `irag compact` is ever requested, it must never delete v1, the current
    revision, or any revision referenced by a rollback/resolved
    contradiction (provenance endpoints), and it must be opt-in only.
+9. **Root resolution must stay directory-wise — never git-toplevel-first.**
+   Real incident (fixed in 4.2.0): the owner's entire `~/Desktop` is a
+   git repository, so the old `git rev-parse --show-toplevel`-first
+   resolution made `irag init` from any Desktop subfolder silently adopt
+   the whole Desktop as one project — 1,376 pages, hooks installed into
+   the personal repo, dashboard showing every file the user owns. The
+   invariant now: `repo_root()` = nearest ancestor with `.irag`, else
+   cwd; `init` roots at cwd, period; git-based ingestion, hook install,
+   doctor's hook checks, and the dirty count all gate on
+   `ingest.git_rooted(root)` (root == that repo's toplevel), because
+   git's paths are toplevel-relative and would corrupt subjects in a
+   nested project. If you touch root resolution, re-verify with the
+   smoke test's nested-scoping block AND manually: init in a subdir of
+   a bigger repo, confirm `.irag` lands there, parent gets no hooks,
+   and pages are subject-relative to the subdir.
 
 ## 9. Development workflow
 

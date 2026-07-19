@@ -76,6 +76,13 @@ irag update                 # first full synthesis (one call per file+folder)
 irag claude-setup           # wire Claude Code hooks (optional, recommended)
 ```
 
+Scoping is **directory-wise**: the folder you run `init` in *is* the
+project — an enclosing git repo (a versioned home dir, a monorepo) is
+never silently adopted. Projects nest and multiply, each with its own
+`.irag`, its own generated `CLAUDE.md`/`AGENTS.md` (composing
+hierarchically in Claude Code: global → parent dir → project), and its
+own dashboard.
+
 After `claude-setup` the loop is fully automatic: **SessionStart** opens
 the conversation log and injects ranked context + a recap of previous
 sessions, **Stop** runs `irag update` after every turn, **SessionEnd**

@@ -7,7 +7,7 @@ instead of a flat `CLAUDE.md` that silently rots.
 ![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Zero dependencies](https://img.shields.io/badge/dependencies-zero-brightgreen)
 ![License: MIT](https://img.shields.io/badge/license-MIT-yellow)
-![Version](https://img.shields.io/badge/version-4.1.2-purple)
+![Version](https://img.shields.io/badge/version-4.2.0-purple)
 
 ```
 Claude Code   →     irag      →   agy / any LLM CLI
@@ -82,6 +82,13 @@ irag doctor --probe-llm     # verify the LLM command works
 irag update                 # first full synthesis (one call per file+folder)
 irag claude-setup           # wire Claude Code hooks (optional, recommended)
 ```
+
+Scoping is **directory-wise**: the folder you run `init` in *is* the
+project — an enclosing git repo (a versioned home dir, a monorepo) is
+never silently adopted. Projects nest and multiply, each with its own
+`.irag`, its own generated `CLAUDE.md`/`AGENTS.md` (composing
+hierarchically in Claude Code: global → parent dir → project), and its
+own dashboard.
 
 After `claude-setup` the loop is fully automatic: **SessionStart** opens
 the conversation log and injects ranked context + a recap of previous

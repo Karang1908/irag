@@ -54,19 +54,35 @@ def _git(args: list[str], cwd: Path | None = None) -> str:
     return result.stdout
 
 
-def has_git_repo() -> bool:
+def git_toplevel(cwd: Path | None = None) -> Path | None:
+    """The enclosing git repository's top-level dir, or None."""
     result = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                            capture_output=True, text=True)
-    return result.returncode == 0
+                            cwd=cwd, capture_output=True, text=True)
+    if result.returncode != 0:
+        return None
+    return Path(result.stdout.strip()).resolve()
+
+
+def has_git_repo() -> bool:
+    return git_toplevel() is not None
+
+
+def git_rooted(repo: Path) -> bool:
+    """True when the project root IS a git repository's top level — the
+    only case where commit-based ingestion and git hooks apply. A project
+    scoped to a subdirectory of some larger repo (e.g. a folder inside a
+    versioned home dir) runs in snapshot mode instead: git's paths are
+    toplevel-relative and would not match the project's subjects."""
+    return git_toplevel(repo) == repo.resolve()
 
 
 def repo_root() -> Path:
-    """Git toplevel when in a repo; else nearest ancestor with .irag;
-    else cwd (for 'irag init' in a plain folder)."""
-    result = subprocess.run(["git", "rev-parse", "--show-toplevel"],
-                            capture_output=True, text=True)
-    if result.returncode == 0:
-        return Path(result.stdout.strip())
+    """Project root resolution is DIRECTORY-WISE: the nearest ancestor
+    (including cwd) that contains .irag wins; otherwise cwd. An enclosing
+    git repository is deliberately NOT consulted — a giant ancestor repo
+    (a versioned Desktop/home) must never silently become the project.
+    Nested projects each keep their own .irag; whichever is nearest to
+    where you run the command is the one you operate on."""
     cur = Path.cwd()
     for candidate in (cur, *cur.parents):
         if (candidate / ".irag").is_dir():
@@ -182,7 +198,8 @@ def _queue_file_event(conn, cfg, subject: str, ref: str, payload: dict,
 def ingest_commit(conn: sqlite3.Connection, cfg: dict, ref: str,
                   repo: Path | None = None) -> int:
     """Ingest a single commit: one queued event per touched file."""
-    out = _git(["show", "--name-only", "--pretty=format:%H%n%ct%n%s", ref])
+    out = _git(["show", "--name-only", "--pretty=format:%H%n%ct%n%s", ref],
+               cwd=repo)
     lines = out.splitlines()
     if len(lines) < 3:
         return 0
@@ -265,24 +282,32 @@ def purge_ignored(conn: sqlite3.Connection, cfg: dict, repo: Path) -> int:
 def sync(conn: sqlite3.Connection, cfg: dict,
          repo: Path | None = None) -> int:
     """Catch up on changes: git commits or working-tree snapshots per
-    [ingest].mode (auto|git|snapshot)."""
-    mode = str(cfg.get("ingest", {}).get("mode", "auto"))
-    use_git = has_git_repo() if mode == "auto" else (mode == "git")
+    [ingest].mode (auto|git|snapshot). Git mode requires the project
+    root to BE a git toplevel — a project scoped to a subdirectory of a
+    larger repo always snapshots (see git_rooted)."""
     if repo is None:
         repo = repo_root()
+    mode = str(cfg.get("ingest", {}).get("mode", "auto"))
+    if mode == "git" and not git_rooted(repo):
+        raise SystemExit(
+            "irag: [ingest].mode = \"git\" but the project root is not a "
+            "git repository's top level — use mode = \"auto\" or "
+            "\"snapshot\", or 'git init' the project itself")
+    use_git = git_rooted(repo) if mode == "auto" else (mode == "git")
     purge_ignored(conn, cfg, repo)
     if not use_git:
         return snapshot(conn, cfg, repo)
     total = 0
-    head = _git(["rev-parse", "HEAD"]).strip() if _has_commits() else None
+    head = _git(["rev-parse", "HEAD"], cwd=repo).strip() \
+        if _has_commits(repo) else None
     if head is not None:
         last = db.get_meta(conn, "last_synced")
         if last != head:
             range_spec = f"{last}..HEAD" if last else "HEAD"
             try:
-                out = _git(["rev-list", "--reverse", range_spec])
+                out = _git(["rev-list", "--reverse", range_spec], cwd=repo)
             except SystemExit:
-                out = _git(["rev-list", "--reverse", "HEAD"])
+                out = _git(["rev-list", "--reverse", "HEAD"], cwd=repo)
             for commit in out.split():
                 total += ingest_commit(conn, cfg, commit, repo)
             db.set_meta(conn, "last_synced", head)
@@ -295,10 +320,10 @@ def sync(conn: sqlite3.Connection, cfg: dict,
     return total
 
 
-def _has_commits() -> bool:
+def _has_commits(repo: Path | None = None) -> bool:
     result = subprocess.run(
         ["git", "rev-parse", "--verify", "HEAD"],
-        capture_output=True, text=True,
+        cwd=repo, capture_output=True, text=True,
     )
     return result.returncode == 0
 

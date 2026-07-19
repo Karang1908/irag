@@ -103,24 +103,33 @@ def run(conn: sqlite3.Connection, cfg: dict, repo: Path,
              f"{llm_cmd[0] if llm_cmd else '(empty)'} not on PATH — "
              "set [llm].command in .irag/config.toml")
 
-    # hooks
-    for hook in ("post-commit", "post-merge"):
-        hp = repo / ".git" / "hooks" / hook
-        if hp.exists() and HOOK_MARKER in hp.read_text(
-                encoding="utf-8", errors="replace"):
-            ok(f"{hook} hook installed")
-        elif hp.exists():
-            warn(f"{hook} hook", "exists but is not irag's — append the irag "
-                 "line manually (see 'irag init' output)")
-        else:
-            warn(f"{hook} hook", "not installed — run 'irag init'")
+    # hooks — only applicable when the project root IS a git toplevel;
+    # snapshot-scoped projects (plain folders, or dirs inside a larger
+    # repo) have no hooks by design
+    from .ingest import git_rooted
+    if git_rooted(repo):
+        for hook in ("post-commit", "post-merge"):
+            hp = repo / ".git" / "hooks" / hook
+            if hp.exists() and HOOK_MARKER in hp.read_text(
+                    encoding="utf-8", errors="replace"):
+                ok(f"{hook} hook installed")
+            elif hp.exists():
+                warn(f"{hook} hook", "exists but is not irag's — append the "
+                     "irag line manually (see 'irag init' output)")
+            else:
+                warn(f"{hook} hook", "not installed — run 'irag init'")
+    else:
+        ok("git hooks n/a (snapshot-scoped project)")
 
     # scan freshness
-    try:
-        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo,
-                              capture_output=True, text=True).stdout.strip()
-    except OSError:
-        head = ""
+    head = ""
+    if git_rooted(repo):
+        try:
+            head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo,
+                                  capture_output=True,
+                                  text=True).stdout.strip()
+        except OSError:
+            head = ""
     scanned = db.get_meta(conn, "last_scanned_head")
     if head and scanned == head:
         ok("structural map current")

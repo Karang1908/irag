@@ -30,23 +30,40 @@ def _open(require_init: bool = True) -> tuple[sqlite3.Connection, dict, Path]:
 # command implementations
 # ------------------------------------------------------------------
 def cmd_init(args) -> int:
-    root = ingest.repo_root()
-    if not ingest.has_git_repo():
+    # init is DIRECTORY-WISE: the folder you run it in IS the project.
+    # An enclosing git repo (e.g. a versioned home dir) is never adopted.
+    root = Path.cwd()
+    if (root / ".irag").is_dir():
+        print(f"irag: already initialized at {root}")
+        return 0
+    enclosing = ingest.git_toplevel()
+    if enclosing is None:
         print("note: no git repo here — running in snapshot mode "
               "(changes detected by content fingerprint; 'git init' any "
               "time to upgrade to commit-based ingestion)")
+    elif enclosing != root.resolve():
+        print(f"note: this directory sits inside a larger git repository "
+              f"({enclosing}).\n"
+              f"      irag is scoping the project to THIS directory only, "
+              f"in snapshot mode\n"
+              f"      (content fingerprints — the enclosing repo is not "
+              f"touched, no hooks are\n"
+              f"      installed there). 'git init' here any time to "
+              f"upgrade this project to\n"
+              f"      commit-based ingestion.")
     (root / ".irag").mkdir(exist_ok=True)
     db_path = root / ".irag" / "memory.db"
     conn = db.ensure_db(db_path)
     cfg_path = config.write_default(root)
     cfg = config.load(root)
-    hooks.install(root)
+    if ingest.git_rooted(root):
+        hooks.install(root)
     n = ingest.sync(conn, cfg, root)
     from . import structure
     stats = structure.scan(conn, cfg, root)
     print(f"initialized: {db_path}")
     print(f"config     : {cfg_path}")
-    print(f"ingested   : {n} event(s) from git history")
+    print(f"ingested   : {n} event(s)")
     print(f"scanned    : {stats['symbols']} symbols, {stats['deps']} "
           "dependency edge(s)")
     print("next steps : review .irag/config.toml (llm.command), then "
@@ -84,6 +101,11 @@ def cmd_synthesize(args) -> int:
 
 
 def _dirty_count(root: Path) -> int:
+    # only meaningful when the project root IS a git toplevel — for a
+    # snapshot-scoped project inside a larger repo, git status would
+    # report the whole enclosing repo's noise
+    if not ingest.git_rooted(root):
+        return 0
     import subprocess
     try:
         out = subprocess.run(["git", "status", "--porcelain"], cwd=root,
