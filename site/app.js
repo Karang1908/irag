@@ -114,6 +114,131 @@
     });
   }
 
+  /* ---------- scroll-scrubbed anime.js graph showcase ----------
+     A grid of dots (anime stagger-grid) ripples in, a wave sweeps across,
+     then a subset lights up and edges draw between them — the grid
+     coalescing into irag's dependency graph. A *paused* anime.js timeline
+     is seeked by the section's scroll progress (anime.js-landing style). */
+  var scGrid = document.getElementById("sc-grid");
+  var scEdges = document.getElementById("sc-edges");
+  var showcase = document.getElementById("showcase");
+  if (scGrid && scEdges && showcase && window.anime) {
+    var narrow = window.innerWidth < 820;
+    var COLS = narrow ? 16 : 24, ROWS = narrow ? 9 : 12;
+    scGrid.style.gridTemplateColumns = "repeat(" + COLS + ",1fr)";
+    scGrid.style.gridTemplateRows = "repeat(" + ROWS + ",1fr)";
+    var dots = [];
+    for (var gi = 0; gi < COLS * ROWS; gi++) {
+      var cell = document.createElement("div"); cell.className = "sc-cell";
+      var dot = document.createElement("div"); dot.className = "sc-dot";
+      cell.appendChild(dot); scGrid.appendChild(cell); dots.push(dot);
+    }
+    var at = function (c, r) { return dots[r * COLS + c]; };
+    var NP = narrow
+      ? [[3, 2], [8, 1], [12, 3], [5, 6], [10, 7], [13, 5], [2, 7], [7, 4]]
+      : [[4, 3], [9, 2], [14, 4], [19, 3], [6, 8], [12, 9], [17, 7], [2, 10],
+         [21, 9], [11, 6]];
+    var EP = narrow
+      ? [[0, 1], [1, 2], [0, 3], [3, 4], [2, 5], [4, 5], [3, 6], [1, 7], [4, 7]]
+      : [[0, 1], [1, 2], [2, 3], [0, 4], [1, 9], [4, 5], [5, 6], [2, 6], [3, 6],
+         [4, 7], [5, 9], [6, 8], [9, 1], [8, 4]];
+    var nodeDots = NP.map(function (n) { return at(n[0], n[1]); })
+      .filter(Boolean);
+
+    var edgeEls = [];
+    var buildEdges = function () {
+      var box = scEdges.getBoundingClientRect();
+      if (!box.width) return;
+      scEdges.setAttribute("viewBox", "0 0 " + box.width + " " + box.height);
+      while (scEdges.firstChild) scEdges.removeChild(scEdges.firstChild);
+      edgeEls = [];
+      EP.forEach(function (e) {
+        var a = nodeDots[e[0]], b = nodeDots[e[1]];
+        if (!a || !b) return;
+        var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+        var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        p.setAttribute("class", "sc-edge");
+        p.setAttribute("d", "M" + (ra.left + ra.width / 2 - box.left) + " " +
+          (ra.top + ra.height / 2 - box.top) + " L" +
+          (rb.left + rb.width / 2 - box.left) + " " +
+          (rb.top + rb.height / 2 - box.top));
+        scEdges.appendChild(p); edgeEls.push(p);
+      });
+    };
+
+    var tl = null;
+    var build = function () {
+      buildEdges();
+      tl = anime.timeline({ autoplay: false, easing: "easeOutQuad" });
+      tl.add({ targets: dots, scale: [0, 1], opacity: [0, 0.42],
+        duration: 600,
+        delay: anime.stagger(7, { grid: [COLS, ROWS], from: "center" }) }, 0);
+      tl.add({ targets: dots,
+        scale: [{ value: 1.85, duration: 320 }, { value: 1, duration: 380 }],
+        delay: anime.stagger(7, { grid: [COLS, ROWS], from: "first" }) }, 720);
+      tl.add({ targets: nodeDots, scale: 2.7, opacity: 1,
+        backgroundColor: "#58a6ff", duration: 500,
+        delay: anime.stagger(45) }, 1450);
+      if (edgeEls.length) {
+        tl.add({ targets: edgeEls, opacity: [0, 1],
+          strokeDashoffset: [anime.setDashoffset, 0], duration: 700,
+          easing: "easeInOutSine", delay: anime.stagger(50) }, 1520);
+      }
+      tl.add({ targets: nodeDots,
+        scale: [{ value: 3.1, duration: 320 }, { value: 2.7, duration: 420 }],
+        easing: "easeInOutSine" }, 2250);
+    };
+    build();
+
+    var caps = [
+      ["Files become a graph.",
+       "A node for every file, an edge for every import — one map your agent queries instead of re-reading the tree."],
+      ["Imports become edges.",
+       "irag parses the dependencies and wires the nodes deterministically — no tokens, always current."],
+      ["One graph, queryable.",
+       "Structure, neighbors, blast radius — all read from SQL in an instant."]
+    ];
+    var capT = document.getElementById("sc-cap-t");
+    var capP = document.getElementById("sc-cap-p");
+    var cur = -1;
+    var setCap = function (p) {
+      var i = p >= 0.8 ? 2 : p >= 0.5 ? 1 : 0;
+      if (i === cur) return;
+      cur = i;
+      if (capT) capT.textContent = caps[i][0];
+      if (capP) capP.textContent = caps[i][1];
+    };
+    var doScrub = function () {
+      var total = showcase.offsetHeight - window.innerHeight;
+      var p = total > 0
+        ? Math.min(1, Math.max(0,
+            -showcase.getBoundingClientRect().top / total)) : 0;
+      if (tl) tl.seek(p * tl.duration);
+      setCap(p);
+    };
+
+    if (REDUCE) {
+      if (tl) tl.seek(tl.duration);
+      setCap(0.85);
+    } else {
+      var scTick = false;
+      var scrub = function () {
+        if (scTick) return;
+        scTick = true;
+        requestAnimationFrame(function () { scTick = false; doScrub(); });
+      };
+      scrub();
+      window.addEventListener("scroll", scrub, { passive: true });
+      if (lenis) lenis.on("scroll", scrub);
+      window.addEventListener("load", function () { build(); scrub(); });
+      var scRTO;
+      window.addEventListener("resize", function () {
+        clearTimeout(scRTO);
+        scRTO = setTimeout(function () { build(); scrub(); }, 200);
+      });
+    }
+  }
+
   /* ---------- hero intro (anime.js, progressive enhancement) ----------
      Markup is authored in its final state; anime sets the from-state at
      runtime, so with no JS / no anime / reduced motion nothing is hidden. */

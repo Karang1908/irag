@@ -574,6 +574,21 @@ calls (pluggable — point them at a free-quota model), it needs Python
 3.11+, and the linter verifies checkable claims — paths, symbols,
 versions — not opinions. <a href="docs/comparison/">Full comparison →</a></p>
 </section>
+<section class="showcase" id="showcase" aria-label="irag turns your files into a graph">
+<div class="sc-sticky">
+<div class="sc-cap">
+<p class="eyebrow">Under the hood</p>
+<h2 class="sc-cap-t" id="sc-cap-t">Files become a graph.</h2>
+<p class="sc-cap-p" id="sc-cap-p">A node for every file. An edge for every import. One map your
+agent queries instead of re-reading the tree.</p>
+</div>
+<div class="sc-stage">
+<svg class="sc-edges" id="sc-edges" aria-hidden="true"></svg>
+<div class="sc-grid" id="sc-grid" aria-hidden="true"></div>
+</div>
+<p class="sc-hint" aria-hidden="true">scroll</p>
+</div>
+</section>
 <section class="sec" id="how">
 <p class="eyebrow">02 — How it runs</p>
 <h2 class="sec-t">Three actors. One loop.</h2>
