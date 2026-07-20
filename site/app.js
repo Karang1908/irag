@@ -200,41 +200,68 @@
     ];
     var capT = document.getElementById("sc-cap-t");
     var capP = document.getElementById("sc-cap-p");
-    var cur = -1;
-    var setCap = function (p) {
-      var i = p >= 0.8 ? 2 : p >= 0.5 ? 1 : 0;
+    var cur = -1, capTO = null;
+    var setCap = function (i) {
       if (i === cur) return;
       cur = i;
-      if (capT) capT.textContent = caps[i][0];
-      if (capP) capP.textContent = caps[i][1];
+      if (capT) capT.style.opacity = "0";
+      if (capP) capP.style.opacity = "0";
+      clearTimeout(capTO);
+      capTO = setTimeout(function () {
+        if (capT) { capT.textContent = caps[i][0]; capT.style.opacity = "1"; }
+        if (capP) { capP.textContent = caps[i][1]; capP.style.opacity = "1"; }
+      }, 150);
     };
-    var doScrub = function () {
+    var progAt = function () {
       var total = showcase.offsetHeight - window.innerHeight;
-      var p = total > 0
-        ? Math.min(1, Math.max(0,
-            -showcase.getBoundingClientRect().top / total)) : 0;
-      if (tl) tl.seek(p * tl.duration);
-      setCap(p);
+      return total > 0 ? Math.min(1, Math.max(0,
+        -showcase.getBoundingClientRect().top / total)) : 0;
     };
 
     if (REDUCE) {
       if (tl) tl.seek(tl.duration);
-      setCap(0.85);
+      cur = 2;
+      if (capT) capT.textContent = caps[2][0];
+      if (capP) capP.textContent = caps[2][1];
     } else {
-      var scTick = false;
-      var scrub = function () {
-        if (scTick) return;
-        scTick = true;
-        requestAnimationFrame(function () { scTick = false; doScrub(); });
+      // Seamless scrub: a continuous rAF loop lerps the timeline's playhead
+      // toward the scroll-derived target instead of snapping to it on each
+      // scroll event. Decoupling from scroll-event cadence + easing the
+      // catch-up is what removes the stutter (GSAP-scrub style). The loop
+      // only runs while the section is near the viewport.
+      var curT = 0, lastSeek = -1, raf = null, active = false;
+      var loop = function () {
+        var target = progAt() * tl.duration;
+        curT += (target - curT) * 0.11;         // the smoothing
+        if (Math.abs(target - curT) < 0.5) curT = target;
+        if (Math.abs(curT - lastSeek) > 0.25) { // skip redundant seeks
+          tl.seek(curT);
+          lastSeek = curT;
+        }
+        setCap(curT / tl.duration >= 0.8 ? 2
+          : curT / tl.duration >= 0.5 ? 1 : 0);
+        raf = requestAnimationFrame(loop);
       };
-      scrub();
-      window.addEventListener("scroll", scrub, { passive: true });
-      if (lenis) lenis.on("scroll", scrub);
-      window.addEventListener("load", function () { build(); scrub(); });
+      var start = function () { if (!active) { active = true; loop(); } };
+      var stop = function () {
+        active = false;
+        if (raf) cancelAnimationFrame(raf);
+        raf = null;
+      };
+      if ("IntersectionObserver" in window) {
+        new IntersectionObserver(function (ents) {
+          ents.forEach(function (en) {
+            if (en.isIntersecting) start(); else stop();
+          });
+        }, { rootMargin: "50% 0px 50% 0px" }).observe(showcase);
+      } else {
+        start();
+      }
+      window.addEventListener("load", function () { build(); lastSeek = -1; });
       var scRTO;
       window.addEventListener("resize", function () {
         clearTimeout(scRTO);
-        scRTO = setTimeout(function () { build(); scrub(); }, 200);
+        scRTO = setTimeout(function () { build(); lastSeek = -1; }, 200);
       });
     }
   }
