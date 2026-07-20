@@ -259,7 +259,7 @@ def make_handler(state: _State):
                     def worker():
                         try:
                             wconn = state.conn()
-                            from . import ingest, export as export_mod
+                            from . import ingest
                             n = ingest.sync(wconn, state.cfg, state.root)
                             state.update_log.append(f"sync: {n} event(s)")
                             structure.scan(wconn, state.cfg, state.root)
@@ -271,9 +271,6 @@ def make_handler(state: _State):
                             added = linter.lint(wconn, state.cfg, state.root)
                             state.update_log.append(
                                 f"lint: {added} new contradiction(s)")
-                            export_mod.export(wconn, state.cfg, state.root)
-                            state.update_log.append(
-                                "export: CLAUDE.md + AGENTS.md")
                             state.update_log.append("done")
                         except BaseException as exc:
                             state.update_log.append(f"ERROR: {exc}")

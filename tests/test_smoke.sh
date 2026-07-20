@@ -18,6 +18,9 @@ echo 'requests==2.31.0' > requirements.txt
 git add -A && git commit -qm "initial"
 
 python3 -m irag init
+# init installs the agent guide (CLAUDE.md + AGENTS.md) immediately
+[ -f CLAUDE.md ] && grep -q "irag agent guide" CLAUDE.md \
+  || { echo "FAIL: irag init should install the CLAUDE.md agent guide"; exit 1; }
 # point the LLM at the mock (reads stdin, deterministic markdown incl. a
 # fake `src/ghost.py` to trigger a missing_path contradiction)
 python3 - "$IRAG_SRC" << 'EOF'
@@ -86,7 +89,7 @@ python3 -m irag learn "test lesson" --module src/auth/login.py
 python3 -m irag context | grep -q "test lesson" || { echo "FAIL: lesson not served"; exit 1; }
 python3 -m irag claude-setup
 grep -q "irag context" .claude/settings.json || { echo "FAIL: hook not installed"; exit 1; }
-grep -q "Working with irag" CLAUDE.md || { echo "FAIL: agent footer missing"; exit 1; }
+grep -q "manage this project's memory with irag" CLAUDE.md || { echo "FAIL: agent guide missing"; exit 1; }
 
 python3 -m irag status
 python3 -m irag status --json | python3 -c "import json,sys; json.load(sys.stdin)"

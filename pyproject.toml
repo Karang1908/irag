@@ -40,4 +40,4 @@ irag = "irag.cli:main"
 packages = ["irag"]
 
 [tool.setuptools.package-data]
-irag = ["assets/*.html", "assets/docs/*.md"]
+irag = ["assets/*.html", "assets/*.md", "assets/docs/*.md"]

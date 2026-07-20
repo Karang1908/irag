@@ -16,9 +16,10 @@ on.
 1. **The model never does bookkeeping.** Locating, counting, dating,
    diffing, scheduling, verifying — SQL. The model writes prose, and
    optionally compares prose to facts. Nothing else.
-2. **Memory is data with a prose projection — not prose.** The context
-   file agents read (`CLAUDE.md`) is generated from the database by
-   `irag export` and carries a do-not-edit header.
+2. **Memory is data; prose is on demand — not a file dump.** The memory
+   lives in `.irag/memory.db`. `CLAUDE.md` (irag's operator manual,
+   installed by `irag init`) tells the agent to read it via
+   `irag context` / `recap` / `search`.
 
 ## The three layers
 
@@ -216,7 +217,7 @@ tokens instead of re-exploring.
 
 ### The Obsidian projection
 
-`irag obsidian` is a second prose projection (the first is `irag export`):
+`irag obsidian` is a prose projection of the memory database:
 one markdown note per page, one per revision, wikilinked so Obsidian's
 graph renders the knowledge structure — module map when versions are
 filtered out (`-tag:#version`), full history chains when not. Health is

@@ -61,13 +61,22 @@ def cmd_init(args) -> int:
     n = ingest.sync(conn, cfg, root)
     from . import structure
     stats = structure.scan(conn, cfg, root)
+    # install the agent guide (CLAUDE.md + AGENTS.md) so a coding agent
+    # knows irag exists and how to drive it from the moment of init
+    guide = export_mod.install_guide(root)
     print(f"initialized: {db_path}")
     print(f"config     : {cfg_path}")
+    for p in guide["written"]:
+        print(f"agent guide: {p.name}")
+    for p in guide["skipped"]:
+        print(f"note       : {p.name} already exists and was not written by "
+              "irag — left untouched (run 'irag export' to install the guide "
+              "once you've moved yours)")
     print(f"ingested   : {n} event(s)")
     print(f"scanned    : {stats['symbols']} symbols, {stats['deps']} "
           "dependency edge(s)")
     print("next steps : review .irag/config.toml (llm.command), then "
-          "'irag synthesize'")
+          "'irag update' (first full synthesis)")
     return 0
 
 
@@ -337,8 +346,10 @@ def cmd_claude_setup(args) -> int:
     if changed:
         settings_path.write_text(json.dumps(settings, indent=2) + "\n",
                                  encoding="utf-8")
-    path = export_mod.export(conn, cfg, root)
-    print(f"regenerated {path} (includes agent instructions)")
+    res = export_mod.install_guide(root)
+    if res["written"]:
+        print("agent guide: " + " + ".join(p.name for p in res["written"])
+              + " (how to use irag)")
     print("the loop is now mechanical: SessionStart injects memory, the "
           "Stop hook runs 'irag update' after every turn (a no-op when "
           "nothing changed), and CLAUDE.md carries the standing orders "
@@ -473,9 +484,16 @@ def cmd_unpin(args) -> int:
 
 
 def cmd_export(args) -> int:
-    conn, cfg, root = _open()
-    path = export_mod.export(conn, cfg, root)
-    print(f"wrote {path} (+ AGENTS.md, same content)")
+    """(Re)install the CLAUDE.md + AGENTS.md agent guide at the project root."""
+    _conn, _cfg, root = _open()
+    res = export_mod.install_guide(root)
+    for p in res["written"]:
+        print(f"installed  : {p.name}")
+    for p in res["skipped"]:
+        print(f"skipped    : {p.name} (already exists and was not written "
+              "by irag — left untouched)")
+    if not res["written"] and not res["skipped"]:
+        print("nothing to install")
     return 0
 
 
@@ -497,7 +515,9 @@ def cmd_obsidian(args) -> int:
 
 
 def cmd_update(args) -> int:
-    """One command for agents: sync -> synthesize -> lint -> export."""
+    """One command for agents: sync -> scan -> synthesize -> lint. Updates
+    the memory database only; the CLAUDE.md/AGENTS.md agent guide is static
+    (installed by 'irag init', re-installed by 'irag export')."""
     conn, cfg, root = _open()
     n = ingest.sync(conn, cfg, root)
     from . import structure
@@ -510,8 +530,6 @@ def cmd_update(args) -> int:
     ).fetchone()["c"]
     print(f"lint       : {new_contras} new, {open_contras} open "
           "contradiction(s)")
-    path = export_mod.export(conn, cfg, root)
-    print(f"export     : {path}")
     print(f"update done: {done} page version(s) written")
     return 0
 

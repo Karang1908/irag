@@ -55,9 +55,11 @@ Two principles drive every design decision:
 
 1. **The model never does bookkeeping.** Locating, counting, dating,
    diffing, scheduling, verifying — all SQL. The LLM only writes prose.
-2. **Memory is data with a prose projection.** `CLAUDE.md` and
-   `AGENTS.md` are generated build artifacts (`irag export`), never
-   hand-edited sources of truth. The database is the only truth.
+2. **Memory is data; the agent reads it on demand.** `CLAUDE.md` and
+   `AGENTS.md` are irag's static operator manual, installed by
+   `irag init` (re-installable with `irag export`). The memory itself
+   lives in `.irag/memory.db` — the only source of truth — read through
+   `irag context` / `recap` / `search`, never a file dump.
 
 ## Where this came from
 

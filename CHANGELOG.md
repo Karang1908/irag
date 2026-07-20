@@ -6,6 +6,18 @@ in spirit (no public API contract yet beyond the CLI).
 
 ## Unreleased
 
+### Changed — **CLAUDE.md is now a static agent guide installed by `irag init`**
+- `irag init` installs `CLAUDE.md` + `AGENTS.md` — irag's operator manual
+  (how to use irag), bundled with the package — so a coding agent knows
+  irag exists and how to drive it from the moment of init, before spending
+  a token. A `CLAUDE.md` you wrote yourself is never clobbered (irag only
+  overwrites files it installed).
+- `irag update` no longer touches `CLAUDE.md`/`AGENTS.md`. The memory lives
+  in `.irag/memory.db` and the agent reads it on demand via `irag context`
+  / `recap` / `search`; the guide stays static. `irag export` re-installs
+  the guide if it's deleted.
+
+
 ### Fixed — audit pass (correctness, data-integrity, concurrency)
 - **Append-only history is now race-safe.** `revisions(page_id,
   version_number)` is a UNIQUE index (existing databases are upgraded on
@@ -17,8 +29,8 @@ in spirit (no public API contract yet beyond the CLI).
   orphan a revision.
 - **One failing page no longer starves synthesis.** `sweep()` isolates
   each page: a `SystemExit` from the LLM on one page is recorded and
-  reported, but the rest of the sweep (and the lint + CLAUDE.md export at
-  the end of `irag update`) still runs. Failed pages stay queued and
+  reported, but the rest of the sweep (and the lint step at the end of
+  `irag update`) still runs. Failed pages stay queued and
   retry next time.
 - **`irag update` no longer wipes `irag lint --llm` findings.**
   LLM-flagged contradictions carry a distinct `llm:` prefix, so the

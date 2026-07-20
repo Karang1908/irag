@@ -27,9 +27,9 @@ irag update
 ```
 
 Detects every change → writes a new version of each affected file page →
-rolls up folder pages bottom-up → fact-checks everything → regenerates
-CLAUDE.md + AGENTS.md. Agents run it themselves after edits (the
-generated context file tells them to).
+rolls up folder pages bottom-up → fact-checks everything. It updates the
+database only; the `CLAUDE.md`/`AGENTS.md` agent guide is installed once
+by `irag init` and tells agents to run it after edits.
 
 ## 4. Ask things
 
