@@ -294,12 +294,56 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
 .readbar{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:var(--accent);
   transform:scaleX(0);transform-origin:left;pointer-events:none}
 
-/* scroll reveal (gated on .js so content is never hidden without JS) */
-.js .reveal{opacity:0;transform:translateY(20px);
-  transition:opacity .65s var(--ease),transform .65s var(--ease)}
-.js .reveal.in{opacity:1;transform:none}
-.js .featlist .reveal:nth-child(2n){transition-delay:.07s}
+/* ---------- Lenis momentum scroll (required styles) ---------- */
+html.lenis,html.lenis body{height:auto}
+.lenis.lenis-smooth{scroll-behavior:auto!important}
+.lenis.lenis-smooth [data-lenis-prevent]{overscroll-behavior:contain}
+.lenis.lenis-stopped{overflow:hidden}
+
+/* ---------- motion, Mistral-style ---------- */
+/* cinematic scroll reveal: rise + de-blur on a heavy ease-out */
+:root{--mist:cubic-bezier(.16,1,.3,1)}
+.js .reveal{opacity:0;transform:translateY(26px);filter:blur(7px);
+  transition:opacity .85s var(--mist),transform .85s var(--mist),filter .85s var(--mist)}
+.js .reveal.in{opacity:1;transform:none;filter:blur(0)}
+.js .featlist .reveal:nth-child(2n){transition-delay:.06s}
 .js .shots .reveal:nth-child(2){transition-delay:.08s}
+
+/* clip-wipe reveal (headings) — unmask bottom-up while it sharpens */
+.js .wipe{clip-path:inset(0 0 100% 0);filter:blur(12px);opacity:0;
+  transition:clip-path 1s var(--mist),filter 1s var(--mist),opacity .7s var(--mist)}
+.js .wipe.in{clip-path:inset(0 0 -8% 0);filter:blur(0);opacity:1}
+
+/* pixel dissolve — a canvas of bg blocks clears in a dither order to
+   reveal the element beneath (the signature Mistral pixel reveal) */
+.px{position:relative}
+.px-canvas{position:absolute;inset:0;z-index:3;pointer-events:none;
+  width:100%;height:100%;image-rendering:pixelated}
+
+/* pixel-block hover fill on buttons */
+.btn{position:relative;overflow:hidden;isolation:isolate}
+.btn::before{content:"";position:absolute;inset:0;z-index:-1;opacity:0;
+  background-image:
+    linear-gradient(90deg,currentColor 1px,transparent 1px),
+    linear-gradient(currentColor 1px,transparent 1px);
+  background-size:6px 6px;color:rgba(255,255,255,.14);
+  transition:opacity .3s var(--mist)}
+.btn.primary::before{color:rgba(10,11,14,.14)}
+.js .btn:hover::before{opacity:1}
+
+/* thin scrolling marquee of the command surface */
+.marq{border-top:1px solid var(--border);border-bottom:1px solid var(--border);
+  overflow:hidden;padding:16px 0;margin-top:0;-webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+.marq-in{display:inline-flex;gap:0;white-space:nowrap;will-change:transform}
+.marq-in span{font:500 13px var(--mono);color:var(--text-faint);padding:0 26px;
+  letter-spacing:.02em}
+.marq-in span::before{content:"·";color:var(--accent);margin-right:26px}
+@media (prefers-reduced-motion: no-preference){
+  .marq-in{animation:marq 34s linear infinite}
+  .marq:hover .marq-in{animation-play-state:paused}
+}
+@keyframes marq{to{transform:translateX(-50%)}}
 
 /* ---------- responsive ---------- */
 @media (max-width:1140px){.wrap{grid-template-columns:var(--side-w) minmax(0,1fr)}.toc{display:none}}
@@ -349,5 +393,8 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
   .pd1{left:25%}
   .pd2{left:75%}
   .term-caret{animation:none}
-  .js .reveal{opacity:1;transform:none;transition:none}
+  .js .reveal{opacity:1;transform:none;filter:none;transition:none}
+  .js .wipe{clip-path:none;filter:none;opacity:1;transition:none}
+  .marq-in{animation:none}
+  .btn::before{display:none}
 }

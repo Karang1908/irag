@@ -6,22 +6,112 @@
   document.documentElement.classList.add("js");
   var REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* ---------- scroll reveal ---------- */
-  var reveals = document.querySelectorAll(".reveal");
-  if (reveals.length) {
-    if (REDUCE || !("IntersectionObserver" in window)) {
-      reveals.forEach(function (el) { el.classList.add("in"); });
-    } else {
-      var rObs = new IntersectionObserver(function (entries) {
-        entries.forEach(function (en) {
-          if (en.isIntersecting) {
-            en.target.classList.add("in");
-            rObs.unobserve(en.target);
+  /* ---------- Lenis momentum scrolling — the core Mistral "feel" ------- */
+  var lenis = null;
+  if (window.Lenis && !REDUCE) {
+    lenis = new Lenis({ lerp: 0.085, wheelMultiplier: 1, smoothWheel: true });
+    var rafLoop = function (t) { lenis.raf(t); requestAnimationFrame(rafLoop); };
+    requestAnimationFrame(rafLoop);
+    // in-page anchors glide through Lenis instead of jumping
+    document.addEventListener("click", function (ev) {
+      var a = ev.target.closest && ev.target.closest('a[href^="#"]');
+      if (!a) return;
+      var href = a.getAttribute("href");
+      if (href.length < 2) return;
+      var target = document.querySelector(href);
+      if (target) { ev.preventDefault(); lenis.scrollTo(target, { offset: -78 }); }
+    });
+  }
+
+  /* ---------- scroll reveal (fade/blur-up) + clip-wipe titles ---------- */
+  // section titles get a bottom-up clip-wipe; everything .reveal fades up
+  document.querySelectorAll(".sec-t").forEach(function (el) {
+    el.classList.add("wipe");
+  });
+  var pending = [].slice.call(document.querySelectorAll(".reveal, .wipe"));
+  if (REDUCE) {
+    pending.forEach(function (el) { el.classList.add("in"); });
+  } else if (pending.length) {
+    // Position-based, NOT IntersectionObserver: a fast flick or Lenis
+    // momentum can carry a section past the viewport between IO samples,
+    // leaving it permanently blank. Checking rect.top on each scroll frame
+    // reveals anything we've reached, at any scroll speed.
+    var revealCheck = function () {
+      var vh = window.innerHeight, still = [];
+      for (var i = 0; i < pending.length; i++) {
+        if (pending[i].getBoundingClientRect().top < vh * 0.88) {
+          pending[i].classList.add("in");
+        } else {
+          still.push(pending[i]);
+        }
+      }
+      pending = still;
+    };
+    revealCheck();
+    window.addEventListener("scroll", revealCheck, { passive: true });
+    window.addEventListener("resize", revealCheck, { passive: true });
+    window.addEventListener("load", revealCheck);
+    if (lenis) lenis.on("scroll", revealCheck);
+  }
+
+  /* ---------- pixel dissolve — the signature Mistral reveal ----------
+     cover the element with a canvas of background blocks, then clear them
+     in an ordered-dither sequence so the image resolves out of pixels. */
+  if (!REDUCE && "IntersectionObserver" in window) {
+    var dissolve = function (el) {
+      var W = el.clientWidth, H = el.clientHeight;
+      if (!W || !H) return;
+      var dpr = Math.min(2, window.devicePixelRatio || 1);
+      var cv = document.createElement("canvas");
+      cv.className = "px-canvas";
+      cv.width = Math.round(W * dpr);
+      cv.height = Math.round(H * dpr);
+      var ctx = cv.getContext("2d");
+      ctx.scale(dpr, dpr);
+      ctx.fillStyle = "#08090c";
+      ctx.fillRect(0, 0, W, H);
+      el.appendChild(cv);
+      var P = 15, cols = Math.ceil(W / P), rows = Math.ceil(H / P);
+      var blocks = [];
+      for (var y = 0; y < rows; y++) {
+        for (var x = 0; x < cols; x++) {
+          // ordered (Bayer-ish) weight + slight jitter = a clean dither
+          blocks.push({ x: x, y: y,
+            d: ((x & 3) * 4 + (y & 3)) / 16 + Math.random() * 0.18 });
+        }
+      }
+      blocks.sort(function (a, b) { return a.d - b.d; });
+      var i = 0, total = blocks.length, DUR = 780, t0 = null;
+      var step = function (t) {
+        if (t0 === null) t0 = t;
+        var p = Math.min(1, (t - t0) / DUR);
+        var target = Math.floor((1 - Math.pow(1 - p, 3)) * total);
+        for (; i < target; i++) {
+          var b = blocks[i];
+          ctx.clearRect(b.x * P, b.y * P, P + 1, P + 1);
+        }
+        if (p < 1) requestAnimationFrame(step);
+        else cv.remove();
+      };
+      requestAnimationFrame(step);
+    };
+    document.querySelectorAll(".px").forEach(function (el) {
+      new IntersectionObserver(function (ents, obs) {
+        ents.forEach(function (en) {
+          if (!en.isIntersecting) return;
+          obs.disconnect();
+          var img = el.querySelector("img");
+          if (img && !img.complete) {
+            img.addEventListener("load", function () { dissolve(el); },
+              { once: true });
+            img.addEventListener("error", function () { dissolve(el); },
+              { once: true });
+          } else {
+            dissolve(el);
           }
         });
-      }, { threshold: 0.12 });
-      reveals.forEach(function (el) { rObs.observe(el); });
-    }
+      }, { threshold: 0.35 }).observe(el);
+    });
   }
 
   /* ---------- hero intro (anime.js, progressive enhancement) ----------

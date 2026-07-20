@@ -389,6 +389,9 @@ def page_shell(title: str, desc: str, body: str, rel: str,
                anime: bool = False) -> str:
     anime_tag = (f'<script src="{rel}anime.min.js" defer></script>\n'
                  if anime else "")
+    # Lenis momentum scrolling site-wide (vendored, MIT) — app.js inits it
+    lenis_tag = f'<script src="{rel}lenis.min.js" defer></script>\n'
+    anime_tag = lenis_tag + anime_tag
     return f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -631,12 +634,16 @@ optional.</p></li>
 <p class="eyebrow">04 — The dashboard</p>
 <h2 class="sec-t">See what it knows.</h2>
 <div class="shots">
-<figure class="tilt reveal"><img src="assets/dashboard-overview.jpg" alt="irag dashboard overview" loading="lazy">
+<figure class="tilt px"><img src="assets/dashboard-overview.jpg" alt="irag dashboard overview" loading="lazy">
 <figcaption>live dashboard — token burn, health, activity</figcaption></figure>
-<figure class="tilt reveal"><img src="assets/dependency-graph.jpg" alt="Interactive dependency graph" loading="lazy">
+<figure class="tilt px"><img src="assets/dependency-graph.jpg" alt="Interactive dependency graph" loading="lazy">
 <figcaption>dependency graph — pan, zoom, trace imports</figcaption></figure>
 </div>
 </section>
+<div class="marq" aria-hidden="true"><div class="marq-in">
+<span>init</span><span>update</span><span>search</span><span>ask</span><span>map</span><span>impact</span><span>context</span><span>recap</span><span>why</span><span>asof</span><span>lint</span><span>check</span><span>sessions</span><span>learn</span><span>record-decision</span><span>dashboard</span>
+<span>init</span><span>update</span><span>search</span><span>ask</span><span>map</span><span>impact</span><span>context</span><span>recap</span><span>why</span><span>asof</span><span>lint</span><span>check</span><span>sessions</span><span>learn</span><span>record-decision</span><span>dashboard</span>
+</div></div>
 <section class="quote reveal">
 <blockquote>"A <b>database system with an AI layer</b> — not an AI system
 with a database attached."</blockquote>
