@@ -151,6 +151,10 @@ def _href(url: str, rel: str) -> str:
     """Rewrite repo-relative markdown links to site-relative ones."""
     if url.startswith(("http://", "https://", "#", "mailto:")):
         return url
+    # neutralise any other explicit scheme (javascript:, data:, vbscript:)
+    # so a stray/copied link can't become an active URL in the built page
+    if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", url):
+        return "#"
     name = Path(url.split("#")[0]).name
     frag = ("#" + url.split("#", 1)[1]) if "#" in url else ""
     if name in MD_LINK_MAP:

@@ -95,6 +95,19 @@ python3 -m irag diff src/auth/login.py
 python3 -m irag backup
 python3 -m irag map --json | python3 -c "import json,sys; json.load(sys.stdin)"
 
+# read commands that were previously never exercised
+python3 -m irag search login | grep -qi "login" \
+  || { echo "FAIL: search should find the login page"; exit 1; }
+python3 -m irag ask "how does login work?" >/dev/null \
+  || { echo "FAIL: ask pipeline errored"; exit 1; }
+python3 -m irag recap | grep -qi "previous sessions" \
+  || { echo "FAIL: recap should list previous sessions"; exit 1; }
+python3 -m irag asof 2099-01-01 | grep -q "login" \
+  || { echo "FAIL: asof should show current pages as of a future date"; exit 1; }
+python3 -m irag pin src/auth/login.py
+python3 -m irag status --json | python3 -c "import json,sys; assert json.load(sys.stdin)['pages']>0"
+python3 -m irag unpin src/auth/login.py
+
 python3 - << 'DASHEOF'
 import threading, time, json, urllib.request, sys, pathlib
 sys.path.insert(0, "")
@@ -110,7 +123,21 @@ with urllib.request.urlopen("http://127.0.0.1:7911/api/sessions") as r:
     sess = json.load(r)
     assert isinstance(sess, list) and len(sess) >= 1
     assert "changes_detail" in sess[0] and "files_changed" in sess[0]
-print("dashboard smoke ok")
+
+def chat(body):
+    req = urllib.request.Request(
+        "http://127.0.0.1:7911/api/chat",
+        data=json.dumps(body).encode(),
+        headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req) as r:
+        return json.load(r)
+
+# forced SQL mode must stay local even on a miss (never fall through to AI)
+miss = chat({"message": "zzznomatch", "mode": "sql"})
+assert miss["mode"] == "sql" and miss["results"] == [], f"forced-sql miss leaked to AI: {miss}"
+hit = chat({"message": "login", "mode": "sql"})
+assert hit["mode"] == "sql" and hit["results"], f"forced-sql hit returned nothing: {hit}"
+print("dashboard smoke ok (chat forced-sql honored)")
 DASHEOF
 
 python3 -m irag obsidian

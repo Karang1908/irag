@@ -360,15 +360,14 @@ def _append_log(conn, page_subject: str, page_type: str, title: str,
     entry = f"\n- {text}"
     if module:
         entry += f" _(module: {module})_"
-    next_version = conn.execute(
-        "SELECT COALESCE(MAX(version_number),0)+1 v FROM revisions "
-        "WHERE page_id=?", (page["page_id"],),
-    ).fetchone()["v"]
+    # version_number computed in-INSERT (atomic under the write lock) so a
+    # concurrent writer can't collide on the same (page_id, version_number)
     conn.execute(
         "INSERT INTO revisions(page_id, version_number, body_markdown, "
         "change_summary, triggered_by_event_id, llm_model_used) "
-        "VALUES(?,?,?,?,?, 'human')",
-        (page["page_id"], next_version, body + entry,
+        "VALUES(?, (SELECT COALESCE(MAX(version_number),0)+1 FROM revisions "
+        "WHERE page_id=?), ?,?,?, 'human')",
+        (page["page_id"], page["page_id"], body + entry,
          f"{event_type} recorded", event_id),
     )
     conn.commit()

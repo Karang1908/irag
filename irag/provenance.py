@@ -116,17 +116,20 @@ def rollback(conn: sqlite3.Connection, subject: str, version: int) -> None:
         (subject, json.dumps({"to_version": version})),
     )
     event_id = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
-    next_version = conn.execute(
-        "SELECT COALESCE(MAX(version_number),0)+1 v FROM revisions WHERE page_id=?",
-        (page["page_id"],),
-    ).fetchone()["v"]
+    # version_number computed in-INSERT (atomic under the write lock) so a
+    # rollback racing a synthesis pass can't collide on the same version
     conn.execute(
         "INSERT INTO revisions(page_id, version_number, body_markdown, "
         "change_summary, triggered_by_event_id, llm_model_used) "
-        "VALUES(?,?,?,?,?, 'human')",
-        (page["page_id"], next_version, old["body_markdown"],
+        "VALUES(?, (SELECT COALESCE(MAX(version_number),0)+1 FROM revisions "
+        "WHERE page_id=?), ?,?,?, 'human')",
+        (page["page_id"], page["page_id"], old["body_markdown"],
          f"rollback to v{version}", event_id),
     )
+    next_version = conn.execute(
+        "SELECT version_number v FROM revisions WHERE revision_id=?",
+        (conn.execute("SELECT last_insert_rowid() id").fetchone()["id"],),
+    ).fetchone()["v"]
     conn.commit()
     print(f"{subject}: rolled back to v{version} content as new v{next_version}")
 

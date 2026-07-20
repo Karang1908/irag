@@ -12,6 +12,8 @@ import re
 import sqlite3
 from pathlib import Path
 
+from . import db
+
 PATH_RE = re.compile(
     r"`([\w./-]+\.(?:py|ts|tsx|js|jsx|go|rs|java|rb|md|json|toml|ya?ml|sql|sh))`"
 )
@@ -54,13 +56,15 @@ def _existing_open_claim(conn, page_id: int, claim: str) -> bool:
 
 
 def _insert(conn, page_id: int, revision_id: int, claim: str, truth: str,
-            ctype: str, severity: str, check: str) -> bool:
+            ctype: str, severity: str, check: str,
+            detector: str = "static") -> bool:
     if _existing_open_claim(conn, page_id, claim):
         return False
     conn.execute(
         "INSERT INTO contradictions(page_id, revision_id, claim, truth, ctype, "
         "severity, detected_by) VALUES(?,?,?,?,?,?,?)",
-        (page_id, revision_id, claim, truth, ctype, severity, f"static:{check}"),
+        (page_id, revision_id, claim, truth, ctype, severity,
+         f"{detector}:{check}"),
     )
     return True
 
@@ -119,17 +123,29 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
         have_symbols = conn.execute(
             "SELECT 1 FROM symbols LIMIT 1").fetchone() is not None
         if have_symbols:
+            # a symbol claim is valid if it's defined in the page's OWN
+            # module or in any module the page imports — not merely
+            # "anywhere in the repo" (which missed real phantom-symbol
+            # hallucinations) nor "only this file" (which would falsely
+            # flag legitimate references to imported symbols)
+            from . import structure
+            mf = structure.module_facts(conn, page["subject_id"])
+            allowed = ({page["subject_id"]} | set(mf.get("files") or [])
+                       | set(mf.get("imports") or []))
+            marks = ",".join("?" * len(allowed))
             for match in SYMBOL_RE.finditer(body):
                 sym = match.group(1)
                 defined = conn.execute(
-                    "SELECT 1 FROM symbols WHERE name=? OR name LIKE ? LIMIT 1",
-                    (sym, f"%.{sym}")).fetchone()
+                    f"SELECT 1 FROM symbols WHERE (name=? OR name LIKE ? "
+                    f"ESCAPE '\\') AND subject_id IN ({marks}) LIMIT 1",
+                    (sym, f"%.{db.like_escape(sym)}", *allowed)).fetchone()
                 if not defined:
                     failing.add(f"references symbol `{sym}()`")
                     if _insert(conn, page["page_id"], page["rev_id"],
                                claim=f"references symbol `{sym}()`",
-                               truth=f"no definition of {sym} anywhere in the "
-                                     f"scanned codebase",
+                               truth=f"no definition of {sym} in "
+                                     f"{page['subject_id']} or anything it "
+                                     f"imports",
                                ctype="missing_symbol", severity="low",
                                check="missing_symbol"):
                         added += 1
@@ -149,8 +165,13 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
                         continue
             for match in SYMBOL_RE.finditer(body):
                 sym = match.group(1)
+                esc = re.escape(sym)
                 pattern = re.compile(
-                    rf"\b(?:def|function|const|fn|func)\s+{re.escape(sym)}\b"
+                    # def/function/const/fn/func NAME  (Py/JS/Go/Rust), OR
+                    # NAME(...) {  /  NAME(...) throws  (Java/C/C++/C# method
+                    # or constructor definitions — a decl, not a call)
+                    rf"\b(?:def|function|const|fn|func)\s+{esc}\b"
+                    rf"|(?<![.\w]){esc}\s*\([^;=]*\)\s*(?:\{{|throws\b)"
                 )
                 if source and not pattern.search(source):
                     failing.add(f"references symbol `{sym}()`")
@@ -235,15 +256,32 @@ def lint_llm(conn: sqlite3.Connection, cfg: dict, repo: Path,
             f"PAGE:\n{page['body']}"
         )
         out = synthesis.run_llm(cfg, prompt)
-        if out.strip().upper() == "NONE":
-            continue
-        for line in out.splitlines():
-            if "|" not in line:
-                continue
-            claim, why = (s.strip() for s in line.split("|", 1))
-            if claim and _insert(conn, page["page_id"], page["rev_id"],
-                                 claim=claim, truth=why, ctype="llm_flagged",
-                                 severity="medium", check="llm"):
-                added += 1
+        flagged: set[str] = set()
+        if out.strip().upper() != "NONE":
+            for line in out.splitlines():
+                if "|" not in line:
+                    continue
+                claim, why = (s.strip() for s in line.split("|", 1))
+                if not claim:
+                    continue
+                flagged.add(claim)
+                if _insert(conn, page["page_id"], page["rev_id"],
+                           claim=claim, truth=why, ctype="llm_flagged",
+                           severity="medium", check="llm", detector="llm"):
+                    added += 1
+        # auto-resolve LLM-flagged claims this page no longer trips. These
+        # carry the 'llm:' prefix so the static tier's auto-resolve (scoped
+        # to 'static:%') never touches them — this is the only place they
+        # resolve, so a re-run that stops flagging a claim clears it.
+        for row in conn.execute(
+                "SELECT contradiction_id, claim FROM contradictions "
+                "WHERE page_id=? AND resolved_at IS NULL "
+                "AND detected_by LIKE 'llm:%'",
+                (page["page_id"],)).fetchall():
+            if row["claim"] not in flagged:
+                conn.execute(
+                    "UPDATE contradictions SET resolved_at=datetime('now'), "
+                    "resolution_notes='auto-resolved: LLM no longer flags it' "
+                    "WHERE contradiction_id=?", (row["contradiction_id"],))
     conn.commit()
     return added

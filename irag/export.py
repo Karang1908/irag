@@ -9,10 +9,20 @@ agent's harness looks for.
 """
 from __future__ import annotations
 
+import os
 import sqlite3
 from pathlib import Path
 
 from . import db
+
+
+def _atomic_write(path: Path, text: str) -> None:
+    """Write via a temp file + os.replace so an interrupted run can never
+    leave a half-written CLAUDE.md/AGENTS.md (os.replace is atomic on the
+    same filesystem)."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def export(conn: sqlite3.Connection, cfg: dict, repo: Path,
@@ -113,7 +123,7 @@ def export(conn: sqlite3.Connection, cfg: dict, repo: Path,
     ]
     text = "\n".join(lines)
     out_path = repo / out_name
-    out_path.write_text(text, encoding="utf-8")
+    _atomic_write(out_path, text)
     if out_name == "CLAUDE.md":
-        (repo / "AGENTS.md").write_text(text, encoding="utf-8")
+        _atomic_write(repo / "AGENTS.md", text)
     return out_path

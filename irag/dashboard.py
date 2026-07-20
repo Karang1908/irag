@@ -56,7 +56,8 @@ class _State:
     def __init__(self, root: Path):
         self.root = root
         self.cfg = config_mod.load(root)
-        self.lock = threading.Lock()   # serialize LLM-heavy operations
+        self.lock = threading.Lock()          # serialize LLM-heavy operations
+        self.update_lock = threading.Lock()   # atomic guard for update_running
         self.update_log: list[str] = []
         self.update_running = False
 
@@ -198,9 +199,9 @@ def make_handler(state: _State):
                     return self._json(
                         [sessions_mod.row_to_dict(r) for r in rows])
                 return self._json({"error": "not found"}, 404)
-            except Exception as exc:   # keep the dashboard alive
+            except Exception:   # keep the dashboard alive
                 traceback.print_exc()
-                return self._json({"error": str(exc)}, 500)
+                return self._json({"error": "internal error — see the dashboard server console"}, 500)
 
         # ---------- POST ----------
         def do_POST(self):
@@ -246,13 +247,16 @@ def make_handler(state: _State):
                                    "resolved from dashboard")
                     return self._json({"ok": True})
                 if url.path == "/api/update":
-                    if state.update_running:
-                        return self._json({"ok": False,
-                                           "error": "already running"}, 409)
-
-                    def worker():
+                    # atomic check-and-set: two rapid POSTs must not both
+                    # start a worker (they'd run sync/scan concurrently)
+                    with state.update_lock:
+                        if state.update_running:
+                            return self._json({"ok": False,
+                                               "error": "already running"}, 409)
                         state.update_running = True
                         state.update_log = ["update started"]
+
+                    def worker():
                         try:
                             wconn = state.conn()
                             from . import ingest, export as export_mod
@@ -279,9 +283,9 @@ def make_handler(state: _State):
                     threading.Thread(target=worker, daemon=True).start()
                     return self._json({"ok": True})
                 return self._json({"error": "not found"}, 404)
-            except Exception as exc:
+            except Exception:
                 traceback.print_exc()
-                return self._json({"error": str(exc)}, 500)
+                return self._json({"error": "internal error — see the dashboard server console"}, 500)
 
     return Handler
 

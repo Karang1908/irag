@@ -147,8 +147,13 @@ def serve(conn: sqlite3.Connection, cfg: dict,
     """Build the tiered context markdown. Returns (markdown, machine_dict)."""
     ranked = score(conn, cfg, open_files, query)
     min_score = int(cfg["retrieval"]["min_score"])
-    budget_chars = int(budget_tokens or cfg["retrieval"]["token_budget"]) * 4
+    # distinguish "not provided" (None -> config default) from an explicit 0
+    tok = budget_tokens if budget_tokens is not None \
+        else cfg["retrieval"]["token_budget"]
+    budget_chars = int(tok) * 4
     full_max = int(cfg["retrieval"]["full_max"])
+    DIGEST_COST = 260   # ~ chars of one digest summary line, charged to budget
+    INDEX_MAX = 120     # cap the cheap one-line tail so output stays bounded
 
     lines = ["# Project Context (irag)", ""]
     machine: dict = {"full": [], "digest": [], "index": [], "warnings": []}
@@ -182,8 +187,12 @@ def serve(conn: sqlite3.Connection, cfg: dict,
         if len(full) < full_max and body and used + len(body) <= budget_chars:
             full.append((r, body))
             used += len(body)
-        elif body:
+        elif body and used + DIGEST_COST <= budget_chars:
+            # digest entries also cost tokens — charge them so the whole
+            # briefing honors budget_tokens; overflow falls through to the
+            # cheap one-line index instead of ballooning unbounded
             digest.append(r)
+            used += DIGEST_COST
         else:
             index.append(r)
 
@@ -236,7 +245,7 @@ def serve(conn: sqlite3.Connection, cfg: dict,
     remaining = [r for r in ranked if r["score"] < min_score] + index
     if remaining:
         lines.append("## INDEX")
-        for r in remaining:
+        for r in remaining[:INDEX_MAX]:
             page = r["page"]
             lines.append(
                 f"- {page['title']} (score {r['score']}, "
@@ -245,6 +254,9 @@ def serve(conn: sqlite3.Connection, cfg: dict,
             machine["index"].append(
                 {"subject": page["subject_id"], "score": r["score"],
                  "staleness": page["staleness_score"]})
+        if len(remaining) > INDEX_MAX:
+            lines.append(f"- …and {len(remaining) - INDEX_MAX} more "
+                         "(raise [retrieval].token_budget or query to narrow)")
 
     return "\n".join(lines), machine
 

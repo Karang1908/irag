@@ -716,7 +716,10 @@ function createGraph(container){
     links.forEach(l=>{l.s.adj.add(l.t.id);l.t.adj.add(l.s.id)});
     const maxN=Math.max(1,...nodes.map(n=>n.n));
     nodes.forEach(n=>{n.r=6+Math.sqrt(n.n/maxN)*16;n.hue=folderHue(n.id)});
-    resize();for(let i=0;i<140;i++)physics(1);fit();renderLegend(nodes);
+    // warm-up iterations scale DOWN as node count grows, so the O(N²)
+    // settle stays roughly linear in N and never janks large graphs
+    resize();const warm=Math.max(30,Math.min(140,Math.floor(12000/Math.max(nodes.length,1))));
+    for(let i=0;i<warm;i++)physics(1);fit();renderLegend(nodes);
     setInfo(`${nodes.length} modules · ${links.length} import edges`);
   }
   function physics(a){

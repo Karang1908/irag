@@ -273,9 +273,9 @@ def run_llm(cfg: dict, prompt: str) -> str:
             import tempfile
             fh = tempfile.NamedTemporaryFile(
                 "w", suffix=".txt", delete=False, encoding="utf-8")
-            fh.write(prompt)
+            tmp_path = fh.name   # record before write/close so the finally
+            fh.write(prompt)     # block always cleans up, even if write fails
             fh.close()
-            tmp_path = fh.name
             cmd = [tok.replace("{promptfile}", tmp_path) for tok in cmd]
             stdin_input = ""
         elif any("{prompt}" in tok for tok in cmd):
@@ -346,17 +346,20 @@ def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False) -> bool:
     if not body:
         raise SystemExit("irag: LLM returned empty output; page not updated")
 
-    next_version = conn.execute(
-        "SELECT COALESCE(MAX(version_number), 0) + 1 v FROM revisions "
-        "WHERE page_id=?", (page["page_id"],)).fetchone()["v"]
     newest_event = event_ids[-1] if event_ids else None
+    # version_number is computed inside the INSERT (a subquery evaluated
+    # while holding WAL's write lock) so two concurrent writers on the same
+    # page can't both read the same MAX and collide; tokens_used counts the
+    # prompt as well as the output (the prompt is usually the larger half)
+    tokens = (len(prompt) + len(body)) // 4
     conn.execute(
         "INSERT INTO revisions(page_id, version_number, body_markdown, "
         "change_summary, triggered_by_event_id, llm_model_used, tokens_used) "
-        "VALUES(?,?,?,?,?,?,?)",
-        (page["page_id"], next_version, body,
+        "VALUES(?, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM "
+        "revisions WHERE page_id=?), ?,?,?,?,?)",
+        (page["page_id"], page["page_id"], body,
          f"{page['page_type']} synthesis from {len(events)} event(s)",
-         newest_event, cfg["llm"]["model_label"], len(body) // 4))
+         newest_event, cfg["llm"]["model_label"], tokens))
     if event_ids:
         conn.execute(
             f"UPDATE events SET status='completed', "
@@ -395,31 +398,48 @@ def sweep(conn, cfg, repo: Path, dry_run: bool = False,
         if limit:
             pages = pages[:limit]
     done = 0
+    failures: list[str] = []
+
+    def _run(page, suffix="") -> bool:
+        # isolate each page: a SystemExit from run_llm (bad/timing-out/
+        # refusing LLM on THIS page) marks its events failed and is
+        # recorded, but must not abort synthesis of every other page
+        try:
+            if synthesize_page(conn, cfg, page, repo, dry_run=dry_run):
+                print(f"synthesized: {page['subject_id']}{suffix}")
+                return True
+        except SystemExit as exc:
+            failures.append(page["subject_id"])
+            print(f"  ✗ {page['subject_id']}{suffix}: {exc}")
+        return False
+
     for page in pages:
-        if synthesize_page(conn, cfg, page, repo, dry_run=dry_run):
+        if _run(page):
             done += 1
-            print(f"synthesized: {page['subject_id']}")
     if not subject:
         # fixpoint: a folder becomes eligible once its children have
         # revisions, which can happen within this very sweep — iterate
         # until no more folders are pending (bounded by tree depth)
         for _ in range(30):
-            folders = pending_folder_pages(conn, cfg)
-            if dry_run:
-                pass
+            folders = [f for f in pending_folder_pages(conn, cfg)
+                       if f["subject_id"] not in failures]
             if limit is not None:
                 folders = folders[: max(limit - done, 0)]
             if not folders:
                 break
             progressed = False
             for page in folders:
-                if synthesize_page(conn, cfg, page, repo, dry_run=dry_run):
+                if _run(page, suffix="/ (folder)"):
                     done += 1
                     progressed = True
-                    print(f"synthesized: {page['subject_id']}/ (folder)")
             if not progressed:
                 break
-    if done == 0 and not dry_run:
+    if failures:
+        print(f"{len(failures)} page(s) failed synthesis "
+              "(events remain queued and retry on the next 'irag update'): "
+              + ", ".join(failures[:8])
+              + (f" +{len(failures) - 8} more" if len(failures) > 8 else ""))
+    if done == 0 and not failures and not dry_run:
         _explain_nothing_pending(conn, cfg)
     return done
 

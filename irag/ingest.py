@@ -25,6 +25,21 @@ from . import db
 # export -> commit -> staleness -> synthesize -> export feedback loop)
 SELF_ARTIFACTS = {"CLAUDE.md", "AGENTS.md"}
 
+
+def _file_hash(path: "Path") -> str | None:
+    """SHA-1 of the WHOLE file, read in chunks (bounded memory). Hashing
+    only a prefix would miss edits past that offset, so change detection
+    reads the entire file."""
+    import hashlib
+    h = hashlib.sha1()
+    try:
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+    except OSError:
+        return None
+    return h.hexdigest()
+
 MANIFEST_FILES = {
     "package.json", "requirements.txt", "pyproject.toml",
     "Cargo.toml", "go.mod", "pom.xml",
@@ -223,7 +238,6 @@ def _content_already_known(conn, repo: Path, subject: str) -> bool:
     """True if the file's current bytes match the stored fingerprint AND
     the page has a synthesized revision — committing already-summarized
     content should not trigger a rewrite."""
-    import hashlib
     row = conn.execute("SELECT hash FROM tree_state WHERE path=?",
                        (subject,)).fetchone()
     if not row:
@@ -231,12 +245,8 @@ def _content_already_known(conn, repo: Path, subject: str) -> bool:
     f = repo / subject
     if not f.is_file():
         return False
-    try:
-        with open(f, "rb") as fh:
-            digest = hashlib.sha1(fh.read(SNAP_MAX_FILE)).hexdigest()
-    except OSError:
-        return False
-    if digest != row["hash"]:
+    digest = _file_hash(f)
+    if digest is None or digest != row["hash"]:
         return False
     page = conn.execute(
         "SELECT current_revision_id FROM pages "
@@ -338,21 +348,20 @@ SNAP_MAX_FILES = 20_000
 
 
 def _tree_hashes(repo: Path, cfg: dict) -> dict[str, str]:
-    import hashlib
     hashes: dict[str, str] = {}
     count = 0
     for f in sorted(repo.rglob("*")):
         if count >= SNAP_MAX_FILES:
+            print(f"irag: note — snapshot stopped at {SNAP_MAX_FILES} files; "
+                  "add a .iragignore to exclude generated/vendored trees")
             break
         if not f.is_file():
             continue
         rel = f.relative_to(repo).as_posix()
         if is_ignored(rel, cfg, repo):
             continue
-        try:
-            with open(f, "rb") as fh:
-                digest = hashlib.sha1(fh.read(SNAP_MAX_FILE)).hexdigest()
-        except OSError:
+        digest = _file_hash(f)
+        if digest is None:
             continue
         hashes[rel] = digest
         count += 1

@@ -12,6 +12,7 @@ def run(conn: sqlite3.Connection, cfg: dict) -> int:
     """Print a health summary; return the intended process exit code."""
     max_staleness = int(cfg["check"]["max_staleness"])
     fail_on_contra = bool(cfg["check"]["fail_on_contradictions"])
+    fail_on_stale = bool(cfg["check"].get("fail_on_staleness", True))
 
     open_contras = conn.execute(
         "SELECT COUNT(*) c FROM contradictions WHERE resolved_at IS NULL"
@@ -34,7 +35,7 @@ def run(conn: sqlite3.Connection, cfg: dict) -> int:
     if fail_on_contra and open_contras:
         print("FAIL: open contradictions present (run 'irag contradictions')")
         failed = True
-    if over_stale:
+    if fail_on_stale and over_stale:
         print("FAIL: stale pages present (run 'irag synthesize')")
         failed = True
     if not failed:

@@ -236,10 +236,13 @@ def scan(conn: sqlite3.Connection, cfg: dict, repo: Path,
 # queries
 # ---------------------------------------------------------------------
 def _subject_filter(subject: str) -> tuple[str, tuple]:
-    """SQL condition matching a file exactly or everything under a folder."""
+    """SQL condition matching a file exactly or everything under a folder.
+    The folder prefix is LIKE-escaped so a literal `_` in a path can't act
+    as a wildcard and pull in sibling directories."""
     if subject == ".":
         return "1=1", ()
-    return "({col} = ? OR {col} LIKE ?)", (subject, subject + "/%")
+    return ("({col} = ? OR {col} LIKE ? ESCAPE '\\')",
+            (subject, db.like_escape(subject) + "/%"))
 
 
 def module_facts(conn: sqlite3.Connection, subject: str,

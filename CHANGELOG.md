@@ -6,24 +6,56 @@ in spirit (no public API contract yet beyond the CLI).
 
 ## Unreleased
 
-### Fixed
-- **Dashboard chat: explicit "SQL" mode no longer falls through to the AI
-  pipeline on a miss.** Selecting SQL and searching for something with no
-  page match now returns an instant "No matches." (local, zero tokens)
-  instead of silently spending an LLM call — which, on a project whose
-  summarizer command is slow or misconfigured, surfaced as a hang or an
-  error where a plain "no results" was expected. Auto-routing still falls
-  through to AI on a keyword miss, as designed.
-- **Dashboard chat: markdown link rendering hardened.** The in-chat
-  renderer now only linkifies well-formed `http(s)`/`mailto` URLs; a
-  `javascript:`/`data:` scheme or a quote/space that could break out of
-  the `href` attribute renders as plain text, and real links get
-  `rel="noopener"`.
+### Fixed — audit pass (correctness, data-integrity, concurrency)
+- **Append-only history is now race-safe.** `revisions(page_id,
+  version_number)` is a UNIQUE index (existing databases are upgraded on
+  open), the next version number is computed *inside* the INSERT at every
+  writer (synthesis, `learn`/`record-decision`, `rollback`), and
+  connections use `PRAGMA busy_timeout` — so two overlapping writers on
+  the same page (a Stop-hook `irag update` racing another session, a
+  rollback racing a synthesis pass) can no longer collide and silently
+  orphan a revision.
+- **One failing page no longer starves synthesis.** `sweep()` isolates
+  each page: a `SystemExit` from the LLM on one page is recorded and
+  reported, but the rest of the sweep (and the lint + CLAUDE.md export at
+  the end of `irag update`) still runs. Failed pages stay queued and
+  retry next time.
+- **`irag update` no longer wipes `irag lint --llm` findings.**
+  LLM-flagged contradictions carry a distinct `llm:` prefix, so the
+  static tier's auto-resolve (scoped to `static:`) can't clear them; they
+  auto-resolve only when a re-run of `lint --llm` stops flagging them.
+- **`irag context` honors its token budget.** The DIGEST tier and the
+  INDEX tail are now charged against / capped by `budget_tokens`, so the
+  injected briefing can't balloon far past the requested size.
+- **Token spend counts the prompt, not just the output** — the
+  dashboard's "est tokens" and burn chart now reflect real cost.
+- **FTS search keeps non-ASCII terms whole** (`\w` instead of
+  `[A-Za-z0-9_]`), so accented/CJK queries aren't fragmented.
+- **Phantom-symbol linting is scoped** to a page's own module *and its
+  imports* (catches real cross-module hallucinations without falsely
+  flagging legitimate imported-symbol references), and now recognizes
+  Java method/constructor declarations.
+- **Dashboard chat: explicit "SQL" mode no longer falls through to AI on
+  a miss** (instant "No matches.", zero tokens); the in-chat markdown
+  renderer only linkifies safe `http(s)`/`mailto` URLs.
+- Smaller fixes: `get_or_create_page` tolerates a concurrent first-insert;
+  `run_llm` never leaks its temp prompt file; `budget_tokens=0` is
+  respected; snapshot change-detection hashes whole files (not just the
+  first 1 MB); LIKE patterns escape `_`/`%` in paths; CLAUDE.md/AGENTS.md
+  are written atomically; the dashboard's `/api/update` guard is atomic
+  and 500s no longer echo internals to the client.
+
+### Added
+- `[check].fail_on_staleness` config toggle (default `true`) — set it
+  `false` to let `irag check` pass despite stale pages.
+- Smoke-test coverage for `search`, `ask`, `recap`, `asof`, `pin`/`unpin`,
+  and the dashboard chat's forced-SQL routing.
 
 ### Changed
 - Dashboard restyled to match the documentation site's editorial design
   system (Clash Display + Satoshi, near-black surface, hairline stat
   ledger, single-accent token-burn chart). Presentation only.
+- README command index corrected (35 commands; `lint` was missing).
 
 ## 4.2.0 — 2026-07-19
 

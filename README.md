@@ -229,11 +229,11 @@ irag check                      # CI gate: exit 1 if memory disagrees with code
 Full honest comparison (including where the others win):
 [docs/COMPARISON.md](docs/COMPARISON.md).
 
-## Commands (34)
+## Commands (35)
 
 `init` · `claude-setup` · `doctor` — setup ·
 `sync` · `ingest-commit` · `scan` — detect ·
-`synthesize` · `update` · `learn` · `record-decision` · `resolve` ·
+`synthesize` · `update` · `lint` · `learn` · `record-decision` · `resolve` ·
 `rollback` — write ·
 `search` · `map` · `impact` · `stale` · `status` · `diff` ·
 `contradictions` · `asof` — read (SQL, zero tokens) ·

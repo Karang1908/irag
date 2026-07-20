@@ -21,7 +21,8 @@ KNOWN_KEYS = {
     "modules": {"ignore": list},
     "staleness": {"commit": int, "dependency": int, "threshold": int},
     "retrieval": {"token_budget": int, "full_max": int, "min_score": int},
-    "check": {"max_staleness": int, "fail_on_contradictions": bool},
+    "check": {"max_staleness": int, "fail_on_contradictions": bool,
+              "fail_on_staleness": bool},
 }
 
 

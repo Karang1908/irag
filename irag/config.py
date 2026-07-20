@@ -6,6 +6,7 @@ the keys it wants to override.
 """
 from __future__ import annotations
 
+import copy
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,7 @@ min_score = 20
 [check]
 max_staleness = 150
 fail_on_contradictions = true
+fail_on_staleness = true      # set false to let 'irag check' pass despite stale pages
 '''
 
 DEFAULTS: dict[str, Any] = {
@@ -64,6 +66,7 @@ DEFAULTS: dict[str, Any] = {
     "check": {
         "max_staleness": 150,
         "fail_on_contradictions": True,
+        "fail_on_staleness": True,
     },
 }
 
@@ -86,14 +89,16 @@ def config_path(repo_root: Path) -> Path:
 def load(repo_root: Path) -> dict[str, Any]:
     """Load config for the repo, merging the TOML file over defaults."""
     path = config_path(repo_root)
+    # deep-copy so nested dicts/lists are never shared with the module-level
+    # DEFAULTS (a mutation of one repo's cfg must not leak into another's)
     if not path.exists():
-        return dict(DEFAULTS)
+        return copy.deepcopy(DEFAULTS)
     try:
         with open(path, "rb") as fh:
             user = tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
         raise SystemExit(f"irag: invalid TOML in {path}: {exc}") from exc
-    return _deep_merge(DEFAULTS, user)
+    return _deep_merge(copy.deepcopy(DEFAULTS), user)
 
 
 def write_default(repo_root: Path) -> Path:

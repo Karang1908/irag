@@ -48,7 +48,11 @@ CREATE TABLE IF NOT EXISTS revisions (
   tokens_used           INTEGER DEFAULT 0,
   created_at            TEXT DEFAULT (datetime('now'))
 );
-CREATE INDEX IF NOT EXISTS idx_revisions_page ON revisions(page_id, version_number);
+-- UNIQUE so a racing duplicate (page_id, version_number) fails loudly with
+-- an IntegrityError instead of silently orphaning a revision. The version
+-- number is computed inside the INSERT (a subquery under WAL's write lock)
+-- at every writer, so this constraint should never actually trip.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_revisions_page ON revisions(page_id, version_number);
 
 CREATE TABLE IF NOT EXISTS links (
   link_id        INTEGER PRIMARY KEY,
@@ -174,6 +178,10 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    # concurrent writers (a Stop-hook `irag update` overlapping another
+    # session, a rollback racing a synthesis pass) should WAIT for the
+    # WAL write lock, not fail instantly with "database is locked"
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
@@ -183,7 +191,33 @@ def ensure_db(db_path: Path) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     conn.commit()
     _add_column_if_missing(conn, "sessions", "changes_detail", "TEXT")
+    _ensure_unique_revisions_index(conn)
     return conn
+
+
+def _ensure_unique_revisions_index(conn: sqlite3.Connection) -> None:
+    """Upgrade a pre-existing non-UNIQUE idx_revisions_page to UNIQUE.
+    Fresh installs already get the UNIQUE index from SCHEMA; databases
+    created before this change keep the old plain index (CREATE ... IF NOT
+    EXISTS won't replace it), so promote it here. If legacy duplicate
+    (page_id, version_number) rows already exist the promotion fails — we
+    leave the plain index in place (the in-INSERT version computation still
+    prevents new races) rather than crash on open."""
+    row = conn.execute(
+        "SELECT \"unique\" u FROM pragma_index_list('revisions') "
+        "WHERE name='idx_revisions_page'").fetchone()
+    if row is None or row["u"]:
+        return
+    try:
+        conn.execute("DROP INDEX idx_revisions_page")
+        conn.execute("CREATE UNIQUE INDEX idx_revisions_page "
+                     "ON revisions(page_id, version_number)")
+        conn.commit()
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_revisions_page "
+                     "ON revisions(page_id, version_number)")
+        conn.commit()
 
 
 def _add_column_if_missing(conn: sqlite3.Connection, table: str,
@@ -222,11 +256,17 @@ def get_or_create_page(conn, subject_id: str, subject_type: str = "module",
     ).fetchone()
     if row:
         return row
-    conn.execute(
-        "INSERT INTO pages(page_type, title, subject_type, subject_id) VALUES(?,?,?,?)",
-        (page_type, title or subject_id, subject_type, subject_id),
-    )
-    conn.commit()
+    try:
+        conn.execute(
+            "INSERT INTO pages(page_type, title, subject_type, subject_id) "
+            "VALUES(?,?,?,?)",
+            (page_type, title or subject_id, subject_type, subject_id),
+        )
+        conn.commit()
+    except sqlite3.IntegrityError:
+        # another writer created the same subject between our SELECT and
+        # INSERT (UNIQUE(subject_type, subject_id)) — just read theirs
+        conn.rollback()
     return conn.execute(
         "SELECT * FROM pages WHERE subject_type=? AND subject_id=?",
         (subject_type, subject_id),
@@ -251,7 +291,15 @@ def open_contradiction_count(conn, page_id: int) -> int:
 
 
 def fts_sanitize(q: str) -> str:
-    """Reduce a free-text query to a safe FTS5 OR-query."""
+    """Reduce a free-text query to a safe FTS5 OR-query. `\\w` is Unicode-
+    aware on str patterns, so accented and CJK terms stay whole tokens
+    instead of fragmenting into unrelated OR-clauses."""
     import re
-    words = re.findall(r"[A-Za-z0-9_]{2,}", q)
+    words = re.findall(r"\w{2,}", q)
     return " OR ".join(words[:12]) if words else ""
+
+
+def like_escape(s: str) -> str:
+    r"""Escape LIKE metacharacters so a literal path/name (which routinely
+    contains `_`) can't act as a wildcard. Use with `LIKE ? ESCAPE '\'`."""
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
