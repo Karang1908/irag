@@ -192,11 +192,11 @@
 
     var caps = [
       ["Files become a graph.",
-       "A node for every file, an edge for every import — one map your agent queries instead of re-reading the tree."],
+       "A node for every file, an edge for every import. One map your agent queries instead of re-reading the tree."],
       ["Imports become edges.",
-       "irag parses the dependencies and wires the nodes deterministically — no tokens, always current."],
+       "irag parses the dependencies and wires the nodes deterministically, with no tokens and always current."],
       ["One graph, queryable.",
-       "Structure, neighbors, blast radius — all read from SQL in an instant."]
+       "Structure, neighbors, blast radius: all read from SQL in an instant."]
     ];
     var capT = document.getElementById("sc-cap-t");
     var capP = document.getElementById("sc-cap-p");
@@ -298,8 +298,8 @@
       tl.add({ targets: gp, strokeDashoffset: [anime.setDashoffset, 0],
         easing: "easeInOutSine", duration: 850,
         delay: anime.stagger(45) }, 300)
-        .add({ targets: gn, scale: 1, easing: "easeOutBack",
-          duration: 500, delay: anime.stagger(40) }, 750)
+        .add({ targets: gn, scale: 1, easing: "easeOutQuint",
+          duration: 520, delay: anime.stagger(40) }, 750)
         .add({ targets: gl, opacity: 1, duration: 400,
           delay: anime.stagger(30) }, 1100);
     }

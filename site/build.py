@@ -517,8 +517,8 @@ def landing() -> str:
 <div class="hero-copy">
 <p class="eyebrow hero-eyebrow">Pluggable memory for AI coding agents</p>
 <h1 class="hero-name" aria-label="irag"><span>i</span><span>r</span><span>a</span><span>g</span><span class="hn-dot">.</span></h1>
-<p class="lede">Plug a memory into any coding agent — Claude Code, Cursor,
-Codex — and it stops re-learning your codebase every session.
+<p class="lede">Plug a memory into any coding agent (Claude Code, Cursor,
+Codex) and it stops re-learning your codebase every session.
 <b>irag remembers what every file does, what changed and why, and what
 each session decided</b>: one SQLite file inside your repo, fact-checked
 against the real code, so it can never quietly lie.</p>
@@ -530,54 +530,52 @@ against the real code, so it can never quietly lie.</p>
 </div>
 <figure class="hero-graph" aria-hidden="true">
 {hero_graph()}
-<figcaption class="mono-cap">your codebase, as irag maps it — parsed, never guessed</figcaption>
+<figcaption class="mono-cap">your codebase, as irag maps it: parsed, never guessed</figcaption>
 </figure>
 </section>
 <section class="stats" aria-label="irag in numbers">
 <div class="stat"><b data-cnt="3" data-suf="k">3k</b><span>tokens to
-brief a fresh session — instead of 20–100k of re-exploration</span></div>
+brief a fresh session, vs 20–100k of re-exploration</span></div>
 <div class="stat"><b data-cnt="150" data-pre="~">~150</b><span>tokens to
 resume any past conversation, with its per-file changes</span></div>
 <div class="stat"><b data-cnt="1" data-suf=" file">1 file</b><span>the
-entire memory — SQLite, inside your repo, mounts anywhere</span></div>
+entire memory: SQLite, inside your repo, mounts anywhere</span></div>
 <div class="stat"><b data-cnt="0">0</b><span>runtime dependencies,
 services, or API keys</span></div>
 </section>
 <section class="sec" id="why">
-<p class="eyebrow">01 — Why it exists</p>
 <h2 class="sec-t">Context files rot. Databases don't.</h2>
 <div class="why-cols">
 <p>Every coding agent ships the same fix for amnesia: a markdown file it
 re-reads at startup. Claims go stale, nobody notices, and the agent keeps
 trusting them. irag treats memory as a <b>storage problem, not a prompt
-problem</b> — version every claim, fact-check it against the code
+problem</b>. Version every claim, fact-check it against the code
 mechanically, and let the expensive model read instead of re-explore.</p>
 <p>It began as a database-systems assignment: a law-firm knowledge base,
 where a wrong court date is a real failure, not a bad chatbot answer.
-That discipline stuck when it was pointed at code —
-<a href="docs/story/">the full story</a>.</p>
+That discipline stuck when it was pointed at code.
+<a href="docs/story/">Read the full story</a>.</p>
 </div>
 <div class="table-wrap cmp reveal">
 <table>
 <tr><th></th><th>Graphify</th><th>claude-mem</th><th class="hl">irag</th></tr>
 <tr><td>Remembers</td><td>structure</td><td>conversations</td>
 <td class="hl">structure + meaning + history</td></tr>
-<tr><td>Can it be wrong?</td><td>rarely — it's a parse</td>
-<td>yes — silently, forever</td>
-<td class="hl">yes — and it detects, records, and gates CI on it</td></tr>
+<tr><td>Can it be wrong?</td><td>rarely (it's a parse)</td>
+<td>yes, silently, forever</td>
+<td class="hl">yes, and it detects, records, and gates CI on it</td></tr>
 <tr><td>Cost</td><td>free</td><td>scales with chat volume</td>
 <td class="hl">reads free · writes on any cheap model</td></tr>
 </table>
 </div>
 <p class="fineprint"><b>irag's trade-offs, honestly:</b> writes cost LLM
-calls (pluggable — point them at a free-quota model), it needs Python
-3.11+, and the linter verifies checkable claims — paths, symbols,
-versions — not opinions. <a href="docs/comparison/">Full comparison →</a></p>
+calls (pluggable: point them at a free-quota model), it needs Python
+3.11+, and the linter verifies checkable claims (paths, symbols,
+versions), not opinions. <a href="docs/comparison/">Full comparison →</a></p>
 </section>
 <section class="showcase" id="showcase" aria-label="irag turns your files into a graph">
 <div class="sc-sticky">
 <div class="sc-cap">
-<p class="eyebrow">Under the hood</p>
 <h2 class="sc-cap-t" id="sc-cap-t">Files become a graph.</h2>
 <p class="sc-cap-p" id="sc-cap-p">A node for every file. An edge for every import. One map your
 agent queries instead of re-reading the tree.</p>
@@ -590,14 +588,13 @@ agent queries instead of re-reading the tree.</p>
 </div>
 </section>
 <section class="sec" id="how">
-<p class="eyebrow">02 — How it runs</p>
 <h2 class="sec-t">Three actors. One loop.</h2>
 <div class="pipe">
 <em class="pd1" aria-hidden="true"></em><em class="pd2" aria-hidden="true"></em>
 <div class="pipe-col reveal">
 <p class="mono-cap">reads · zero tokens</p>
 <h3>Your agent</h3>
-<p>Claude Code, Cursor, Codex — starts every session already briefed,
+<p>Claude Code, Cursor, Codex: starts every session already briefed,
 through SQL. It never greps to remember.</p>
 </div>
 <div class="pipe-col mid reveal">
@@ -609,7 +606,7 @@ fact-checks every claim. Never calls a model itself.</p>
 <div class="pipe-col reveal">
 <p class="mono-cap">writes · cheap quota</p>
 <h3>The scribe</h3>
-<p>Any LLM CLI you configure writes the summaries — on a free-quota
+<p>Any LLM CLI you configure writes the summaries, on a free-quota
 model, so bookkeeping never touches your agent's limits.</p>
 </div>
 </div>
@@ -619,40 +616,38 @@ model, so bookkeeping never touches your agent's limits.</p>
 </div>
 </section>
 <section class="sec">
-<p class="eyebrow">03 — What you get</p>
 <h2 class="sec-t">Built like a database, because it is one.</h2>
 <ol class="featlist">
-<li class="reveal"><span>01</span><h3>Pluggable memory</h3>
+<li class="reveal"><h3>Pluggable memory</h3>
 <p>One <code>pip install</code>, one <code>irag init</code>. The whole
-memory is a single SQLite file in your repo — no service, no cloud, no
+memory is a single SQLite file in your repo: no service, no cloud, no
 keys. Unplug it, move it, mount it from any agent on any machine.</p></li>
-<li class="reveal"><span>02</span><h3>Your agent never greps again</h3>
-<p>Search, code map, blast radius, and context come from SQL — not from
+<li class="reveal"><h3>Your agent never greps again</h3>
+<p>Search, code map, blast radius, and context come from SQL, not from
 the model re-reading your tree.</p></li>
-<li class="reveal"><span>03</span><h3>Memory that can't quietly lie</h3>
+<li class="reveal"><h3>Memory that can't quietly lie</h3>
 <p>The only memory tool that fact-checks its own claims against your
 code, records what's wrong, and fails CI while memory and code
 disagree.</p></li>
-<li class="reveal"><span>04</span><h3>Reads cost ~nothing</h3>
-<p>A ~3k-token briefing replaces 20–100k tokens of re-exploration —
+<li class="reveal"><h3>Reads cost ~nothing</h3>
+<p>A ~3k-token briefing replaces 20–100k tokens of re-exploration,
 and writes go on whatever cheap or free model you point at it.</p></li>
-<li class="reveal"><span>05</span><h3>Every chat resumes where the last ended</h3>
+<li class="reveal"><h3>Every chat resumes where the last ended</h3>
 <p>A ~150-token recap of what previous sessions did and changed,
 injected automatically.</p></li>
-<li class="reveal"><span>06</span><h3>Works with every agent</h3>
+<li class="reveal"><h3>Works with every agent</h3>
 <p>Claude Code hooks make it fully automatic; the generated
 <code>AGENTS.md</code> reaches Codex, Antigravity, and Cursor. Git is
 optional.</p></li>
 </ol>
 </section>
 <section class="sec">
-<p class="eyebrow">04 — The dashboard</p>
 <h2 class="sec-t">See what it knows.</h2>
 <div class="shots">
 <figure class="tilt px"><img src="assets/dashboard-overview.jpg" alt="irag dashboard overview" loading="lazy">
-<figcaption>live dashboard — token burn, health, activity</figcaption></figure>
+<figcaption>live dashboard: token burn, health, activity</figcaption></figure>
 <figure class="tilt px"><img src="assets/dependency-graph.jpg" alt="Interactive dependency graph" loading="lazy">
-<figcaption>dependency graph — pan, zoom, trace imports</figcaption></figure>
+<figcaption>dependency graph: pan, zoom, trace imports</figcaption></figure>
 </div>
 </section>
 <div class="marq" aria-hidden="true"><div class="marq-in">
@@ -680,7 +675,7 @@ rel="noopener">Karang1908/iRag</a></span>
 </main>"""
     return page_shell(
         "irag — pluggable memory for AI coding agents",
-        "Pluggable, fact-checked memory for AI coding agents — one "
+        "Pluggable, fact-checked memory for AI coding agents. One "
         "SQLite file in your repo. Reads are free SQL; writes run on "
         "any cheap model.",
         body, rel, extra_class="is-landing", anime=True)
