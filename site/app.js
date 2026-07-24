@@ -212,19 +212,29 @@
     // ---- stops: each section owns a node. The camera is driven by which
     // section is centred, so it *arrives* somewhere and settles instead of
     // drifting past, and the copy keys off that arrival. ----
+    // `anchor` is where this section parks the rail on screen (fractions of
+    // the viewport). It moves section to section — right, top-right, left —
+    // so the rail flies around the page instead of sitting in a fixed strip.
+    // The canvas is behind the copy, so a marker can never cover text.
     var STOPS = [
-      { sel: ".hero",  node: -1, off: [0.1, 0.15, 4.3], o:  0.20, label: "Overview" },
-      { sel: "#why",   node: 1,  off: [-1.0, 0.35, 1.9], o: -0.16, label: "Why" },
-      { sel: "#how",   node: 0,  off: [0.55, 0.55, 1.85], o: 0.17, label: "How it runs" },
-      { sel: "#built", node: 2,  off: [0.5, -0.55, 1.75], o: -0.17, label: "Architecture" },
-      { sel: "#proof", node: 3,  off: [0.85, 0.5, 1.8], o: 0.16, label: "Measured" },
-      { sel: "#dash",  node: 0,  off: [-0.9, -0.35, 2.4], o: -0.15, label: "Dashboard" }
+      { sel: ".hero",  n: hubs[0], off: [0.1, 0.15, 4.3],  o:  0.30,
+        anchor: [0.945, 0.42], label: "Overview" },
+      { sel: "#why",   n: hubs[1], off: [-1.0, 0.35, 1.9], o: -0.34,
+        anchor: [0.955, 0.20], label: "Why" },
+      { sel: "#how",   n: hubs[0], off: [0.55, 0.55, 1.85], o: 0.36,
+        anchor: [0.048, 0.38], label: "How it runs" },
+      { sel: "#built", n: hubs[2], off: [0.5, -0.55, 1.75], o: -0.35,
+        anchor: [0.950, 0.70], label: "Architecture" },
+      { sel: "#proof", n: hubs[3], off: [0.85, 0.5, 1.8],  o: 0.34,
+        anchor: [0.045, 0.22], label: "Measured" },
+      { sel: "#dash",  n: hubs[2], off: [-0.9, -0.35, 2.4], o: -0.33,
+        anchor: [0.952, 0.46], label: "Dashboard" }
     ].map(function (st) {
       st.el = document.querySelector(st.sel);
       if (st.el) st.el.classList.add('stop');
-      // a stop's camera looks at its node from `off`; -1 = wide on origin
-      st.t = st.node < 0 ? [0, 0.05, 0] : NODES[hubs[st.node]].p.slice();
+      st.t = NODES[st.n].p.slice();
       st.p = [st.t[0] + st.off[0], st.t[1] + st.off[1], st.t[2] + st.off[2]];
+      st.sx = 0; st.sy = 0; st.sr = 4;        // live screen position
       return st;
     }).filter(function (st) { return st.el; });
 
@@ -233,6 +243,7 @@
     var camT = { p: STOPS[0].p.slice(), t: STOPS[0].t.slice(), o: STOPS[0].o };
 
     var spin = 0, rafS = null, liveS = false, active = -1;
+    var railX = 0, railY = 0;
     var mx = 0, my = 0, mtx = 0, mty = 0;
 
     var sizeS = function () {
@@ -335,9 +346,20 @@
         sx.stroke();
       }
 
-      // the node we've arrived at gets a ring and its name
-      var focus = (active >= 0 && STOPS[active] && STOPS[active].node >= 0)
-        ? hubs[STOPS[active].node] : -1;
+      // ---- the flying rail ----
+      // Each stop marker sits docked in a small cluster while you are
+      // elsewhere, and flies out to its true position in the graph as you
+      // arrive at it. The cluster's anchor is blended from the stops'
+      // weights, so the whole rail drifts to a new corner per section.
+      var ax = 0, ay = 0, aw = 0;
+      for (var si = 0; si < STOPS.length; si++) {
+        aw += STOPS[si].w;
+        ax += STOPS[si].anchor[0] * STOPS[si].w;
+        ay += STOPS[si].anchor[1] * STOPS[si].w;
+      }
+      if (aw > 0.0001) { railX = ax * W; railY = ay * H; }
+      var slot = Math.min(34, H * 0.046);
+      var focus = active >= 0 && STOPS[active] ? STOPS[active].n : -1;
       var arrived = active >= 0 && STOPS[active] ? STOPS[active].c * 1.55 : 0;
 
       // nodes back-to-front so near ones occlude far ones
@@ -368,10 +390,49 @@
           sx.lineWidth = 1.1; sx.stroke();
           sx.font = "500 11px ui-monospace,Menlo,monospace";
           sx.fillStyle = "rgba(226,236,252," + (0.8 * af).toFixed(3) + ")";
+          var lft = q.x > W / 2;                 // label away from centre
+          sx.textAlign = lft ? "left" : "right";
           sx.fillText(STOPS[active].label.toLowerCase(),
-                      q.x + q.r + 18, q.y + 4);
+                      q.x + (lft ? q.r + 18 : -(q.r + 18)), q.y + 4);
+          sx.textAlign = "left";
         }
       });
+
+      // ---- rail markers: docked when away, flown out when arrived ----
+      var mid = (STOPS.length - 1) / 2;
+      for (var r2 = 0; r2 < STOPS.length; r2++) {
+        var st2 = STOPS[r2];
+        var dock = 1 - Math.min(1, st2.c * 1.5);      // 0 = fully arrived
+        var tp = pts[st2.n];
+        var dx2 = railX, dy2 = railY + (r2 - mid) * slot;
+        // when the node is off-screen/behind, stay docked
+        var tx2 = tp ? tp.x : dx2, tyy = tp ? tp.y : dy2;
+        var trr = tp ? tp.r : 4;
+        st2.sx = dx2 + (tx2 - dx2) * (1 - dock);
+        st2.sy = dy2 + (tyy - dy2) * (1 - dock);
+        st2.sr = 3.4 + (Math.max(trr, 3.4) - 3.4) * (1 - dock);
+      }
+      // connector threading the docked markers
+      sx.beginPath();
+      for (var c2 = 0; c2 < STOPS.length; c2++) {
+        var m2 = STOPS[c2];
+        if (c2 === 0) sx.moveTo(m2.sx, m2.sy); else sx.lineTo(m2.sx, m2.sy);
+      }
+      sx.strokeStyle = "rgba(120,145,180,.20)";
+      sx.lineWidth = 1; sx.stroke();
+      for (var r3 = 0; r3 < STOPS.length; r3++) {
+        var st3 = STOPS[r3], on = st3.c * 1.5;
+        sx.beginPath(); sx.arc(st3.sx, st3.sy, st3.sr, 0, 6.2832);
+        sx.fillStyle = on > 0.5
+          ? "rgba(88,166,255,.95)"
+          : "rgba(198,212,235," + (0.26 + 0.3 * on).toFixed(3) + ")";
+        sx.fill();
+        if (on > 0.5) {
+          sx.beginPath(); sx.arc(st3.sx, st3.sy, st3.sr + 7, 0, 6.2832);
+          sx.strokeStyle = "rgba(88,166,255,.45)";
+          sx.lineWidth = 1; sx.stroke();
+        }
+      }
     };
 
     var tickS = function () {
@@ -388,20 +449,17 @@
       rafS = requestAnimationFrame(tickS);
     };
 
-    // ---- the rail: one node per stop, synced to where the camera is ----
+    // The rail is painted in the canvas now. This nav stays for keyboard
+    // and screen-reader users: real buttons, visually hidden, focusable.
     var rail = document.getElementById("rail"), dots = [];
     var paintRail = function () {
       for (var i = 0; i < dots.length; i++) {
-        dots[i].classList.toggle("on", i === active);
         dots[i].setAttribute("aria-current", i === active ? "true" : "false");
       }
-      if (rail) rail.style.setProperty("--fill",
-        ((active <= 0 ? 0 : active / (STOPS.length - 1)) * 100).toFixed(1) + "%");
     };
     if (rail) {
       rail.innerHTML = STOPS.map(function (st, i) {
-        return '<button class="rdot" data-i="' + i + '">' +
-          '<i></i><span>' + st.label + '</span></button>';
+        return '<button class="rdot" data-i="' + i + '">' + st.label + '</button>';
       }).join("");
       dots = [].slice.call(rail.querySelectorAll(".rdot"));
       dots.forEach(function (b) {
@@ -411,7 +469,6 @@
           else el.scrollIntoView({ behavior: "smooth", block: "center" });
         };
       });
-      rail.classList.add("live");
     }
     addEventListener("scroll", weigh, { passive: true });
     if (lenis) lenis.on("scroll", weigh);

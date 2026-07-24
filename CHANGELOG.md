@@ -4,6 +4,27 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.16.0 — 2026-07-25
+
+### Changed — the rail is made of the nodes now, and it flies
+The section rail was a fixed strip of UI dots down the left edge. The
+markers *are* the graph's nodes now: they dock together while you're
+elsewhere and the one you arrive at **flies out into the scene**, where it
+gets a contracting focus ring and its name.
+
+- The docked cluster's anchor moves per section — right, top-right, far
+  left, bottom-right — so the rail travels around the page instead of
+  sitting in one strip. The canvas is behind the copy, so a marker can
+  never cover text.
+- Docked markers are dots and a connector only; labelling all six was
+  clutter, and the node you've arrived at is already named out in the
+  scene.
+- The focal node is pushed into the page margin per section and its label
+  is drawn outward, away from the centre column — it was landing on top of
+  the body copy.
+- The `<nav>` remains for keyboard and screen-reader users: real buttons,
+  clipped to 1×1 until focused, then revealed with a visible focus ring.
+
 ## 4.15.0 — 2026-07-25
 
 ### Changed — the 3D scene and the page are now one system, not two
