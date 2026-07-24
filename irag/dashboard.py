@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -76,6 +77,60 @@ def _docs_index() -> list[dict]:
              "CLI_REFERENCE": 4, "COMPARISON": 5, "STORY": 6}
     out.sort(key=lambda d: order.get(d["id"], 99))
     return out
+
+
+def _run_op(op: str, conn, state) -> str | None:
+    """Run one deterministic maintenance operation and return its output as
+    text, or None when `op` isn't allowed. This is a hard allowlist of
+    Python callables — the dashboard never builds a shell command from
+    request data, so an unexpected `op` can only ever 400. LLM-heavy work
+    (synthesize) deliberately isn't here; it belongs to /api/update, which
+    runs in a background worker with a progress log."""
+    import contextlib
+    import io
+    cfg, root = state.cfg, state.root
+    if op == "sync":
+        from . import ingest
+        n = ingest.sync(conn, cfg, root)
+        return (f"{n} event(s) queued — run Update to synthesize them"
+                if n else "nothing changed since the last sync")
+    if op == "scan":
+        stats_ = structure.scan(conn, cfg, root, force=True)
+        return (f"structural map rebuilt: {stats_['symbols']} symbols, "
+                f"{stats_['deps']} dependency edge(s)")
+    if op == "lint":
+        added = linter.lint(conn, cfg, root)
+        return (f"{added} new contradiction(s) found"
+                if added else "no new contradictions — memory agrees "
+                              "with the code")
+    if op == "check":
+        from . import check as check_mod
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = check_mod.run(conn, cfg)
+        return buf.getvalue().strip() + (
+            "\n\nexit 0 — CI would pass" if rc == 0
+            else "\n\nexit 1 — CI would FAIL")
+    if op == "export":
+        from . import export as export_mod
+        res = export_mod.install_guide(root)
+        parts = []
+        if res["written"]:
+            parts.append("installed: "
+                         + ", ".join(p.name for p in res["written"]))
+        if res["skipped"]:
+            parts.append("left untouched (not written by irag): "
+                         + ", ".join(p.name for p in res["skipped"]))
+        return "\n".join(parts) or "nothing to do"
+    if op == "obsidian":
+        from . import obsidian
+        vault = obsidian.export_vault(conn, cfg, root)
+        return (f"vault written: {vault}\nopen it in Obsidian: "
+                "File → Open Vault → Open folder as vault")
+    if op == "claude-setup":
+        from . import hooks as hooks_mod
+        return "\n".join(hooks_mod.claude_setup(root)) or "already wired"
+    return None
 
 
 def make_handler(state: _State):
@@ -267,6 +322,31 @@ def make_handler(state: _State):
                     return self._json(
                         [{"level": lv, "name": n, "detail": d}
                          for lv, n, d in rows])
+                if url.path == "/api/context":
+                    from . import tokens as tokens_mod
+                    query = (qs.get("query") or [""])[0]
+                    try:
+                        budget = int((qs.get("budget") or ["3000"])[0])
+                    except ValueError:
+                        budget = 3000
+                    structure.scan(conn, state.cfg, state.root)
+                    md, machine = retrieval.serve(conn, state.cfg,
+                                                  query=query or None,
+                                                  budget_tokens=budget)
+                    return self._json({"markdown": md,
+                                       "tokens": tokens_mod.count(md),
+                                       "full": len(machine.get("full") or []),
+                                       "digest": len(machine.get("digest") or []),
+                                       "index": len(machine.get("index") or [])})
+                if url.path == "/api/asof":
+                    from . import provenance
+                    date = (qs.get("date") or [""])[0].strip()
+                    if not date:
+                        return self._json({"error": "need a date"}, 400)
+                    try:
+                        return self._json(provenance.asof_data(conn, date))
+                    except sqlite3.Error:
+                        return self._json({"error": "bad date"}, 400)
                 return self._json({"error": "not found"}, 404)
             except Exception:   # keep the dashboard alive
                 traceback.print_exc()
@@ -381,6 +461,15 @@ def make_handler(state: _State):
                     except SystemExit as exc:
                         return self._json({"error": str(exc)}, 400)
                     return self._json({"ok": True})
+                if url.path == "/api/op":
+                    # deterministic, fast maintenance operations. A strict
+                    # allowlist of Python callables — never a shell string,
+                    # so a crafted request can't run anything else.
+                    op = str(data.get("op", ""))
+                    out = _run_op(op, conn, state)
+                    if out is None:
+                        return self._json({"error": f"unknown op {op!r}"}, 400)
+                    return self._json({"ok": True, "op": op, "output": out})
                 if url.path == "/api/backup":
                     import datetime
                     import sqlite3 as _sq

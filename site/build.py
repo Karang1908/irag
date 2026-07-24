@@ -643,6 +643,11 @@ optional.</p></li>
 </section>
 <section class="sec">
 <h2 class="sec-t">See what it knows.</h2>
+<p class="lede"><code>irag dashboard</code> is a local, zero-dependency web UI
+&mdash; and a full peer of the CLI, not a read-only viewer. Browse every page and
+diff its history, roll one back, trace a claim to the commit that created it, read
+a past conversation verbatim, preview the exact briefing your agent receives, and
+run every maintenance operation. Anything you can type, you can click.</p>
 <div class="shots">
 <figure class="tilt px"><img src="assets/dashboard-overview.jpg" alt="irag dashboard overview" loading="lazy">
 <figcaption>live dashboard: token burn, health, activity</figcaption></figure>
@@ -651,8 +656,8 @@ optional.</p></li>
 </div>
 </section>
 <div class="marq" aria-hidden="true"><div class="marq-in">
-<span>init</span><span>update</span><span>search</span><span>ask</span><span>map</span><span>impact</span><span>context</span><span>recap</span><span>why</span><span>asof</span><span>lint</span><span>check</span><span>sessions</span><span>learn</span><span>record-decision</span><span>dashboard</span>
-<span>init</span><span>update</span><span>search</span><span>ask</span><span>map</span><span>impact</span><span>context</span><span>recap</span><span>why</span><span>asof</span><span>lint</span><span>check</span><span>sessions</span><span>learn</span><span>record-decision</span><span>dashboard</span>
+<span>init</span><span>update</span><span>search</span><span>ask</span><span>map</span><span>impact</span><span>context</span><span>recap</span><span>why</span><span>asof</span><span>lint</span><span>check</span><span>sessions</span><span>transcript</span><span>rollback</span><span>learn</span><span>record-decision</span><span>dashboard</span>
+<span>init</span><span>update</span><span>search</span><span>ask</span><span>map</span><span>impact</span><span>context</span><span>recap</span><span>why</span><span>asof</span><span>lint</span><span>check</span><span>sessions</span><span>transcript</span><span>rollback</span><span>learn</span><span>record-decision</span><span>dashboard</span>
 </div></div>
 <section class="quote reveal">
 <blockquote>"A <b>database system with an AI layer</b> — not an AI system

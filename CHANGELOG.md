@@ -4,6 +4,40 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.6.0 — 2026-07-24
+
+### Added — **the UI now does everything the CLI does**
+- **New Tools tab.** *What your agent sees* renders the exact `irag
+  context` briefing with its token count and FULL/DIGEST/INDEX breakdown —
+  so you can look at precisely what SessionStart injects before spending
+  it. *Time travel* runs `asof` for any date. *Operations* runs `sync`,
+  `scan`, `lint`, `check`, `export`, `obsidian`, `claude-setup`, `backup`,
+  and `doctor` without a terminal.
+- `POST /api/op` is a **strict allowlist of Python callables** — the
+  dashboard never builds a shell command from request data, so an
+  unexpected op can only 400.
+- New endpoints: `/api/context`, `/api/asof`, `/api/op`.
+- Maintenance moved out of Health into Tools, so Health stays "what's
+  wrong with the memory" and Tools is "what you can run".
+
+With this, every command that is meaningful in a GUI is in the GUI. The
+remainder are bootstrap/agent-internal by nature (`init`, `dashboard`,
+`ingest-commit`, `session-begin`/`session-end`) or already covered
+(`search`/`ask` are Chat, `recap` is Sessions, `synthesize` is Update).
+
+### Fixed
+- The Tools budget field used `min="200" step="500"`, so the default
+  `3000` was `stepMismatch`-invalid and silently blocked form submission —
+  clicking "Preview briefing" did nothing. Caught by driving the real
+  browser, not by static checks.
+
+### Changed
+- `hooks.claude_setup()` extracted from the CLI so the dashboard and
+  `irag claude-setup` wire byte-identical hooks.
+- `provenance.asof_data()` added (same pattern as `why_data`) so CLI and
+  GUI time-travel share one query.
+- README and the docs site describe the dashboard as a full CLI peer.
+
 ## 4.5.0 — 2026-07-24
 
 ### Changed — **synthesis now sees the actual code change, and says what it was**

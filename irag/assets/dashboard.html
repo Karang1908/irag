@@ -372,6 +372,12 @@ pre.diff .diff-hunk{color:var(--purple)}
 .prov-row .pk{font-family:var(--mono);font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);padding-top:2px}
 
 .maint-actions{display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap;margin-bottom:var(--sp-3)}
+.op-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:var(--sp-2)}
+.op-grid button{width:100%}
+.op-grid button:disabled{opacity:.45;cursor:default}
+.ctx-out{margin-top:var(--sp-3);background:var(--bg-inset);border:1px solid var(--border);
+  border-radius:var(--r-md);padding:12px 14px;font:var(--fs-xs)/1.55 var(--mono);
+  white-space:pre-wrap;word-break:break-word;max-height:46vh;overflow:auto;color:var(--text-dim)}
 .doctor-list{display:flex;flex-direction:column;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
 .doc-row{display:grid;grid-template-columns:22px 200px 1fr;gap:var(--sp-3);align-items:baseline;background:var(--bg);padding:7px 12px;font-size:var(--fs-xs)}
 .doc-row .dm{font-family:var(--mono);text-align:center}
@@ -412,12 +418,13 @@ pre.diff .diff-hunk{color:var(--purple)}
       <button data-tab="health" aria-label="Health"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Health</span></button>
       <button data-tab="map" aria-label="Map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.8"/><circle cx="6" cy="12" r="2.8"/><circle cx="18" cy="19" r="2.8"/><line x1="8.4" y1="13.4" x2="15.6" y2="17.6"/><line x1="15.6" y1="6.4" x2="8.4" y2="10.6"/></svg><span>Map</span></button>
       <button data-tab="sessions" aria-label="Sessions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg><span>Sessions</span></button>
+      <button data-tab="tools" aria-label="Tools"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3z"/><circle cx="17.5" cy="6.5" r="3.5"/></svg><span>Tools</span></button>
       <button data-tab="docs" aria-label="Docs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg><span>Docs</span></button>
     </nav>
     <div class="sidebar-foot">
       <span class="ver" id="foot-ver">irag</span>
       <span>local · 127.0.0.1</span>
-      <span title="keyboard shortcuts">keys 1–7 switch tabs</span>
+      <span title="keyboard shortcuts">keys 1–8 switch tabs</span>
     </div>
   </aside>
 
@@ -530,15 +537,6 @@ pre.diff .diff-hunk{color:var(--purple)}
         <div id="page-view" style="display:none"></div>
       </div>
     </div>
-    <div class="panel" style="margin-top:var(--sp-5)">
-      <h3>Maintenance</h3>
-      <div class="maint-actions">
-        <button class="primary" id="do-backup">Back up the database</button>
-        <button class="ghost-btn" id="do-doctor">Run doctor</button>
-        <span id="maint-msg" class="inline-msg"></span>
-      </div>
-      <div id="doctor-out"></div>
-    </div>
   </section>
 
   <section id="map">
@@ -573,6 +571,52 @@ pre.diff .diff-hunk{color:var(--purple)}
       </div>
       <div class="panel" id="sess-detail">
         <div class="empty">Select a session to see its full summary and per-file changes.</div>
+      </div>
+    </div>
+  </section>
+
+  <section id="tools">
+    <h2 class="page-title">Tools</h2>
+    <div class="page-sub">Everything else the CLI can do — see exactly what your agent is fed, travel back in time, and run every maintenance operation without a terminal.</div>
+
+    <div class="panel">
+      <h3>What your agent sees <span class="pill">irag context</span></h3>
+      <form id="ctx-form" class="cap-form">
+        <input id="ctx-query" placeholder="task / query — optional (ranks the pages)" autocomplete="off">
+        <!-- no step= here: a step that doesn't divide (value - min) makes the
+             field stepMismatch-invalid, which silently blocks form submit -->
+        <input id="ctx-budget" type="number" value="3000" min="200" style="max-width:130px" aria-label="token budget">
+        <button class="primary">Preview briefing</button>
+      </form>
+      <div id="ctx-meta" class="inline-msg"></div>
+      <pre id="ctx-out" class="ctx-out" style="display:none"></pre>
+    </div>
+
+    <div class="row" style="grid-template-columns:1fr 1fr">
+      <div class="panel">
+        <h3>Time travel <span class="pill">irag asof</span></h3>
+        <form id="asof-form" class="cap-form">
+          <input id="asof-date" type="date" aria-label="as of date">
+          <button class="primary">Show state</button>
+        </form>
+        <div id="asof-out"></div>
+      </div>
+      <div class="panel">
+        <h3>Operations</h3>
+        <div class="op-grid">
+          <button class="ghost-btn" data-op="sync">Sync</button>
+          <button class="ghost-btn" data-op="scan">Scan map</button>
+          <button class="ghost-btn" data-op="lint">Lint</button>
+          <button class="ghost-btn" data-op="check">CI check</button>
+          <button class="ghost-btn" data-op="export">Re-install guide</button>
+          <button class="ghost-btn" data-op="obsidian">Obsidian vault</button>
+          <button class="ghost-btn" data-op="claude-setup">Wire hooks</button>
+          <button class="ghost-btn" id="do-backup">Back up DB</button>
+          <button class="ghost-btn" id="do-doctor">Doctor</button>
+        </div>
+        <div id="maint-msg" class="inline-msg"></div>
+        <pre id="op-out" class="ctx-out" style="display:none"></pre>
+        <div id="doctor-out"></div>
       </div>
     </div>
   </section>
@@ -620,7 +664,7 @@ const IC={
 };
 
 /* ---------- tabs ---------- */
-const TITLES={overview:"Overview",chat:"Chat",pages:"Pages",health:"Health",map:"Map",sessions:"Sessions",docs:"Docs"};
+const TITLES={overview:"Overview",chat:"Chat",pages:"Pages",health:"Health",map:"Map",sessions:"Sessions",tools:"Tools",docs:"Docs"};
 const perTab={
   overview:()=>{refreshStatus();refreshBurn();refreshFeed()},
   pages:refreshPages,
@@ -641,7 +685,7 @@ function switchTab(name){
 document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 document.querySelector('nav.tabs button.active')?.setAttribute("aria-current","page");
 /* keyboard: 1-6 switch tabs (ignored while typing) */
-const TAB_ORDER=["overview","chat","pages","health","map","sessions","docs"];
+const TAB_ORDER=["overview","chat","pages","health","map","sessions","tools","docs"];
 addEventListener("keydown",e=>{
   if(e.metaKey||e.ctrlKey||e.altKey)return;
   const t=e.target;
@@ -946,6 +990,45 @@ $("#why-form").onsubmit=async e=>{
     ${ev&&ev.text?`<div class="prov-row"><span class="pk">note</span><span>${esc(ev.text)}</span></div>`:''}
   </div>`;
 };
+/* ---------- tools: agent view, time travel, operations ---------- */
+$("#ctx-form").onsubmit=async e=>{
+  e.preventDefault();
+  const q=$("#ctx-query").value.trim(),b=$("#ctx-budget").value||3000;
+  const meta=$("#ctx-meta"),out=$("#ctx-out");
+  meta.className="inline-msg";meta.textContent="building the briefing…";
+  const r=await api(`/api/context?query=${encodeURIComponent(q)}&budget=${encodeURIComponent(b)}`);
+  if(r.error){meta.className="inline-msg bad";meta.textContent=r.error;return}
+  meta.className="inline-msg ok";
+  meta.textContent=`${r.tokens} tokens · ${r.full} full page(s), ${r.digest} digest, ${r.index} indexed — this is exactly what SessionStart injects`;
+  out.style.display="block";out.textContent=r.markdown;
+};
+$("#asof-form").onsubmit=async e=>{
+  e.preventDefault();
+  const d=$("#asof-date").value;const out=$("#asof-out");
+  if(!d){out.innerHTML=`<div class="inline-msg bad">pick a date</div>`;return}
+  out.innerHTML=`<div class="inline-msg">looking back…</div>`;
+  const rows=await api("/api/asof?date="+encodeURIComponent(d));
+  if(rows.error){out.innerHTML=`<div class="inline-msg bad">${esc(rows.error)}</div>`;return}
+  out.innerHTML=rows.length
+    ?`<div class="inline-msg ok">${rows.length} page(s) existed on ${esc(d)}</div>
+      <div class="ver-list">`+rows.map(r=>`<div class="ver-row" style="grid-template-columns:44px 1fr 120px">
+        <span class="vn">v${r.version_number}</span><span class="vs">${esc(r.subject_id)}</span>
+        <span class="vt">${(r.created_at||"").slice(0,16)}</span></div>`).join("")+`</div>`
+    :`<div class="empty">No pages had been written yet on ${esc(d)}.</div>`;
+};
+document.querySelectorAll("#tools .op-grid button[data-op]").forEach(b=>b.onclick=async()=>{
+  const op=b.dataset.op,msg=$("#maint-msg"),out=$("#op-out");
+  document.querySelectorAll("#tools .op-grid button").forEach(x=>x.disabled=true);
+  msg.className="inline-msg";msg.textContent=`running ${op}…`;
+  try{
+    const r=await postJSON("/api/op",{op});
+    if(r.ok){msg.className="inline-msg ok";msg.textContent=`${op} ✓`;
+      out.style.display="block";out.textContent=r.output||"(no output)";
+      refreshStatus();if($("#pages").classList.contains("show"))refreshPages();
+    }else{msg.className="inline-msg bad";msg.textContent=r.error||`${op} failed`}
+  }catch(err){msg.className="inline-msg bad";msg.textContent=`${op} failed`}
+  document.querySelectorAll("#tools .op-grid button").forEach(x=>x.disabled=false);
+});
 $("#do-backup").onclick=async()=>{
   const b=$("#do-backup"),msg=$("#maint-msg");b.disabled=true;msg.className="inline-msg";msg.textContent="backing up…";
   try{const r=await postJSON("/api/backup",{});

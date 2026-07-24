@@ -283,9 +283,13 @@ confirmation — the rollback is non-destructive, as always). The same tab
 logs knowledge (`irag learn` / `irag record-decision`) and traces a claim
 back to the revision and commit that created it (`irag why`).
 **Health** — open contradictions with one-click
-resolve, staleness table, click any page to read its current body, plus
-**Maintenance**: back up the database and run `irag doctor` in-browser
-with PASS/WARN/FAIL rows.
+resolve, staleness table, click any page to read its current body.
+**Tools** — everything else the CLI does: *What your agent sees* renders
+the exact `irag context` briefing with its token count and tier
+breakdown; *Time travel* runs `asof` for any date; *Operations* runs
+`sync`, `scan`, `lint`, `check`, `export`, `obsidian`, `claude-setup`,
+`backup`, and `doctor` (a strict server-side allowlist of Python
+callables — the dashboard never builds a shell command from a request).
 **Map** — an interactive, Obsidian-style dependency graph (drag to pan,
 scroll to zoom, drag nodes, hover to trace imports) above the
 files/symbols and import-edge tables.

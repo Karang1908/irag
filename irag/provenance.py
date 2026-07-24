@@ -82,6 +82,27 @@ def why(conn: sqlite3.Connection, claim: str) -> None:
         print(f"text                : {ev['text']}")
 
 
+def asof_data(conn: sqlite3.Connection, date: str) -> list[dict]:
+    """The wiki state as of a date, structured — one row per page with the
+    latest revision at or before that moment. Shared by the CLI `asof` and
+    the dashboard's time-travel view. A bare YYYY-MM-DD covers the whole
+    day."""
+    import re as _re
+    if _re.fullmatch(r"\d{4}-\d{2}-\d{2}", date.strip()):
+        date = date.strip() + " 23:59:59"
+    rows = conn.execute(
+        """SELECT p.subject_id, p.title, r.version_number, r.created_at
+           FROM pages p
+           JOIN revisions r ON r.revision_id = (
+               SELECT r2.revision_id FROM revisions r2
+               WHERE r2.page_id = p.page_id AND r2.created_at <= ?
+               ORDER BY r2.version_number DESC LIMIT 1)
+           ORDER BY p.subject_id""",
+        (date,),
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def asof(conn: sqlite3.Connection, date: str, show: str | None = None) -> None:
     """Print the wiki state as of a date (per page, latest revision <= date).
 

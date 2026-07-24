@@ -304,52 +304,10 @@ def cmd_learn(args) -> int:
 
 
 def cmd_claude_setup(args) -> int:
-    conn, cfg, root = _open()
-    settings_path = root / ".claude" / "settings.json"
-    settings_path.parent.mkdir(exist_ok=True)
-    settings = {}
-    if settings_path.exists():
-        try:
-            settings = json.loads(settings_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            raise SystemExit(f"irag: {settings_path} is not valid JSON — "
-                             "fix or remove it first")
-    hooks = settings.setdefault("hooks", {})
-    changed = False
-    wanted = {
-        "SessionStart": ("irag session-begin >/dev/null 2>&1; "
-                         "irag context --budget 3000 2>/dev/null || true",
-                         120, "memory in: opens the conversation log and "
-                         "injects ranked context + the last sessions' "
-                         "recap"),
-        "Stop": ("irag update --limit 50 >/dev/null 2>&1 || true",
-                 600, "memory out: changes are synthesized automatically "
-                 "when Claude finishes a turn"),
-        "SessionEnd": ("irag session-end >/dev/null 2>&1 || true",
-                       600, "diary: the conversation is summarized and "
-                       "logged with everything it changed"),
-    }
-    for event, (command, timeout, why) in wanted.items():
-        entries = hooks.setdefault(event, [])
-        already = any("irag " in h.get("command", "")
-                      for e in entries for h in e.get("hooks", []))
-        if already:
-            print(f"{event} hook already installed")
-            continue
-        entries.append({"hooks": [{
-            "type": "command",
-            "command": command,
-            "timeout": timeout,
-        }]})
-        changed = True
-        print(f"installed {event} hook ({why})")
-    if changed:
-        settings_path.write_text(json.dumps(settings, indent=2) + "\n",
-                                 encoding="utf-8")
-    res = export_mod.install_guide(root)
-    if res["written"]:
-        print("agent guide: " + " + ".join(p.name for p in res["written"])
-              + " (how to use irag)")
+    from . import hooks as hooks_mod
+    _, _, root = _open()
+    for line in hooks_mod.claude_setup(root):
+        print(line)
     print("the loop is now mechanical: SessionStart injects memory, the "
           "Stop hook runs 'irag update' after every turn (a no-op when "
           "nothing changed), and CLAUDE.md carries the standing orders "

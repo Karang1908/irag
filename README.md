@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT">
-  <img src="https://img.shields.io/badge/version-4.5.0-purple" alt="Version 4.5.0">
+  <img src="https://img.shields.io/badge/version-4.6.0-purple" alt="Version 4.6.0">
 </p>
 
 <p align="center">
@@ -217,10 +217,13 @@ irag check                      # CI gate: exit 1 if memory disagrees with code
 - **Sessions** — the conversation log with per-file change detail, plus
   the verbatim transcript when capture is enabled.
 - **Overview** — live token burn, metric cards, activity feed.
-- **Health** — open contradictions with one-click resolve, staleness,
-  and maintenance (backup, in-browser `doctor`).
+- **Health** — open contradictions with one-click resolve, staleness.
 - **Chat** — auto-routes lookups to instant SQL search and questions to
   AI answers with citations.
+- **Tools** — preview the exact briefing your agent is injected (with its
+  token count), time-travel with `asof`, and run every operation: sync,
+  scan, lint, CI check, backup, doctor, Obsidian export, re-install the
+  agent guide, wire Claude Code hooks.
 - **Docs** — this documentation, rendered in-app.
 
 Anything you can do in the CLI you can do in the GUI — the dashboard is
