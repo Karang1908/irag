@@ -524,8 +524,7 @@ def landing() -> str:
 </header>
 <canvas class="scene" id="scene" aria-hidden="true"></canvas>
 <main class="landing" id="main">
-<div class="spine" aria-hidden="true"><svg preserveAspectRatio="none">
-<line class="sp-track"/><line class="sp-fill"/></svg></div>
+<nav class="rail" id="rail" aria-label="Sections"></nav>
 <section class="hero">
 <div class="hero-copy">
 <p class="eyebrow hero-eyebrow">Pluggable memory for AI coding agents</p>
@@ -629,7 +628,7 @@ model, so bookkeeping never touches your agent's limits.</p>
 <pre class="term-body" id="term-body" aria-hidden="true"></pre>
 </div>
 </section>
-<section class="sec">
+<section class="sec" id="built">
 <h2 class="sec-t">Built like a database, because it is one.</h2>
 <ol class="featlist">
 <li class="reveal"><h3>Pluggable memory</h3>
@@ -676,7 +675,7 @@ multi-language graph. The mock model in the suite deliberately
 hallucinates a missing file, so the fact-checker is proven to catch it
 rather than assumed to.</p>
 </section>
-<section class="sec">
+<section class="sec" id="dash">
 <h2 class="sec-t">See what it knows.</h2>
 <p class="lede"><code>irag dashboard</code> is a local, zero-dependency web UI
 &mdash; and a full peer of the CLI, not a read-only viewer. Browse every page and

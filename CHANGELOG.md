@@ -4,6 +4,35 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.15.0 — 2026-07-25
+
+### Changed — the 3D scene and the page are now one system, not two
+The camera drifted past a background graph while the copy scrolled
+independently. They are now choreographed: **the camera arrives at a node,
+settles, and the section resolves.**
+
+- Each section owns a node. The camera is driven by *which section is
+  centred* rather than by a global scroll fraction, so it comes to rest on
+  a node while you read and travels only while you move between sections.
+- **The copy is keyed to arrival**: a section sits at 20% opacity while the
+  camera is in transit and resolves to full as it lands (measured: 0.22
+  mid-travel → 1.0 on arrival).
+- **The node you arrive at is named**, with a focus ring that contracts as
+  the camera settles.
+- The decorative scroll spine is now a **node rail**: one dot per stop,
+  labelled, highlighting the current node, filling 0→100% as you descend,
+  and clickable to fly to any section.
+
+### Fixed
+- The scene threw `ReferenceError: camT is not defined` and did not render
+  at all — a leftover from replacing the waypoint block. Found only after
+  discovering the browser check reporting "0 JS errors" was reading a
+  variable nothing ever set; error capture is now a real `window.onerror`
+  hook installed before page scripts run.
+- Arrival opacity was applied to section *children*, where `.js .wipe.in`
+  beat it on specificity, so nothing ever dimmed. Applied to the section.
+- Removed the dead scroll-spine CSS the rail replaced.
+
 ## 4.14.0 — 2026-07-25
 
 ### Added — the landing page is a 3D space you fly through

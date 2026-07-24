@@ -209,19 +209,30 @@
                [hubs[3], hubs[0]]);
 
     // ---- camera waypoints: where each part of the page lands you ----
-    // o = horizontal screen offset (fraction of width): the hero copy is
-    // left-aligned, so the establishing shot is pushed right of it
-    var WP = [
-      { p: [0.1, 0.15, 4.3], t: [0, 0.05, 0], o:  0.20 }, // establishing
-      { p: [-0.8, 1.5, 2.6], t: [0.0, 1.35, 0.1], o: 0.06 }, // into api
-      { p: [-2.7, 0.2, 1.5], t: [-1.75, 0.05, 0.5], o: -0.04 }, // close on auth
-      { p: [0.4, -1.3, 1.7], t: [0.15, -1.35, -0.3], o: 0.04 }, // dive to db
-      { p: [2.5, 1.0, 2.2], t: [1.85, 0.75, -0.7], o: -0.06 }, // over to tests
-      { p: [0.0, 0.2, 5.6], t: [0, 0, 0], o: 0 }           // pull back wide
-    ];
-    var cam = { p: WP[0].p.slice(), t: WP[0].t.slice(), o: WP[0].o };
-    var camT = { p: WP[0].p.slice(), t: WP[0].t.slice(), o: WP[0].o };
-    var spin = 0, prog = 0, rafS = null, liveS = false;
+    // ---- stops: each section owns a node. The camera is driven by which
+    // section is centred, so it *arrives* somewhere and settles instead of
+    // drifting past, and the copy keys off that arrival. ----
+    var STOPS = [
+      { sel: ".hero",  node: -1, off: [0.1, 0.15, 4.3], o:  0.20, label: "Overview" },
+      { sel: "#why",   node: 1,  off: [-1.0, 0.35, 1.9], o: -0.16, label: "Why" },
+      { sel: "#how",   node: 0,  off: [0.55, 0.55, 1.85], o: 0.17, label: "How it runs" },
+      { sel: "#built", node: 2,  off: [0.5, -0.55, 1.75], o: -0.17, label: "Architecture" },
+      { sel: "#proof", node: 3,  off: [0.85, 0.5, 1.8], o: 0.16, label: "Measured" },
+      { sel: "#dash",  node: 0,  off: [-0.9, -0.35, 2.4], o: -0.15, label: "Dashboard" }
+    ].map(function (st) {
+      st.el = document.querySelector(st.sel);
+      if (st.el) st.el.classList.add('stop');
+      // a stop's camera looks at its node from `off`; -1 = wide on origin
+      st.t = st.node < 0 ? [0, 0.05, 0] : NODES[hubs[st.node]].p.slice();
+      st.p = [st.t[0] + st.off[0], st.t[1] + st.off[1], st.t[2] + st.off[2]];
+      return st;
+    }).filter(function (st) { return st.el; });
+
+    // live camera + the target it eases toward (weigh() writes camT)
+    var cam  = { p: STOPS[0].p.slice(), t: STOPS[0].t.slice(), o: STOPS[0].o };
+    var camT = { p: STOPS[0].p.slice(), t: STOPS[0].t.slice(), o: STOPS[0].o };
+
+    var spin = 0, rafS = null, liveS = false, active = -1;
     var mx = 0, my = 0, mtx = 0, mty = 0;
 
     var sizeS = function () {
@@ -243,18 +254,43 @@
     var dot = function (a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; };
     var smooth = function (x) { return x * x * (3 - 2 * x); };
 
-    // scroll 0..1 across the page -> a point along the waypoint path
-    var camAt = function (q) {
-      var f = q * (WP.length - 1);
-      var i = Math.min(WP.length - 2, Math.floor(f));
-      var k = smooth(Math.min(1, Math.max(0, f - i)));
-      var A = WP[i], B = WP[i + 1], out = { p: [], t: [] };
-      for (var d = 0; d < 3; d++) {
-        out.p[d] = A.p[d] + (B.p[d] - A.p[d]) * k;
-        out.t[d] = A.t[d] + (B.t[d] - A.t[d]) * k;
+    // How centred is each stop? 1 = dead centre (arrived), 0 = far away.
+    // Blending by these weights makes the camera settle on a node while
+    // its section is being read, and travel while you move between them.
+    var weigh = function () {
+      var vh = innerHeight, best = -1, bw = 0, sum = 0;
+      for (var i = 0; i < STOPS.length; i++) {
+        var r = STOPS[i].el.getBoundingClientRect();
+        var d = Math.abs((r.top + r.height / 2) - vh / 2) / (vh * 0.95);
+        var w = Math.max(0, 1 - d);
+        w = w * w * (3 - 2 * w);                 // smoothstep: flatter tops
+        // raw centrality drives the copy (so it really does fade between
+        // stops); the normalised copy drives the camera blend
+        STOPS[i].c = w;
+        STOPS[i].w = w; sum += w;
+        if (w > bw) { bw = w; best = i; }
       }
-      out.o = A.o + (B.o - A.o) * k;
-      return out;
+      if (sum > 0) {
+        for (var j = 0; j < STOPS.length; j++) {
+          STOPS[j].w /= sum;
+          var el = STOPS[j].el;
+          // the copy resolves as the camera arrives; never gated on a
+          // one-shot transition, so it can't get stuck hidden
+          var a = Math.min(1, STOPS[j].c * 1.55);
+          el.style.setProperty("--at", a.toFixed(3));
+        }
+        var want = { p: [0, 0, 0], t: [0, 0, 0], o: 0 };
+        for (var k = 0; k < STOPS.length; k++) {
+          var st = STOPS[k];
+          for (var d2 = 0; d2 < 3; d2++) {
+            want.p[d2] += st.p[d2] * st.w;
+            want.t[d2] += st.t[d2] * st.w;
+          }
+          want.o += st.o * st.w;
+        }
+        camT.p = want.p; camT.t = want.t; camT.o = want.o;
+      }
+      if (best !== active) { active = best; paintRail(); }
     };
 
     var drawS = function () {
@@ -299,6 +335,11 @@
         sx.stroke();
       }
 
+      // the node we've arrived at gets a ring and its name
+      var focus = (active >= 0 && STOPS[active] && STOPS[active].node >= 0)
+        ? hubs[STOPS[active].node] : -1;
+      var arrived = active >= 0 && STOPS[active] ? STOPS[active].c * 1.55 : 0;
+
       // nodes back-to-front so near ones occlude far ones
       var order = [];
       for (var n = 0; n < pts.length; n++) if (pts[n]) order.push(n);
@@ -319,31 +360,62 @@
           ? "rgba(88,166,255," + (0.45 + 0.5 * near).toFixed(3) + ")"
           : "rgba(214,224,240," + (0.14 + 0.5 * near).toFixed(3) + ")";
         sx.fill();
+        if (idx === focus && arrived > 0.05) {
+          var af = Math.min(1, arrived);
+          sx.beginPath();
+          sx.arc(q.x, q.y, q.r + 11 + (1 - af) * 26, 0, 6.2832);
+          sx.strokeStyle = "rgba(88,166,255," + (0.55 * af).toFixed(3) + ")";
+          sx.lineWidth = 1.1; sx.stroke();
+          sx.font = "500 11px ui-monospace,Menlo,monospace";
+          sx.fillStyle = "rgba(226,236,252," + (0.8 * af).toFixed(3) + ")";
+          sx.fillText(STOPS[active].label.toLowerCase(),
+                      q.x + q.r + 18, q.y + 4);
+        }
       });
     };
 
     var tickS = function () {
       spin += 0.00055;
-      var want = camAt(prog);
+      weigh();
       for (var d = 0; d < 3; d++) {                 // ease toward the target
-        camT.p[d] = want.p[d]; camT.t[d] = want.t[d];
-        cam.p[d] += (camT.p[d] - cam.p[d]) * 0.055;
-        cam.t[d] += (camT.t[d] - cam.t[d]) * 0.055;
+        cam.p[d] += (camT.p[d] - cam.p[d]) * 0.062;
+        cam.t[d] += (camT.t[d] - cam.t[d]) * 0.062;
       }
-      cam.o += (want.o - cam.o) * 0.055;
+      cam.o += (camT.o - cam.o) * 0.062;
       mtx += (mx - mtx) * 0.05;
       mty += (my - mty) * 0.05;
       drawS();
       rafS = requestAnimationFrame(tickS);
     };
 
-    var readProg = function () {
-      var max = document.documentElement.scrollHeight - innerHeight;
-      prog = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+    // ---- the rail: one node per stop, synced to where the camera is ----
+    var rail = document.getElementById("rail"), dots = [];
+    var paintRail = function () {
+      for (var i = 0; i < dots.length; i++) {
+        dots[i].classList.toggle("on", i === active);
+        dots[i].setAttribute("aria-current", i === active ? "true" : "false");
+      }
+      if (rail) rail.style.setProperty("--fill",
+        ((active <= 0 ? 0 : active / (STOPS.length - 1)) * 100).toFixed(1) + "%");
     };
-    readProg();
-    addEventListener("scroll", readProg, { passive: true });
-    if (lenis) lenis.on("scroll", readProg);
+    if (rail) {
+      rail.innerHTML = STOPS.map(function (st, i) {
+        return '<button class="rdot" data-i="' + i + '">' +
+          '<i></i><span>' + st.label + '</span></button>';
+      }).join("");
+      dots = [].slice.call(rail.querySelectorAll(".rdot"));
+      dots.forEach(function (b) {
+        b.onclick = function () {
+          var el = STOPS[+b.dataset.i].el;
+          if (lenis) lenis.scrollTo(el, { offset: -(innerHeight - el.offsetHeight) / 2 });
+          else el.scrollIntoView({ behavior: "smooth", block: "center" });
+        };
+      });
+      rail.classList.add("live");
+    }
+    addEventListener("scroll", weigh, { passive: true });
+    if (lenis) lenis.on("scroll", weigh);
+    weigh(); paintRail();
     addEventListener("mousemove", function (e) {
       mx = ((e.clientX / innerWidth) - 0.5) * 0.34;
       my = ((e.clientY / innerHeight) - 0.5) * -0.5;

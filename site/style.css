@@ -308,12 +308,37 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
   margin:0;padding:24px 0 30px;font:12.5px var(--mono)}
 .foot.land a{color:var(--text-dim)}
 
-/* scroll spine — draws down the page as you read */
-.spine{position:absolute;left:-1px;top:0;width:14px;pointer-events:none;display:none}
-.spine svg{width:14px;height:100%;overflow:visible}
-.sp-track{stroke:var(--border);stroke-width:2}
-.sp-fill{stroke:var(--accent);stroke-width:2;filter:drop-shadow(0 0 6px rgba(88,166,255,.45))}
-.sp-node{fill:var(--bg);stroke:var(--border-strong);stroke-width:2;
+/* ---- node rail: the stops, synced to where the camera is ---- */
+.rail{position:fixed;left:26px;top:50%;transform:translateY(-50%);z-index:3;
+  display:none;flex-direction:column;gap:2px;--fill:0%}
+.rail.live{display:flex}
+.rail::before{content:"";position:absolute;left:5px;top:8px;bottom:8px;width:1px;
+  background:var(--border-strong)}
+.rail::after{content:"";position:absolute;left:5px;top:8px;width:1px;
+  height:calc(var(--fill) * .92);background:var(--accent);
+  transition:height .5s var(--mist)}
+.rdot{position:relative;display:flex;align-items:center;gap:12px;background:none;
+  border:0;padding:9px 0;cursor:pointer;color:var(--text-faint);
+  font:11px/1 var(--mono);letter-spacing:.04em;white-space:nowrap}
+.rdot i{width:11px;height:11px;border-radius:50%;flex-shrink:0;
+  border:1px solid var(--border-strong);background:var(--bg);
+  transition:all .4s var(--mist)}
+.rdot span{opacity:0;transform:translateX(-6px);
+  transition:opacity .4s var(--mist),transform .4s var(--mist)}
+.rdot:hover span{opacity:.75;transform:none}
+.rdot.on i{border-color:var(--accent);background:var(--accent);
+  box-shadow:0 0 0 4px rgba(88,166,255,.16)}
+.rdot.on span{opacity:1;transform:none;color:var(--text)}
+@media (max-width:1279px){.rail{display:none !important}}
+
+/* copy resolves as the camera arrives at that section's node */
+/* The section resolves as the camera arrives at its node. Applied to the
+   section itself, not its children: `.js .wipe.in` sets opacity on those
+   and wins on specificity. */
+.has-scene .stop{--at:1;opacity:calc(.20 + .80 * var(--at));
+  transition:opacity .3s linear}
+@media (prefers-reduced-motion: reduce){.has-scene .stop{opacity:1}}
+
   transition:stroke .3s var(--ease),fill .3s var(--ease)}
 .sp-node.on{fill:var(--accent);stroke:var(--accent)}
 @media (min-width:1280px){.spine{display:block}}
