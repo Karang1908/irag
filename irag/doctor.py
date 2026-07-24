@@ -26,8 +26,11 @@ KNOWN_KEYS = {
 }
 
 
-def run(conn: sqlite3.Connection, cfg: dict, repo: Path,
-        probe_llm: bool = False) -> int:
+def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
+            probe_llm: bool = False) -> list[tuple[str, str, str]]:
+    """Run every diagnostic and return (level, name, detail) rows. Shared by
+    the CLI `doctor` (which prints them) and the dashboard (which renders
+    them)."""
     results: list[tuple[str, str, str]] = []   # (level, name, detail)
 
     def ok(name, detail=""):
@@ -161,6 +164,13 @@ def run(conn: sqlite3.Connection, cfg: dict, repo: Path,
     else:
         warn("Claude Code hook", "not set up — run 'irag claude-setup'")
 
+    return results
+
+
+def run(conn: sqlite3.Connection, cfg: dict, repo: Path,
+        probe_llm: bool = False) -> int:
+    """Print the diagnosis and return a shell exit code (1 if any FAIL)."""
+    results = collect(conn, cfg, repo, probe_llm=probe_llm)
     width = max(len(r[1]) for r in results)
     rc = 0
     for level, name, detail in results:

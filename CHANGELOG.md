@@ -4,6 +4,34 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.4.0 — 2026-07-24
+
+### Added — **the dashboard is now a full peer of the CLI**
+- **New Pages tab — browse and manage the memory itself.** Filter every
+  file/folder page, read its rendered summary, walk the full version
+  history and diff any version against the previous one, see its blast
+  radius (`impact`), pin/unpin it, and roll back to an older version
+  behind an inline confirmation (still non-destructive). The same tab
+  logs knowledge (`learn` / `record-decision`) and traces a claim back to
+  the revision and commit that created it (`why`) — all of which
+  previously required dropping to the terminal.
+- **Transcripts in the Sessions tab** — a session's verbatim conversation
+  renders alongside its per-file changes when
+  `[sessions].capture_transcript` is on.
+- **Maintenance in the Health tab** — back up the database and run
+  `doctor` in-browser, with PASS/WARN/FAIL rows.
+- **A favicon**, drawn from the brand mark as an inline SVG (no extra
+  request, no external asset).
+- New dashboard endpoints backing the above: `/api/pages`,
+  `/api/transcript`, `/api/why`, `/api/impact`, `/api/diff`,
+  `/api/doctor`, and POST `/api/learn`, `/api/record-decision`,
+  `/api/pin`, `/api/rollback`, `/api/backup`.
+
+### Changed
+- `provenance.why_data()` and `doctor.collect()` extracted as structured
+  helpers so the CLI and the dashboard trace claims and run diagnostics
+  through exactly the same code (the CLI's printed output is unchanged).
+
 ## 4.3.0 — 2026-07-24
 
 ### Added — pluggable memory: verbatim transcripts + a wider code graph

@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>irag — knowledge base dashboard</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 26 26'><line x1='13' y1='13' x2='6' y2='6' stroke='rgba(242,243,245,.4)' stroke-width='1.4'/><line x1='13' y1='13' x2='21' y2='8' stroke='rgba(242,243,245,.4)' stroke-width='1.4'/><line x1='13' y1='13' x2='13' y2='21' stroke='rgba(242,243,245,.4)' stroke-width='1.4'/><circle cx='6' cy='6' r='2.6' fill='%2358a6ff'/><circle cx='21' cy='8' r='2.6' fill='%23c8a2ff'/><circle cx='13' cy='21' r='2.6' fill='%233fb950'/><circle cx='13' cy='13' r='3.6' fill='%23f2f3f5'/></svg>">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#08090c">
@@ -297,6 +298,96 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
   .grid-cards{grid-template-columns:1fr 1fr}
   .grid-cards .card:first-child{grid-column:1/-1}
 }
+/* ---------- pages explorer, capture, provenance, diff, doctor, transcript ---------- */
+.cap-form{display:flex;gap:var(--sp-2);flex-wrap:wrap;align-items:center}
+.cap-form select,.cap-form input,.page-search{background:var(--bg-inset);border:1px solid var(--border);
+  color:var(--text);border-radius:var(--r-sm);padding:8px 10px;font:var(--fs-sm)/1.4 var(--sans)}
+.cap-form input{flex:1;min-width:140px}
+.cap-form input:focus,.page-search:focus,.cap-form select:focus{border-color:var(--accent-ring);outline:none}
+.inline-msg{font-size:var(--fs-xs);color:var(--text-dim);margin-top:var(--sp-2);min-height:1.2em;font-family:var(--mono)}
+.inline-msg.ok{color:var(--green)} .inline-msg.bad{color:var(--red)}
+.ghost-btn{background:none;border:1px solid var(--border-strong);color:var(--text-dim);border-radius:var(--r-sm);
+  padding:8px 14px;font:500 var(--fs-sm) var(--sans);cursor:pointer;transition:all var(--dur) var(--ease)}
+.ghost-btn:hover{border-color:var(--accent-ring);color:var(--text)}
+
+.page-search{width:100%;margin-bottom:var(--sp-3)}
+.page-list{display:flex;flex-direction:column;gap:2px;max-height:62vh;overflow:auto;margin:0 -6px;padding:0 6px}
+.page-item{display:flex;flex-direction:column;gap:2px;text-align:left;width:100%;background:none;border:none;
+  border-radius:var(--r-sm);padding:8px 10px;cursor:pointer;color:var(--text-dim);font-family:inherit;
+  transition:background var(--dur) var(--ease)}
+.page-item:hover{background:var(--panel-2)}
+.page-item.active{background:var(--accent-dim)}
+.page-item.active .pi-name{color:var(--accent)}
+.pi-name{font-size:var(--fs-sm);color:var(--text);font-family:var(--mono);word-break:break-all}
+.pi-meta{font-size:var(--fs-2xs);color:var(--text-faint);font-family:var(--mono);display:flex;align-items:center;gap:6px}
+.pdot{width:6px;height:6px;border-radius:50%;display:inline-block}
+.pdot.bad{background:var(--red)}
+.pin{font-size:.7rem}
+
+.pd-head{display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:baseline;justify-content:space-between}
+.pd-head h3{font-family:var(--mono);font-size:var(--fs-md);word-break:break-all;border:none;padding:0}
+.pd-badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.pd-actions{display:flex;gap:var(--sp-2);margin:var(--sp-3) 0;flex-wrap:wrap}
+.pd-body{margin-top:var(--sp-2);padding:var(--sp-4);background:var(--bg-inset);border:1px solid var(--border);
+  border-radius:var(--r-md);max-height:44vh;overflow:auto}
+.pd-body h1,.pd-body h2,.pd-body h3,.pd-body h4,.tbody h1,.tbody h2,.tbody h3,.tbody h4{
+  font-family:var(--display);font-weight:600;margin:.7em 0 .3em;line-height:1.25}
+.pd-body h1{font-size:1.15rem} .pd-body h2{font-size:1.05rem} .pd-body h3{font-size:.98rem} .pd-body h4{font-size:.9rem}
+.pd-body p,.tbody p{margin:.4em 0;color:var(--text-dim)}
+.pd-body ul,.tbody ul{margin:.4em 0 .4em 1.2em}
+.pd-body code,.tbody code{background:var(--panel-2);padding:1px 5px;border-radius:4px;font-size:.85em}
+.pd-body pre,.tbody pre{background:var(--bg);border:1px solid var(--border);border-radius:var(--r-sm);
+  padding:10px;overflow:auto;margin:.5em 0}
+.pd-body pre code,.tbody pre code{background:none;padding:0}
+
+.ver-list{display:flex;flex-direction:column;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.ver-row{display:grid;grid-template-columns:44px 120px 1fr auto;gap:var(--sp-3);align-items:center;
+  background:var(--bg);padding:9px 12px;font-size:var(--fs-xs)}
+.vn{font-family:var(--mono);color:var(--accent)} .vt{color:var(--text-faint);font-size:var(--fs-2xs);line-height:1.3}
+.vm{font-family:var(--mono)} .vs{color:var(--text-dim);min-width:0} .va{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}
+.mini.danger{color:var(--red);border-color:var(--red-bd)}
+.mini.danger:hover{background:var(--red-dim)}
+
+.diff-head{font-family:var(--mono);font-size:var(--fs-2xs);color:var(--text-faint);margin:var(--sp-3) 0 4px;text-transform:uppercase;letter-spacing:.1em}
+pre.diff{background:var(--bg-inset);border:1px solid var(--border);border-radius:var(--r-md);padding:10px 12px;
+  overflow:auto;font:var(--fs-xs)/1.5 var(--mono);max-height:40vh;display:flex;flex-direction:column}
+pre.diff .diff-add{color:var(--green);background:var(--green-dim)}
+pre.diff .diff-del{color:var(--red);background:var(--red-dim)}
+pre.diff .diff-hunk{color:var(--purple)}
+
+.impact-box{margin:var(--sp-3) 0;padding:var(--sp-3) var(--sp-4);background:var(--bg-inset);border:1px solid var(--border);
+  border-radius:var(--r-md);font-size:var(--fs-sm);color:var(--text-dim)}
+.impact-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--sp-2)}
+.impact-item{font-family:var(--mono);font-size:var(--fs-2xs);background:var(--panel-2);border:1px solid var(--border);
+  border-radius:var(--r-sm);padding:3px 8px;color:var(--text);display:inline-flex;align-items:center;gap:6px}
+.impact-item .hop{color:var(--text-faint)}
+.confirm-bar{margin:var(--sp-3) 0;padding:var(--sp-3) var(--sp-4);background:var(--red-dim);border:1px solid var(--red-bd);
+  border-radius:var(--r-md);font-size:var(--fs-sm);color:var(--text);display:flex;flex-wrap:wrap;gap:var(--sp-2);align-items:center}
+
+.prov{margin-top:var(--sp-3)}
+.prov-card{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.prov-row{display:grid;grid-template-columns:74px 1fr;gap:var(--sp-3);padding:8px 12px;font-size:var(--fs-sm);
+  border-top:1px solid var(--border);background:var(--bg-inset)}
+.prov-row:first-child{border-top:none}
+.prov-row .pk{font-family:var(--mono);font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);padding-top:2px}
+
+.maint-actions{display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap;margin-bottom:var(--sp-3)}
+.doctor-list{display:flex;flex-direction:column;gap:1px;background:var(--border);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.doc-row{display:grid;grid-template-columns:22px 200px 1fr;gap:var(--sp-3);align-items:baseline;background:var(--bg);padding:7px 12px;font-size:var(--fs-xs)}
+.doc-row .dm{font-family:var(--mono);text-align:center}
+.doc-row .dn{color:var(--text)} .doc-row .dd{color:var(--text-faint);font-family:var(--mono);font-size:var(--fs-2xs)}
+.doc-row.pass .dm{color:var(--green)} .doc-row.warn .dm{color:var(--orange)} .doc-row.fail .dm{color:var(--red)}
+.doc-row.fail{background:var(--red-dim)} .doc-row.warn{background:var(--orange-dim)}
+
+.transcript{display:flex;flex-direction:column;gap:var(--sp-3);max-height:52vh;overflow:auto;margin-top:var(--sp-2)}
+.tmsg{border:1px solid var(--border);border-radius:var(--r-md);padding:10px 13px;background:var(--bg-inset)}
+.tmsg.user{border-left:2px solid var(--accent)}
+.tmsg.assistant{border-left:2px solid var(--purple)}
+.trole{font-family:var(--mono);font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:.1em;color:var(--text-faint);margin-bottom:5px}
+.tbody{font-size:var(--fs-sm)}
+.tbody p:first-child{margin-top:0} .tbody p:last-child{margin-bottom:0}
+@media (max-width:760px){.ver-row{grid-template-columns:40px 1fr;row-gap:4px}.ver-row .vt,.ver-row .va{grid-column:2}
+  .prov-row,.doc-row{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -317,6 +408,7 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
     <nav class="tabs" aria-label="Dashboard sections">
       <button data-tab="overview" aria-label="Overview" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Overview</span></button>
       <button data-tab="chat" aria-label="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Chat</span></button>
+      <button data-tab="pages" aria-label="Pages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Pages</span></button>
       <button data-tab="health" aria-label="Health"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Health</span></button>
       <button data-tab="map" aria-label="Map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.8"/><circle cx="6" cy="12" r="2.8"/><circle cx="18" cy="19" r="2.8"/><line x1="8.4" y1="13.4" x2="15.6" y2="17.6"/><line x1="15.6" y1="6.4" x2="8.4" y2="10.6"/></svg><span>Map</span></button>
       <button data-tab="sessions" aria-label="Sessions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg><span>Sessions</span></button>
@@ -325,7 +417,7 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
     <div class="sidebar-foot">
       <span class="ver" id="foot-ver">irag</span>
       <span>local · 127.0.0.1</span>
-      <span title="keyboard shortcuts">keys 1–6 switch tabs</span>
+      <span title="keyboard shortcuts">keys 1–7 switch tabs</span>
     </div>
   </aside>
 
@@ -386,6 +478,44 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
     </div>
   </section>
 
+  <section id="pages">
+    <h2 class="page-title">Pages</h2>
+    <div class="page-sub">Browse the memory itself — every file and folder's summary, its full version history, and where it came from. Pin, roll back, trace a claim, and log knowledge without leaving the browser.</div>
+    <div class="row" style="grid-template-columns:1fr 1fr">
+      <div class="panel">
+        <h3>Log knowledge <span class="pill">records a lesson or decision</span></h3>
+        <form id="cap-form" class="cap-form">
+          <select id="cap-type" aria-label="Kind">
+            <option value="learn">lesson</option>
+            <option value="record-decision">decision</option>
+          </select>
+          <input id="cap-module" placeholder="module — optional (e.g. src/auth)" autocomplete="off">
+          <input id="cap-text" placeholder="what did you learn / decide?" autocomplete="off" required>
+          <button class="primary">Log</button>
+        </form>
+        <div id="cap-msg" class="inline-msg"></div>
+      </div>
+      <div class="panel">
+        <h3>Trace a claim <span class="pill">why does memory say this?</span></h3>
+        <form id="why-form" class="cap-form">
+          <input id="why-input" placeholder='e.g. "we use JWT" or a file path' autocomplete="off" required>
+          <button class="primary">Trace</button>
+        </form>
+        <div id="why-out" class="prov"></div>
+      </div>
+    </div>
+    <div class="row" style="grid-template-columns:320px 1fr">
+      <div class="panel">
+        <h3>All pages <span class="pill" id="page-count"></span></h3>
+        <input id="page-search" class="page-search" placeholder="filter pages…" autocomplete="off">
+        <div class="page-list" id="page-list"></div>
+      </div>
+      <div class="panel" id="page-detail">
+        <div class="empty">Select a page to read its summary, history, and blast radius.</div>
+      </div>
+    </div>
+  </section>
+
   <section id="health">
     <h2 class="page-title">Health</h2>
     <div class="page-sub">Where memory disagrees with the code, and which pages are drifting.</div>
@@ -399,6 +529,15 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
         <table id="staletab"><thead><tr><th>page</th><th>type</th><th>score</th></tr></thead><tbody></tbody></table>
         <div id="page-view" style="display:none"></div>
       </div>
+    </div>
+    <div class="panel" style="margin-top:var(--sp-5)">
+      <h3>Maintenance</h3>
+      <div class="maint-actions">
+        <button class="primary" id="do-backup">Back up the database</button>
+        <button class="ghost-btn" id="do-doctor">Run doctor</button>
+        <span id="maint-msg" class="inline-msg"></span>
+      </div>
+      <div id="doctor-out"></div>
     </div>
   </section>
 
@@ -481,9 +620,10 @@ const IC={
 };
 
 /* ---------- tabs ---------- */
-const TITLES={overview:"Overview",chat:"Chat",health:"Health",map:"Map",sessions:"Sessions",docs:"Docs"};
+const TITLES={overview:"Overview",chat:"Chat",pages:"Pages",health:"Health",map:"Map",sessions:"Sessions",docs:"Docs"};
 const perTab={
   overview:()=>{refreshStatus();refreshBurn();refreshFeed()},
+  pages:refreshPages,
   health:refreshHealth, map:refreshMap, sessions:refreshSessions,
   docs:()=>{if(!docsLoaded)loadDocs()},
 };
@@ -501,7 +641,7 @@ function switchTab(name){
 document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 document.querySelector('nav.tabs button.active')?.setAttribute("aria-current","page");
 /* keyboard: 1-6 switch tabs (ignored while typing) */
-const TAB_ORDER=["overview","chat","health","map","sessions","docs"];
+const TAB_ORDER=["overview","chat","pages","health","map","sessions","docs"];
 addEventListener("keydown",e=>{
   if(e.metaKey||e.ctrlKey||e.altKey)return;
   const t=e.target;
@@ -677,6 +817,151 @@ window.viewPage=async s=>{
   v.textContent=`# ${p.subject}  (${p.versions.length} version(s))\n\n`+p.body;
 };
 
+/* ---------- pages explorer (read + manage the memory) ---------- */
+const postJSON=(p,body)=>api(p,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+let _pages=[],_curPage=null;
+async function refreshPages(){
+  _pages=await api("/api/pages");
+  $("#page-count").textContent=_pages.length;
+  renderPageList();
+  if(_curPage&&_pages.some(p=>p.subject_id===_curPage))viewPageDetail(_curPage);
+}
+function renderPageList(){
+  const q=($("#page-search").value||"").toLowerCase();
+  const rows=_pages.filter(p=>p.subject_id.toLowerCase().includes(q));
+  $("#page-list").innerHTML=rows.length?rows.map(p=>{
+    const flags=(p.pinned?'<span class="pin" title="pinned">📌</span>':'')+
+      (p.contras?`<span class="pdot bad" title="${p.contras} open contradiction(s)"></span>`:'');
+    return `<button class="page-item${p.subject_id===_curPage?' active':''}" data-s="${esc(p.subject_id).replace(/"/g,'&quot;')}">
+      <span class="pi-name">${esc(p.subject_id)}</span>
+      <span class="pi-meta">${p.page_type} · v${p.version_number||'–'} ${flags}</span></button>`}).join("")
+    :`<div class="empty">No pages match.</div>`;
+  document.querySelectorAll("#page-list .page-item").forEach(b=>b.onclick=()=>viewPageDetail(b.dataset.s));
+}
+async function viewPageDetail(subject){
+  _curPage=subject;
+  document.querySelectorAll("#page-list .page-item").forEach(b=>b.classList.toggle("active",b.dataset.s===subject));
+  const d=$("#page-detail");d.innerHTML=`<div class="empty">Loading…</div>`;
+  const p=await api("/api/page?subject="+encodeURIComponent(subject));
+  if(p.error){d.innerHTML=`<div class="empty">${esc(p.error)}</div>`;return}
+  const meta=_pages.find(x=>x.subject_id===subject)||{};
+  const vers=p.versions||[];               // DESC: newest first
+  const pinned=meta.pinned==1;
+  const versRows=vers.map((v,i)=>{
+    const older=vers[i+1];
+    return `<div class="ver-row">
+      <span class="vn">v${v.version_number}</span>
+      <span class="vt">${(v.created_at||'').slice(0,16)}<br><span class="vm">${esc(v.llm_model_used||'')}</span></span>
+      <span class="vs">${esc(v.change_summary||'')}</span>
+      <span class="va">
+        ${older?`<button class="mini" data-act="diff" data-v1="${older.version_number}" data-v2="${v.version_number}">diff ← v${older.version_number}</button>`:''}
+        ${i!==0?`<button class="mini danger" data-act="restore" data-v="${v.version_number}">restore</button>`:'<span class="pill">current</span>'}
+      </span></div>`}).join("");
+  d.innerHTML=`
+    <div class="pd-head">
+      <h3>${esc(subject)}</h3>
+      <div class="pd-badges">
+        <span class="pill">${esc(meta.page_type||'')}</span>
+        <span class="pill">${vers.length} version(s)</span>
+        ${pinned?'<span class="badge status-open">pinned</span>':''}
+        ${meta.contras?`<span class="badge status-interrupted">${meta.contras} contradiction(s)</span>`:''}
+      </div>
+    </div>
+    <div class="pd-actions">
+      <button class="mini" data-act="pin" data-pin="${pinned?0:1}">${pinned?'Unpin':'Pin'}</button>
+      <button class="mini" data-act="impact">Blast radius</button>
+    </div>
+    <div id="pd-impact"></div>
+    <div id="pd-diff"></div>
+    <h4>Summary</h4>
+    <div class="pd-body">${md(esc(p.body||'(no body)'))}</div>
+    <h4>Version history</h4>
+    <div class="ver-list">${versRows||'<div class="empty">no versions</div>'}</div>`;
+}
+$("#page-search").oninput=renderPageList;
+$("#page-detail").addEventListener("click",e=>{
+  const b=e.target.closest("button[data-act]");if(!b||!_curPage)return;
+  const act=b.dataset.act;
+  if(act==="diff")doDiff(_curPage,+b.dataset.v1,+b.dataset.v2);
+  else if(act==="impact")doImpact(_curPage);
+  else if(act==="pin")togglePin(_curPage,+b.dataset.pin);
+  else if(act==="restore")askRollback(_curPage,+b.dataset.v);
+  else if(act==="confirm-rollback")doRollback(_curPage,+b.dataset.v);
+  else if(act==="cancel-rollback")$("#pd-diff").innerHTML="";
+});
+async function doDiff(subject,v1,v2){
+  const box=$("#pd-diff");box.innerHTML=`<div class="inline-msg">diffing…</div>`;
+  const r=await api(`/api/diff?subject=${encodeURIComponent(subject)}&v1=${v1}&v2=${v2}`);
+  if(r.error){box.innerHTML=`<div class="inline-msg bad">${esc(r.error)}</div>`;return}
+  if(!r.diff){box.innerHTML=`<div class="inline-msg">v${v1} and v${v2} are identical.</div>`;return}
+  const html=r.diff.split("\n").map(l=>{
+    const c=(l[0]==="+"&&!l.startsWith("+++"))?"diff-add":(l[0]==="-"&&!l.startsWith("---"))?"diff-del":l.startsWith("@@")?"diff-hunk":"";
+    return `<span class="${c}">${esc(l)||" "}</span>`}).join("\n");
+  box.innerHTML=`<div class="diff-head">diff v${r.v1} → v${r.v2}</div><pre class="diff">${html}</pre>`;
+}
+async function doImpact(subject){
+  const box=$("#pd-impact");box.innerHTML=`<div class="inline-msg">computing…</div>`;
+  const hits=await api("/api/impact?subject="+encodeURIComponent(subject));
+  box.innerHTML=hits.length
+    ?`<div class="impact-box"><b>Blast radius</b> — ${hits.length} module(s) could break if this changes:
+       <div class="impact-list">${hits.map(h=>`<span class="impact-item">${esc(h.subject)}<span class="hop">${h.hop}&nbsp;hop${h.hop>1?'s':''}</span></span>`).join("")}</div></div>`
+    :`<div class="impact-box">Nothing imports <b>${esc(subject)}</b> — a change here is contained.</div>`;
+}
+async function togglePin(subject,pin){await postJSON("/api/pin",{subject,pinned:!!pin});refreshPages();refreshStatus()}
+function askRollback(subject,v){
+  $("#pd-diff").innerHTML=`<div class="confirm-bar">Roll back <b>${esc(subject)}</b> to <b>v${v}</b>?
+    This writes v${v}'s content as a new version — non-destructive, nothing is lost.
+    <button class="mini danger" data-act="confirm-rollback" data-v="${v}">Yes, roll back</button>
+    <button class="mini" data-act="cancel-rollback">Cancel</button></div>`;
+}
+async function doRollback(subject,v){
+  const r=await postJSON("/api/rollback",{subject,version:v});
+  $("#pd-diff").innerHTML=r.ok?`<div class="inline-msg ok">rolled back to v${v} as a new version ✓</div>`
+                             :`<div class="inline-msg bad">${esc(r.error||'rollback failed')}</div>`;
+  if(r.ok){refreshPages();refreshStatus()}
+}
+$("#cap-form").onsubmit=async e=>{
+  e.preventDefault();
+  const type=$("#cap-type").value,text=$("#cap-text").value.trim(),module=$("#cap-module").value.trim();
+  const msg=$("#cap-msg");if(!text){return}
+  const r=await postJSON("/api/"+type,{text,module});
+  if(r.ok){msg.className="inline-msg ok";msg.textContent=(type==="learn"?"lesson":"decision")+" recorded ✓";
+    $("#cap-text").value="";$("#cap-module").value="";refreshStatus();refreshPages()}
+  else{msg.className="inline-msg bad";msg.textContent=r.error||"failed"}
+  setTimeout(()=>{msg.textContent=""},4000);
+};
+$("#why-form").onsubmit=async e=>{
+  e.preventDefault();
+  const claim=$("#why-input").value.trim();if(!claim)return;
+  const out=$("#why-out");out.innerHTML=`<div class="inline-msg">tracing…</div>`;
+  const r=await api("/api/why?claim="+encodeURIComponent(claim));
+  if(!r||!r.subject_id){out.innerHTML=`<div class="empty">No revision matches that claim.</div>`;return}
+  const ev=r.event;
+  out.innerHTML=`<div class="prov-card">
+    <div class="prov-row"><span class="pk">page</span><span><b>${esc(r.title)}</b> <span class="pill">${esc(r.subject_id)}</span></span></div>
+    <div class="prov-row"><span class="pk">revision</span><span>v${r.version_number} · ${(r.created_at||'').slice(0,16)} · by ${esc(r.llm_model_used||'unknown')}</span></div>
+    ${r.change_summary?`<div class="prov-row"><span class="pk">change</span><span>${esc(r.change_summary)}</span></div>`:''}
+    <div class="prov-row"><span class="pk">trigger</span><span>${ev?`#${ev.event_id} ${esc(ev.event_type)}${ev.source_ref?` · ref ${esc(String(ev.source_ref).slice(0,10))}`:''}`:'human / rollback (no event)'}</span></div>
+    ${ev&&ev.message?`<div class="prov-row"><span class="pk">commit</span><span>${esc(ev.message)}</span></div>`:''}
+    ${ev&&ev.text?`<div class="prov-row"><span class="pk">note</span><span>${esc(ev.text)}</span></div>`:''}
+  </div>`;
+};
+$("#do-backup").onclick=async()=>{
+  const b=$("#do-backup"),msg=$("#maint-msg");b.disabled=true;msg.className="inline-msg";msg.textContent="backing up…";
+  try{const r=await postJSON("/api/backup",{});
+    if(r.ok){msg.className="inline-msg ok";msg.textContent=`backup written: ${r.path.split("/").pop()} (${(r.bytes/1024).toFixed(0)} KB) ✓`}
+    else{msg.className="inline-msg bad";msg.textContent=r.error||"failed"}}
+  catch(e){msg.className="inline-msg bad";msg.textContent="backup failed"}
+  b.disabled=false;
+};
+$("#do-doctor").onclick=async()=>{
+  const out=$("#doctor-out");out.innerHTML=`<div class="inline-msg">running diagnostics…</div>`;
+  const rows=await api("/api/doctor");const mark={PASS:"✓",WARN:"!",FAIL:"✗"};
+  out.innerHTML=`<div class="doctor-list">`+rows.map(r=>
+    `<div class="doc-row ${r.level.toLowerCase()}"><span class="dm">${mark[r.level]||'·'}</span>
+      <span class="dn">${esc(r.name)}</span><span class="dd">${esc(r.detail||'')}</span></div>`).join("")+`</div>`;
+};
+
 /* ---------- map: Obsidian-style dependency graph (canvas + live force sim) ---------- */
 const HUES=[212,262,190,288,152,226,318];
 function folderHue(id){const seg=id.split("/")[0]||id;let h=0;for(const c of seg)h=(h*31+c.charCodeAt(0))>>>0;return HUES[h%HUES.length]}
@@ -820,7 +1105,9 @@ async function refreshSessions(){
   };
   viewSession(rows[0].session_id);
 }
+let _activeSession=null;
 window.viewSession=id=>{
+  _activeSession=id;
   const r=_sessions.find(s=>s.session_id===id);
   document.querySelectorAll("#sess-list .sess-row").forEach(el=>el.classList.toggle("active",Number(el.dataset.id)===id));
   const d=$("#sess-detail");if(!r){d.innerHTML=`<div class="empty">Session not found.</div>`;return}
@@ -832,8 +1119,25 @@ window.viewSession=id=>{
     <div class="sess-meta">${esc(r.agent||"")} · ${(r.started_at||"").slice(0,16)} → ${r.ended_at?r.ended_at.slice(0,16):"—"}
       · <span class="badge status-${r.status}">${r.status}</span></div>
     <p class="sess-full-summary">${esc(r.summary||"No summary recorded.")}</p>
-    <h4>Changes this session</h4>${changes}`;
+    <h4>Changes this session</h4>${changes}
+    <div id="sess-transcript"><h4>Transcript</h4><div class="empty">Loading…</div></div>`;
+  loadTranscript(id);
 };
+async function loadTranscript(id){
+  let msgs=[];
+  try{msgs=await api("/api/transcript?session="+id)}catch(e){return}
+  if(_activeSession!==id)return;                 // a newer session was opened
+  const box=$("#sess-transcript");if(!box)return;
+  if(!msgs.length){
+    box.innerHTML=`<h4>Transcript</h4><div class="empty">No transcript stored for this session.
+      Turn on <code>[sessions].capture_transcript</code> in <code>.irag/config.toml</code> to record the verbatim conversation.</div>`;
+    return;
+  }
+  box.innerHTML=`<h4>Transcript <span class="pill">${msgs.length} message(s)</span></h4>
+    <div class="transcript">`+msgs.map(m=>
+      `<div class="tmsg ${esc(m.role)}"><div class="trole">${esc(m.role)}</div>
+        <div class="tbody">${md(esc(m.content||""))}</div></div>`).join("")+`</div>`;
+}
 
 /* ---------- docs ---------- */
 let docsLoaded=false;

@@ -275,15 +275,28 @@ message is auto-routed like the original DBS project: keyword/path/symbol
 lookups → instant SQL search (green badge), natural-language questions →
 AI answer with citations (purple badge); a keyword miss falls through to
 AI, and a selector can force either mode; a typing indicator shows while
-a request is in flight. **Health** — open contradictions with one-click
-resolve, staleness table, click any page to read its current body.
+a request is in flight. **Pages** — the memory browser: filter every file
+and folder page, read its rendered summary, walk its full version history
+and diff any version against the previous one, see its blast radius, pin
+or unpin it, and roll back to an older version (with an inline
+confirmation — the rollback is non-destructive, as always). The same tab
+logs knowledge (`irag learn` / `irag record-decision`) and traces a claim
+back to the revision and commit that created it (`irag why`).
+**Health** — open contradictions with one-click
+resolve, staleness table, click any page to read its current body, plus
+**Maintenance**: back up the database and run `irag doctor` in-browser
+with PASS/WARN/FAIL rows.
 **Map** — an interactive, Obsidian-style dependency graph (drag to pan,
 scroll to zoom, drag nodes, hover to trace imports) above the
 files/symbols and import-edge tables.
 **Sessions** — the conversation log: click a session to see its full
-summary and the exact per-file changes it made (`changes_detail`).
+summary, the exact per-file changes it made (`changes_detail`), and the
+verbatim transcript when `[sessions].capture_transcript` is on.
 **Docs** — the full documentation rendered in-app (Quickstart, Setup,
 Architecture, CLI reference, Comparison).
+
+Everything the dashboard does is also a CLI command, and vice versa —
+the GUI is a full peer of the CLI, not a read-only viewer.
 
 ### `irag status [--json]`
 

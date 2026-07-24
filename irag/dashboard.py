@@ -198,6 +198,75 @@ def make_handler(state: _State):
                         "LIMIT ?", (limit,)).fetchall()
                     return self._json(
                         [sessions_mod.row_to_dict(r) for r in rows])
+                if url.path == "/api/transcript":
+                    from . import sessions as sessions_mod
+                    try:
+                        sid = int((qs.get("session") or ["0"])[0])
+                    except ValueError:
+                        sid = 0
+                    return self._json(sessions_mod.transcript(conn, sid))
+                if url.path == "/api/pages":
+                    rows = conn.execute(
+                        """SELECT p.subject_id, p.page_type, p.title,
+                                  p.staleness_score, p.pinned, r.version_number,
+                                  (SELECT COUNT(*) FROM contradictions c
+                                   WHERE c.page_id=p.page_id
+                                     AND c.resolved_at IS NULL) contras
+                           FROM pages p
+                           LEFT JOIN revisions r
+                                  ON r.revision_id=p.current_revision_id
+                           ORDER BY p.subject_id""").fetchall()
+                    return self._json([dict(r) for r in rows])
+                if url.path == "/api/why":
+                    from . import provenance
+                    claim = (qs.get("claim") or [""])[0]
+                    return self._json(
+                        provenance.why_data(conn, claim) or {})
+                if url.path == "/api/impact":
+                    subject = (qs.get("subject") or [""])[0]
+                    structure.scan(conn, state.cfg, state.root)
+                    hits = structure.impact(conn, subject)
+                    return self._json(
+                        [{"subject": s, "hop": h} for s, h in hits])
+                if url.path == "/api/diff":
+                    import difflib
+                    subject = (qs.get("subject") or [""])[0]
+                    page = conn.execute(
+                        "SELECT page_id FROM pages WHERE subject_id=?",
+                        (subject,)).fetchone()
+                    if not page:
+                        return self._json({"error": "no such page"}, 404)
+                    revs = conn.execute(
+                        "SELECT version_number v, body_markdown b FROM "
+                        "revisions WHERE page_id=? ORDER BY version_number",
+                        (page["page_id"],)).fetchall()
+                    by_v = {r["v"]: r["b"] for r in revs}
+
+                    def _iv(key):
+                        try:
+                            return int((qs.get(key) or [""])[0])
+                        except ValueError:
+                            return None
+                    v2 = _iv("v2")
+                    if v2 is None:
+                        v2 = revs[-1]["v"] if revs else None
+                    v1 = _iv("v1")
+                    if v1 is None:
+                        v1 = revs[-2]["v"] if len(revs) >= 2 else None
+                    if v1 not in by_v or v2 not in by_v:
+                        return self._json(
+                            {"error": "need two valid versions"}, 400)
+                    diff = "".join(difflib.unified_diff(
+                        by_v[v1].splitlines(keepends=True),
+                        by_v[v2].splitlines(keepends=True),
+                        fromfile=f"v{v1}", tofile=f"v{v2}"))
+                    return self._json({"v1": v1, "v2": v2, "diff": diff})
+                if url.path == "/api/doctor":
+                    from . import doctor
+                    rows = doctor.collect(conn, state.cfg, state.root)
+                    return self._json(
+                        [{"level": lv, "name": n, "detail": d}
+                         for lv, n, d in rows])
                 return self._json({"error": "not found"}, 404)
             except Exception:   # keep the dashboard alive
                 traceback.print_exc()
@@ -279,6 +348,52 @@ def make_handler(state: _State):
 
                     threading.Thread(target=worker, daemon=True).start()
                     return self._json({"ok": True})
+                if url.path in ("/api/learn", "/api/record-decision"):
+                    text = str(data.get("text", "")).strip()
+                    if not text:
+                        return self._json({"error": "empty text"}, 400)
+                    module = str(data.get("module", "")).strip() or None
+                    from .cli import _append_log
+                    if url.path == "/api/learn":
+                        _append_log(conn, "lessons", "lessons", "Lessons",
+                                    "session", text, module)
+                    else:
+                        _append_log(conn, "decisions", "decisions",
+                                    "Decisions", "decision", text, module)
+                    return self._json({"ok": True})
+                if url.path == "/api/pin":
+                    from . import provenance
+                    try:
+                        provenance.pin(conn, str(data.get("subject", "")),
+                                       bool(data.get("pinned")))
+                    except SystemExit as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    return self._json({"ok": True})
+                if url.path == "/api/rollback":
+                    from . import provenance
+                    try:
+                        version = int(data.get("version"))
+                    except (TypeError, ValueError):
+                        return self._json({"error": "bad version"}, 400)
+                    try:
+                        provenance.rollback(
+                            conn, str(data.get("subject", "")), version)
+                    except SystemExit as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    return self._json({"ok": True})
+                if url.path == "/api/backup":
+                    import datetime
+                    import sqlite3 as _sq
+                    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                    dest = (state.root / ".irag" / "backups"
+                            / f"memory-{stamp}.db")
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    target = _sq.connect(dest)
+                    with target:
+                        conn.backup(target)
+                    target.close()
+                    return self._json({"ok": True, "path": str(dest),
+                                       "bytes": dest.stat().st_size})
                 return self._json({"error": "not found"}, 404)
             except Exception:
                 traceback.print_exc()

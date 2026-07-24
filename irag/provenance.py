@@ -12,11 +12,13 @@ import sqlite3
 from . import db
 
 
-def why(conn: sqlite3.Connection, claim: str) -> None:
-    """Locate the best-matching revision for a claim and print its provenance."""
+def why_data(conn: sqlite3.Connection, claim: str) -> dict | None:
+    """Structured provenance for a claim: the best-matching revision and the
+    event that triggered it, or None if nothing matches. Shared by the CLI
+    `why` and the dashboard so both trace claims the same way."""
     q = db.fts_sanitize(claim)
     if not q:
-        raise SystemExit("irag: empty claim")
+        return None
     row = conn.execute(
         """SELECT r.revision_id, r.page_id, r.version_number, r.created_at,
                   r.change_summary, r.llm_model_used, r.triggered_by_event_id,
@@ -29,6 +31,36 @@ def why(conn: sqlite3.Connection, claim: str) -> None:
         (q,),
     ).fetchone()
     if not row:
+        return None
+    out = {"subject_id": row["subject_id"], "title": row["title"],
+           "version_number": row["version_number"],
+           "created_at": row["created_at"],
+           "llm_model_used": row["llm_model_used"],
+           "change_summary": row["change_summary"], "event": None}
+    ev_id = row["triggered_by_event_id"]
+    if not ev_id:
+        return out
+    ev = conn.execute("SELECT * FROM events WHERE event_id=?",
+                      (ev_id,)).fetchone()
+    if not ev:
+        return out
+    try:
+        payload = json.loads(ev["payload"] or "{}")
+    except json.JSONDecodeError:
+        payload = {}
+    out["event"] = {
+        "event_id": ev["event_id"], "event_type": ev["event_type"],
+        "source_ref": ev["source_ref"], "message": payload.get("message"),
+        "files": payload.get("files"), "text": payload.get("text")}
+    return out
+
+
+def why(conn: sqlite3.Connection, claim: str) -> None:
+    """Locate the best-matching revision for a claim and print its provenance."""
+    if not db.fts_sanitize(claim):
+        raise SystemExit("irag: empty claim")
+    row = why_data(conn, claim)
+    if not row:
         print(f"no revision matches: {claim!r}")
         return
     print(f"claim matches page  : {row['title']} ({row['subject_id']})")
@@ -36,28 +68,18 @@ def why(conn: sqlite3.Connection, claim: str) -> None:
           f"({row['created_at']}, by {row['llm_model_used'] or 'unknown'})")
     if row["change_summary"]:
         print(f"change summary      : {row['change_summary']}")
-    ev_id = row["triggered_by_event_id"]
-    if not ev_id:
-        print("triggered by        : human/rollback (no event recorded)")
-        return
-    ev = conn.execute(
-        "SELECT * FROM events WHERE event_id=?", (ev_id,)
-    ).fetchone()
+    ev = row["event"]
     if not ev:
-        print("triggered by        : (event no longer present)")
+        print("triggered by        : human/rollback (no event recorded)")
         return
     print(f"triggered by event  : #{ev['event_id']} {ev['event_type']}"
           f" (ref {ev['source_ref'] or '-'})")
-    try:
-        payload = json.loads(ev["payload"] or "{}")
-    except json.JSONDecodeError:
-        payload = {}
-    if payload.get("message"):
-        print(f"commit message      : {payload['message']}")
-    if payload.get("files"):
-        print(f"files               : {', '.join(payload['files'][:8])}")
-    if payload.get("text"):
-        print(f"text                : {payload['text']}")
+    if ev.get("message"):
+        print(f"commit message      : {ev['message']}")
+    if ev.get("files"):
+        print(f"files               : {', '.join(ev['files'][:8])}")
+    if ev.get("text"):
+        print(f"text                : {ev['text']}")
 
 
 def asof(conn: sqlite3.Connection, date: str, show: str | None = None) -> None:

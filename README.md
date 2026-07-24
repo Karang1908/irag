@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT">
-  <img src="https://img.shields.io/badge/version-4.3.0-purple" alt="Version 4.3.0">
+  <img src="https://img.shields.io/badge/version-4.4.0-purple" alt="Version 4.4.0">
 </p>
 
 <p align="center">
@@ -211,12 +211,20 @@ irag check                      # CI gate: exit 1 if memory disagrees with code
 
 - **Map** — an interactive, Obsidian-style dependency graph: drag to
   pan, scroll to zoom, drag nodes, hover to trace imports.
-- **Sessions** — the conversation log with per-file change detail.
+- **Pages** — browse the memory itself: read any page, diff its version
+  history, see its blast radius, pin it, roll it back, trace a claim to
+  the commit that created it, and log lessons/decisions.
+- **Sessions** — the conversation log with per-file change detail, plus
+  the verbatim transcript when capture is enabled.
 - **Overview** — live token burn, metric cards, activity feed.
-- **Health** — open contradictions with one-click resolve, staleness.
+- **Health** — open contradictions with one-click resolve, staleness,
+  and maintenance (backup, in-browser `doctor`).
 - **Chat** — auto-routes lookups to instant SQL search and questions to
   AI answers with citations.
 - **Docs** — this documentation, rendered in-app.
+
+Anything you can do in the CLI you can do in the GUI — the dashboard is
+a full peer, not a read-only viewer.
 
 ![Session diary](docs/assets/sessions.jpg)
 
