@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT">
-  <img src="https://img.shields.io/badge/version-4.7.0-purple" alt="Version 4.7.0">
+  <img src="https://img.shields.io/badge/version-4.8.0-purple" alt="Version 4.8.0">
 </p>
 
 <p align="center">

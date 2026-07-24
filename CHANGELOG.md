@@ -4,6 +4,36 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.8.0 — 2026-07-25
+
+### Added — the dashboard behaves like a tool you use every day
+- **Every view is linkable.** The active tab lives in the URL, so a reload
+  keeps your place, the back button works, and `#pages` / `#health` opens
+  straight to a view. The document title follows the tab, which makes
+  several dashboards distinguishable in a row of browser tabs.
+- **Sortable tables** on Health staleness and both Map tables, with the
+  conventional directions (text A→Z first, numbers high→low first) and
+  `aria-sort` for screen readers. Sorting re-orders the *data*, not the DOM
+  rows, so the 3-second refresh no longer snaps your sort back.
+- **The Map tables have column headers at all.** They previously shipped
+  two and four unlabeled columns.
+- **A keyboard reference** (`?`, or the footer button) in a native
+  `<dialog>` — focus trap and Esc for free. Added `/` to focus the current
+  tab's filter/question box and Esc to clear it.
+
+### Fixed
+- The shortcuts dialog rendered in the top-left corner: the design system's
+  global `*{margin:0}` reset silently kills the UA `margin:auto` that
+  centers a modal `<dialog>`.
+- Numbers are tabular everywhere data lives, so metric values stop jittering
+  as they count up and columns actually line up.
+- `.mini` buttons were ~21px tall (imprecise even with a mouse); raised to
+  26px, with a `pointer:coarse` block that expands every target to 36–44px
+  on touch without bloating the dense desktop layout.
+- Empty states in the Map and staleness tables now say what to do
+  ("run Scan map from the Tools tab") rather than "no scan data".
+- Copy: removed the em-dash cadence flagged by the design detector.
+
 ## 4.7.0 — 2026-07-25
 
 ### Fixed — **the dashboard claimed a clean bill of health on an empty memory**

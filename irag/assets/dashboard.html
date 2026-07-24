@@ -372,6 +372,53 @@ pre.diff .diff-hunk{color:var(--purple)}
 .prov-row .pk{font-family:var(--mono);font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);padding-top:2px}
 
 .maint-actions{display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap;margin-bottom:var(--sp-3)}
+/* keyboard shortcut reference (native dialog: focus trap + Esc for free) */
+.keyhint{background:none;border:none;color:var(--text-faint);font:var(--fs-2xs) var(--sans);
+  cursor:pointer;padding:0;text-align:left;display:flex;align-items:center;gap:5px}
+.keyhint:hover{color:var(--text-dim)}
+kbd{font:var(--fs-2xs) var(--mono);background:var(--panel-2);border:1px solid var(--border-strong);
+  border-bottom-width:2px;border-radius:4px;padding:1px 5px;color:var(--text-dim)}
+dialog#keys{border:1px solid var(--border-strong);background:var(--panel);color:var(--text);
+  border-radius:var(--r-lg);padding:var(--sp-5) var(--sp-6) var(--sp-5);max-width:460px;width:calc(100% - 32px);
+  /* the global `*{margin:0}` reset kills the UA's margin:auto, which is
+     what centers a modal dialog — restore it explicitly */
+  margin:auto;box-shadow:0 24px 60px rgba(0,0,0,.6)}
+dialog#keys::backdrop{background:rgba(4,5,7,.66);backdrop-filter:blur(3px)}
+.keys-head{display:flex;align-items:baseline;gap:var(--sp-3);margin-bottom:var(--sp-4)}
+.keys-head h3{font-family:var(--display);font-size:var(--fs-lg);font-weight:600;border:none;padding:0}
+.keys-head .setup-x{margin-left:auto}
+.keys-list{display:grid;grid-template-columns:auto 1fr;gap:10px var(--sp-4);align-items:baseline;margin:0}
+.keys-list dt{white-space:nowrap}
+.keys-list dd{margin:0;color:var(--text-dim);font-size:var(--fs-sm)}
+.keys-foot{margin-top:var(--sp-4);padding-top:var(--sp-3);border-top:1px solid var(--border);
+  font-size:var(--fs-xs);color:var(--text-faint);line-height:1.55}
+@media (prefers-reduced-motion: no-preference){
+  dialog#keys[open]{animation:card-in .22s var(--ease) both}}
+
+/* ---------- professional data display ----------
+   Numbers are read in columns and refresh every 3s; proportional figures
+   make them jitter and misalign. Tabular figures everywhere data lives. */
+.card .value,table,.mono,.tb-right,.sess-meta,.pi-meta,.vn,.vt,
+.step-state,.ctx-out,pre.diff,.doc-row .dd,.feed .t{font-variant-numeric:tabular-nums}
+
+/* hit targets: dense by default (mouse), roomy on touch/coarse pointers */
+@media (pointer:coarse){
+  nav.tabs button{padding:11px var(--sp-3)}
+  .mini{min-height:36px;padding:7px 12px}
+  .ghost-btn,.op-grid button{min-height:44px}
+  .page-item{padding:11px 10px}
+}
+.mini{min-height:26px}                 /* was ~21px — imprecise even with a mouse */
+
+/* sortable table headers */
+th[data-sort]{cursor:pointer;user-select:none;white-space:nowrap}
+th[data-sort]:hover{color:var(--text)}
+th[data-sort]::after{content:"";display:inline-block;width:0;height:0;margin-left:6px;
+  vertical-align:middle;border-left:4px solid transparent;border-right:4px solid transparent;
+  border-bottom:4px solid currentColor;opacity:.25}
+th[data-sort].asc::after{opacity:.9}
+th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
+
 /* first-run guidance + plain-language panel captions */
 .hint{font-size:var(--fs-xs);color:var(--text-dim);margin:-2px 0 var(--sp-3);max-width:68ch;line-height:1.5}
 .hint b{color:var(--text)}
@@ -451,7 +498,7 @@ pre.diff .diff-hunk{color:var(--purple)}
     <div class="sidebar-foot">
       <span class="ver" id="foot-ver">irag</span>
       <span>local · 127.0.0.1</span>
-      <span title="keyboard shortcuts">keys 1–8 switch tabs</span>
+      <button class="keyhint" id="keyhint">keyboard shortcuts <kbd>?</kbd></button>
     </div>
   </aside>
 
@@ -467,7 +514,7 @@ pre.diff .diff-hunk{color:var(--purple)}
 
   <section id="overview" class="show">
     <h2 class="page-title">Overview</h2>
-    <div class="page-sub">Live state of the knowledge base — refreshes every 3 seconds.</div>
+    <div class="page-sub">Live state of the knowledge base. Refreshes every 3 seconds.</div>
     <!-- first-run guidance: shown only while the memory is still empty,
          each step reflecting real state from /api/status + /api/doctor -->
     <div class="setup" id="setup" hidden>
@@ -529,7 +576,7 @@ pre.diff .diff-hunk{color:var(--purple)}
 
   <section id="chat">
     <h2 class="page-title">Chat</h2>
-    <div class="page-sub">One box, two engines — SQL full-text for lookups, the AI pipeline for questions.</div>
+    <div class="page-sub">One box, two engines: SQL full-text for lookups, the AI pipeline for questions.</div>
     <div class="panel" id="chat-box">
       <h3>Knowledge base
         <span class="pill">auto-routes: <b style="color:var(--green)">SQL</b> · <b style="color:var(--purple)">AI</b></span>
@@ -549,7 +596,7 @@ pre.diff .diff-hunk{color:var(--purple)}
 
   <section id="pages">
     <h2 class="page-title">Pages</h2>
-    <div class="page-sub">Browse the memory itself — every file and folder's summary, its full version history, and where it came from. Pin, roll back, trace a claim, and log knowledge without leaving the browser.</div>
+    <div class="page-sub">Browse the memory itself: every file and folder's summary, its full version history, and where it came from. Pin, roll back, trace a claim, and log knowledge without leaving the browser.</div>
     <div class="row" style="grid-template-columns:1fr 1fr">
       <div class="panel">
         <h3>Log knowledge <span class="pill">records a lesson or decision</span></h3>
@@ -558,7 +605,7 @@ pre.diff .diff-hunk{color:var(--purple)}
             <option value="learn">lesson</option>
             <option value="record-decision">decision</option>
           </select>
-          <input id="cap-module" placeholder="module — optional (e.g. src/auth)" autocomplete="off">
+          <input id="cap-module" placeholder="module (optional, e.g. src/auth)" autocomplete="off">
           <input id="cap-text" placeholder="what did you learn / decide?" autocomplete="off" required>
           <button class="primary">Log</button>
         </form>
@@ -591,13 +638,16 @@ pre.diff .diff-hunk{color:var(--purple)}
     <div class="row" style="grid-template-columns:1fr 1fr">
       <div class="panel">
         <h3>Open contradictions</h3>
-        <p class="hint">Something the memory claims that your code disproves — a hallucination caught mechanically. Fix the code or re-run Update, then it clears itself. Resolve one by hand if the flag is wrong.</p>
+        <p class="hint">Something the memory claims that your code disproves: a hallucination caught mechanically. Fix the code or re-run Update, then it clears itself. Resolve one by hand if the flag is wrong.</p>
         <table id="contras"><thead><tr><th>page</th><th>claim</th><th>truth</th><th>sev</th><th></th></tr></thead><tbody></tbody></table>
       </div>
       <div class="panel">
         <h3>Staleness · top</h3>
-        <p class="hint">How far each page has drifted from the code since it was last written. Pages past the threshold get rewritten on the next Update — you don't need to do anything. Click a row to read the page.</p>
-        <table id="staletab"><thead><tr><th>page</th><th>type</th><th>score</th></tr></thead><tbody></tbody></table>
+        <p class="hint">How far each page has drifted from the code since it was last written. Pages past the threshold get rewritten on the next Update, so you don't need to do anything. Click a row to read the page.</p>
+        <table id="staletab"><thead><tr>
+          <th data-sort="subject_id">page</th><th data-sort="page_type">type</th>
+          <th data-sort="staleness_score" data-num class="desc">score</th>
+        </tr></thead><tbody></tbody></table>
         <div id="page-view" style="display:none"></div>
       </div>
     </div>
@@ -605,7 +655,7 @@ pre.diff .diff-hunk{color:var(--purple)}
 
   <section id="map">
     <h2 class="page-title">Map</h2>
-    <div class="page-sub">The codebase as a graph — every module a node, every import an edge. Drag to pan, scroll to zoom, drag a node to pull it around.</div>
+    <div class="page-sub">The codebase as a graph: every module a node, every import an edge. Drag to pan, scroll to zoom, drag a node to pull it around.</div>
     <div class="panel graph-wrap">
       <h3>Dependency graph <span class="pill">drag to pan · scroll to zoom · drag a node</span></h3>
       <div id="graph">
@@ -620,8 +670,15 @@ pre.diff .diff-hunk{color:var(--purple)}
       </div>
     </div>
     <div class="row" style="grid-template-columns:1fr 1fr">
-      <div class="panel"><h3>Files · symbols</h3><table id="mapfiles"><tbody></tbody></table></div>
-      <div class="panel"><h3>Import edges</h3><table id="mapdeps"><tbody></tbody></table></div>
+      <div class="panel"><h3>Files · symbols</h3>
+        <table id="mapfiles"><thead><tr>
+          <th data-sort="subject_id">file</th><th data-sort="n" data-num class="desc">symbols</th>
+        </tr></thead><tbody></tbody></table></div>
+      <div class="panel"><h3>Import edges</h3>
+        <table id="mapdeps"><thead><tr>
+          <th data-sort="s">from</th><th></th><th data-sort="t">imports</th>
+          <th data-sort="n" data-num class="desc">count</th>
+        </tr></thead><tbody></tbody></table></div>
     </div>
   </section>
 
@@ -641,12 +698,12 @@ pre.diff .diff-hunk{color:var(--purple)}
 
   <section id="tools">
     <h2 class="page-title">Tools</h2>
-    <div class="page-sub">Everything else the CLI can do — see exactly what your agent is fed, travel back in time, and run every maintenance operation without a terminal.</div>
+    <div class="page-sub">Everything else the CLI can do. See exactly what your agent is fed, travel back in time, and run every maintenance operation without a terminal.</div>
 
     <div class="panel">
       <h3>What your agent sees <span class="pill">irag context</span></h3>
       <form id="ctx-form" class="cap-form">
-        <input id="ctx-query" placeholder="task / query — optional (ranks the pages)" autocomplete="off">
+        <input id="ctx-query" placeholder="task or query (optional, ranks the pages)" autocomplete="off">
         <!-- no step= here: a step that doesn't divide (value - min) makes the
              field stepMismatch-invalid, which silently blocks form submit -->
         <input id="ctx-budget" type="number" value="3000" min="200" style="max-width:130px" aria-label="token budget">
@@ -667,7 +724,7 @@ pre.diff .diff-hunk{color:var(--purple)}
       </div>
       <div class="panel">
         <h3>Operations</h3>
-        <p class="hint">Everyday upkeep. You rarely need these — <b>Update</b> on the Overview already runs sync, synthesis and lint together. Hover any button to see what it does.</p>
+        <p class="hint">Everyday upkeep. You rarely need these: <b>Update</b> on the Overview already runs sync, synthesis and lint together. Hover any button to see what it does.</p>
         <div class="op-grid">
           <button class="ghost-btn" data-op="sync" title="Notice which files changed and queue them. Detects only — Update is what writes the summaries.">Sync</button>
           <button class="ghost-btn" data-op="scan" title="Re-read the code structure: which symbols exist and which file imports which. Costs no tokens.">Scan map</button>
@@ -698,6 +755,21 @@ pre.diff .diff-hunk{color:var(--purple)}
   </main>
   </div>
 </div>
+
+<dialog id="keys" aria-label="Keyboard shortcuts">
+  <div class="keys-head"><h3>Keyboard shortcuts</h3>
+    <button class="setup-x" id="keys-close">Close</button></div>
+  <dl class="keys-list">
+    <dt><kbd>1</kbd>–<kbd>8</kbd></dt><dd>Jump to a tab</dd>
+    <dt><kbd>?</kbd></dt><dd>This list</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Close this / clear the page filter</dd>
+    <dt><kbd>/</kbd></dt><dd>Focus the filter or question box on the current tab</dd>
+    <dt><kbd>Enter</kbd></dt><dd>Sort by a column header, or open the focused row</dd>
+  </dl>
+  <p class="keys-foot">Every view is linkable: the tab lives in the URL, so
+    <code>#pages</code> or <code>#health</code> opens straight to it and the
+    back button works.</p>
+</dialog>
 <script>
 const $=q=>document.querySelector(q);
 /* api(): fetch JSON + connectivity tracking — the top-bar pill flips to
@@ -736,7 +808,7 @@ const perTab={
   health:refreshHealth, map:refreshMap, sessions:refreshSessions,
   docs:()=>{if(!docsLoaded)loadDocs()},
 };
-function switchTab(name){
+function switchTab(name,fromHash){
   const b=document.querySelector(`nav.tabs button[data-tab="${name}"]`);if(!b)return;
   document.querySelectorAll("nav.tabs button").forEach(x=>{
     x.classList.remove("active");x.removeAttribute("aria-current")});
@@ -744,20 +816,46 @@ function switchTab(name){
   b.classList.add("active");b.setAttribute("aria-current","page");
   $("#"+name).classList.add("show");
   $("#crumb-tab").textContent=TITLES[name]||"";
+  // the tab lives in the URL: reload keeps your place, the back button
+  // works, and a view can be linked to (#pages, #health, ...)
+  if(!fromHash&&location.hash.slice(1)!==name)location.hash=name;
+  document.title=(_lastStatus&&_lastStatus.project?_lastStatus.project+" — ":"")
+    +(TITLES[name]||"irag")+" · irag";
   (perTab[name]||(()=>{}))();
   if(GRAPH&&name!=="map")GRAPH.stop();   // pause the sim off-tab
 }
 document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
+addEventListener("hashchange",()=>{
+  const t=location.hash.slice(1);
+  if(TITLES[t])switchTab(t,true);
+});
 document.querySelector('nav.tabs button.active')?.setAttribute("aria-current","page");
 /* keyboard: 1-6 switch tabs (ignored while typing) */
 const TAB_ORDER=["overview","chat","pages","health","map","sessions","tools","docs"];
+const typing=t=>t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT"||t.isContentEditable);
 addEventListener("keydown",e=>{
   if(e.metaKey||e.ctrlKey||e.altKey)return;
-  const t=e.target;
-  if(t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT"||t.isContentEditable))return;
+  const dlg=$("#keys");
+  if(e.key==="Escape"&&dlg.open){dlg.close();return}
+  if(typing(e.target)){
+    // Esc backs out of a filter box without reaching for the mouse
+    if(e.key==="Escape"){e.target.value="";e.target.blur();
+      if(e.target.id==="page-search")renderPageList()}
+    return;
+  }
+  if(e.key==="?"){e.preventDefault();dlg.open?dlg.close():dlg.showModal();return}
+  if(e.key==="/"){                       // focus the current tab's input
+    const cur=document.querySelector("main section.show");
+    const box=cur&&cur.querySelector("input:not([type=date]):not([type=number])");
+    if(box){e.preventDefault();box.focus()}
+    return;
+  }
   const i=Number(e.key)-1;
   if(i>=0&&i<TAB_ORDER.length){switchTab(TAB_ORDER[i])}
 });
+$("#keyhint").onclick=()=>$("#keys").showModal();
+$("#keys-close").onclick=()=>$("#keys").close();
+$("#keys").addEventListener("click",e=>{if(e.target.id==="keys")$("#keys").close()});
 
 /* ---------- count-up ---------- */
 function countUp(el,to){
@@ -803,7 +901,9 @@ async function refreshStatus(){
   if(s.project){
     $("#crumb-project").textContent=s.project;
     $("#crumb-project").title=s.root||"";
-    document.title=`${s.project} — irag dashboard`;
+    // title is owned by switchTab (project + current tab); don't fight it
+    const cur=document.querySelector("nav.tabs button.active");
+    document.title=`${s.project} — ${TITLES[cur?cur.dataset.tab:"overview"]} · irag`;
     $("#foot-ver").textContent=s.project+" · "+total+" pages";
   }else{
     $("#foot-ver").textContent="irag · "+total+" pages";
@@ -958,7 +1058,44 @@ $("#chat-form").onsubmit=async e=>{
   }
 };
 
+/* ---------- sortable tables ----------
+   Sorts the underlying data and re-renders, rather than reordering DOM
+   rows — so a 3-second refresh preserves the sort instead of snapping
+   back. One sort state per table id. */
+const SORT={};
+function sortRows(tableId,rows){
+  const s=SORT[tableId];if(!s)return rows;
+  const dir=s.dir==="asc"?1:-1;
+  return rows.slice().sort((a,b)=>{
+    const x=a[s.key],y=b[s.key];
+    if(typeof x==="number"&&typeof y==="number")return (x-y)*dir;
+    return String(x??"").localeCompare(String(y??""),undefined,{numeric:true})*dir;
+  });
+}
+function initSort(tableId,defaultKey,defaultDir,rerender){
+  if(!SORT[tableId])SORT[tableId]={key:defaultKey,dir:defaultDir||"desc"};
+  const table=$("#"+tableId);if(!table||table.dataset.sortWired)return;
+  table.dataset.sortWired="1";
+  table.querySelectorAll("th[data-sort]").forEach(th=>{
+    th.tabIndex=0;th.setAttribute("role","button");
+    const apply=()=>{
+      const key=th.dataset.sort,cur=SORT[tableId];
+      // convention: first click sorts text A→Z but numbers high→low
+      // (nobody wants "the 3 least stale pages" first); re-click flips
+      const first=th.hasAttribute("data-num")?"desc":"asc";
+      SORT[tableId]={key,dir:cur.key!==key?first:(cur.dir==="asc"?"desc":"asc")};
+      table.querySelectorAll("th[data-sort]").forEach(o=>o.classList.remove("asc","desc"));
+      th.classList.add(SORT[tableId].dir);
+      th.setAttribute("aria-sort",SORT[tableId].dir==="asc"?"ascending":"descending");
+      rerender();
+    };
+    th.onclick=apply;
+    th.onkeydown=e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();apply()}};
+  });
+}
+
 /* ---------- health ---------- */
+let _stale=[];
 async function refreshHealth(){
   const cs=await api("/api/contradictions");
   // "no contradictions" only means something once pages actually exist —
@@ -972,14 +1109,19 @@ async function refreshHealth(){
       ?`<tr><td colspan="5">Nothing to check yet — no summaries have been written.
          Build the memory from the Overview tab first.</td></tr>`
       :`<tr><td colspan="5" style="color:var(--green)">none — every claim still matches the code ✓</td></tr>`;
-  const st=await api("/api/stale");
-  const mx=Math.max(1,...st.map(p=>p.staleness_score));
+  _stale=await api("/api/stale");
+  initSort("staletab","staleness_score","desc",renderStale);
+  renderStale();
+}
+function renderStale(){
+  const st=sortRows("staletab",_stale);
+  const mx=Math.max(1,..._stale.map(p=>p.staleness_score));
   $("#staletab tbody").innerHTML=st.length?st.slice(0,30).map(p=>{
     const w=Math.round(p.staleness_score/mx*100);
     const col=p.staleness_score>=mx*.66?"var(--red)":p.staleness_score>=mx*.33?"var(--orange)":"var(--accent)";
-    return `<tr data-subject="${esc(p.subject_id).replace(/"/g,"&quot;")}"><td>${esc(p.subject_id)}</td><td>${p.page_type}</td>
+    return `<tr data-subject="${esc(p.subject_id).replace(/"/g,"&quot;")}" tabindex="0"><td>${esc(p.subject_id)}</td><td>${p.page_type}</td>
       <td><div style="display:flex;align-items:center;gap:8px"><div class="bar"><span style="width:${w}%;background:${col}"></span></div>${p.staleness_score}${p.pinned?" 📌":""}</div></td></tr>`}).join("")
-    :`<tr><td colspan="3">no pages yet</td></tr>`;
+    :`<tr><td colspan="3">${(_lastStatus&&_lastStatus.revisions)?"no pages yet":"No pages yet — build the memory from the Overview tab."}</td></tr>`;
 }
 window.resolveC=async id=>{await api("/api/resolve",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});refreshHealth();refreshStatus()};
 $("#staletab tbody").addEventListener("click",e=>{
@@ -1184,13 +1326,26 @@ function setInfo(html){const el=$("#graph-info");if(el)el.innerHTML=html||"hover
 let GRAPH=null,_lastMap=null;
 async function refreshMap(){
   const m=await api("/api/map");_lastMap=m;
-  $("#mapfiles tbody").innerHTML=m.files.length?m.files.map(f=>`<tr><td>${esc(f.subject_id)}</td><td style="color:var(--text-dim)">${f.n} symbol(s)</td></tr>`).join(""):"<tr><td>no scan data</td></tr>";
-  $("#mapdeps tbody").innerHTML=m.deps.length?m.deps.map(d=>`<tr><td>${esc(d.s)}</td><td style="color:var(--text-dim)">→</td><td>${esc(d.t)}</td><td style="color:var(--text-dim)">×${d.n}</td></tr>`).join(""):"<tr><td>no edges</td></tr>";
+  initSort("mapfiles","n","desc",renderMapTables);
+  initSort("mapdeps","n","desc",renderMapTables);
+  renderMapTables();
   if(!GRAPH)GRAPH=createGraph(document.getElementById("graph"));
   GRAPH.setData(m.files,m.deps);
   // the fetch is async — only (re)start the sim if Map is still the
   // visible tab by the time the data lands
   if($("#map").classList.contains("show"))GRAPH.start();
+}
+function renderMapTables(){
+  const m=_lastMap;if(!m)return;
+  $("#mapfiles tbody").innerHTML=m.files.length
+    ?sortRows("mapfiles",m.files).map(f=>
+      `<tr><td>${esc(f.subject_id)}</td><td style="color:var(--text-dim)">${f.n}</td></tr>`).join("")
+    :`<tr><td colspan="2">No structural map yet — run Scan map from the Tools tab.</td></tr>`;
+  $("#mapdeps tbody").innerHTML=m.deps.length
+    ?sortRows("mapdeps",m.deps).map(d=>
+      `<tr><td>${esc(d.s)}</td><td style="color:var(--text-faint)">→</td><td>${esc(d.t)}</td>
+       <td style="color:var(--text-dim)">${d.n}</td></tr>`).join("")
+    :`<tr><td colspan="4">No import edges — nothing in this project imports another tracked file.</td></tr>`;
 }
 function renderLegend(nodes){
   const segs=[...new Set(nodes.map(n=>n.id.split("/")[0]||n.id))].slice(0,7);
@@ -1409,6 +1564,8 @@ addEventListener("resize",()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{
   if($("#overview").classList.contains("show"))refreshBurn();
 },200)});
 const quiet=fn=>fn().catch(()=>setOnline(false));
+// restore the tab from the URL before the first paint of data
+(()=>{const t=location.hash.slice(1);if(TITLES[t]&&t!=="overview")switchTab(t,true)})();
 quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed);quiet(refreshDoctorState);
 setInterval(()=>{quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed)},3000);
 setInterval(()=>{if($("#health").classList.contains("show"))quiet(refreshHealth)},8000);
