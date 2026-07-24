@@ -224,9 +224,24 @@ def make_handler(state: _State):
                         "llm_model_used FROM revisions WHERE page_id=? "
                         "ORDER BY version_number DESC",
                         (page["page_id"],)).fetchall()
+                    # everything about this subject in ONE response: the
+                    # summary, its history, what's wrong with it, and its
+                    # parsed structure. The UI shouldn't make a user visit
+                    # three tabs to understand one file.
+                    contras = conn.execute(
+                        "SELECT contradiction_id, claim, truth, ctype, "
+                        "severity FROM contradictions WHERE page_id=? "
+                        "AND resolved_at IS NULL ORDER BY severity",
+                        (page["page_id"],)).fetchall()
+                    facts = structure.module_facts(conn, subject)
                     return self._json({"subject": subject,
+                                       "page_type": page["page_type"],
+                                       "pinned": page["pinned"],
+                                       "staleness": page["staleness_score"],
                                        "body": body or "",
-                                       "versions": [dict(r) for r in revs]})
+                                       "versions": [dict(r) for r in revs],
+                                       "contradictions": [dict(c) for c in contras],
+                                       "facts": facts})
                 if url.path == "/api/docs":
                     return self._json(_docs_index())
                 if url.path == "/api/doc":
@@ -260,6 +275,11 @@ def make_handler(state: _State):
                     except ValueError:
                         sid = 0
                     return self._json(sessions_mod.transcript(conn, sid))
+                if url.path == "/api/search":
+                    # GET search for the command palette: instant, zero
+                    # tokens, same FTS the CLI uses
+                    return self._json(
+                        retrieval.search(conn, (qs.get("q") or [""])[0]))
                 if url.path == "/api/pages":
                     rows = conn.execute(
                         """SELECT p.subject_id, p.page_type, p.title,

@@ -4,6 +4,40 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.9.0 — 2026-07-25
+
+### Changed — **the dashboard is organised around your work, not irag's internals**
+Three passes of polish hadn't fixed the structural problem: the UI was
+grouped by irag's own features, so understanding a single file meant
+visiting Pages (summary), Health (is it wrong), Map (what it imports) and
+Sessions (what changed it). And Overview led with nine counters that
+answer "how many rows are in the database", not "what should I do".
+
+- **A command palette (`⌘K` / `Ctrl-K`, or the top-bar search box).** In a
+  knowledge base, search *is* navigation; it was previously buried inside
+  the Chat tab. The palette jumps to any page, view, or action from
+  anywhere, matching page names locally and page *text* through the same
+  FTS index the CLI uses (instant, zero tokens).
+- **A page is now one object.** `/api/page` returns the summary, its
+  version history, the open contradictions *on that page*, and its parsed
+  structure in one response. The page view shows problems inline (with
+  resolve), and what it defines / imports / is imported by — with the
+  imports clickable, so the dependency graph is walkable from the page.
+- **Overview leads with what needs attention** (claims contradicting the
+  code, changes not yet summarised, failed syntheses), each with the
+  action that fixes it. Silent when the memory is healthy; the metrics
+  remain below.
+- New `GET /api/search`.
+
+### Fixed
+- The palette showed duplicates: FTS returns one row per matching
+  *revision*, so a page with several versions appeared several times.
+- Page headings uppercased the subject — but a subject is a file path, and
+  paths are case-sensitive (`SRC/AUTH/LOGIN.PY` is a different, wrong
+  path). The generic `.panel h3` label style was leaking into it.
+- The palette's local name matching only worked after the Pages tab had
+  been opened; the page list now loads at startup.
+
 ## 4.8.0 — 2026-07-25
 
 ### Added — the dashboard behaves like a tool you use every day

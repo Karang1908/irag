@@ -325,7 +325,10 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
 .pin{font-size:.7rem}
 
 .pd-head{display:flex;flex-wrap:wrap;gap:var(--sp-3);align-items:baseline;justify-content:space-between}
-.pd-head h3{font-family:var(--mono);font-size:var(--fs-md);word-break:break-all;border:none;padding:0}
+/* a subject IS a file path: case-sensitive, so never uppercase it
+   (the generic .panel h3 label style does) */
+.pd-head h3{font-family:var(--mono);font-size:var(--fs-md);word-break:break-all;border:none;padding:0;
+  text-transform:none;letter-spacing:0;color:var(--text)}
 .pd-badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .pd-actions{display:flex;gap:var(--sp-2);margin:var(--sp-3) 0;flex-wrap:wrap}
 .pd-body{margin-top:var(--sp-2);padding:var(--sp-4);background:var(--bg-inset);border:1px solid var(--border);
@@ -372,6 +375,77 @@ pre.diff .diff-hunk{color:var(--purple)}
 .prov-row .pk{font-family:var(--mono);font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);padding-top:2px}
 
 .maint-actions{display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap;margin-bottom:var(--sp-3)}
+/* ---------- command palette: search as navigation ---------- */
+.cmdk-trigger{display:flex;align-items:center;gap:var(--sp-2);background:var(--bg-inset);
+  border:1px solid var(--border);border-radius:var(--r-md);color:var(--text-faint);
+  padding:6px 10px;cursor:pointer;font:var(--fs-xs) var(--sans);min-width:280px;
+  transition:border-color var(--dur) var(--ease),color var(--dur) var(--ease)}
+.cmdk-trigger:hover{border-color:var(--border-strong);color:var(--text-dim)}
+.cmdk-trigger svg{width:14px;height:14px;flex-shrink:0}
+.cmdk-trigger kbd{margin-left:auto}
+dialog#cmdk{border:none;background:none;padding:0;margin:0;max-width:none;width:100vw;height:100vh;
+  max-height:100vh;overflow:visible}
+dialog#cmdk::backdrop{background:rgba(4,5,7,.62);backdrop-filter:blur(4px)}
+.cmdk-box{width:min(620px,calc(100vw - 32px));margin:11vh auto 0;background:var(--panel);
+  border:1px solid var(--border-strong);border-radius:var(--r-lg);overflow:hidden;
+  box-shadow:0 28px 70px rgba(0,0,0,.62);display:flex;flex-direction:column;max-height:66vh}
+#cmdk-input{width:100%;background:none;border:none;border-bottom:1px solid var(--border);
+  color:var(--text);padding:16px 18px;font:var(--fs-md) var(--sans);outline:none}
+#cmdk-input::placeholder{color:var(--text-faint)}
+.cmdk-results{overflow:auto;padding:6px;flex:1;min-height:0}
+.cmdk-item{display:flex;align-items:center;gap:var(--sp-3);width:100%;background:none;border:none;
+  color:var(--text-dim);padding:9px 11px;border-radius:var(--r-sm);cursor:pointer;
+  font:var(--fs-sm) var(--sans);text-align:left}
+.cmdk-item.sel{background:var(--accent-dim)}
+.cmdk-item.sel .cmdk-label{color:var(--accent)}
+.cmdk-label{color:var(--text);font-family:var(--mono);font-size:var(--fs-xs);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0;max-width:46%}
+.cmdk-hint{color:var(--text-faint);font-size:var(--fs-2xs);overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.cmdk-tag{font:var(--fs-2xs)/1 var(--mono);text-transform:uppercase;letter-spacing:.06em;
+  padding:3px 6px;border-radius:4px;flex-shrink:0;width:52px;text-align:center}
+.t-page{background:var(--accent-dim);color:var(--accent)}
+.t-view{background:var(--panel-2);color:var(--text-dim)}
+.t-action{background:var(--purple-dim);color:var(--purple)}
+.cmdk-empty{padding:22px 16px;color:var(--text-faint);font-size:var(--fs-sm);text-align:center}
+.cmdk-foot{display:flex;gap:var(--sp-4);align-items:center;padding:9px 14px;
+  border-top:1px solid var(--border);font-size:var(--fs-2xs);color:var(--text-faint);background:var(--bg-inset)}
+.cmdk-foot kbd{margin-right:3px}
+.cmdk-tip{margin-left:auto;font-style:italic}
+@media (max-width:720px){.cmdk-trigger span{display:none}.cmdk-trigger{min-width:0}}
+@media (prefers-reduced-motion: no-preference){dialog#cmdk[open] .cmdk-box{animation:card-in .18s var(--ease) both}}
+
+/* ---------- overview: what needs attention ---------- */
+.attn{display:flex;flex-direction:column;gap:1px;background:var(--border);border:1px solid var(--border);
+  border-radius:var(--r-md);overflow:hidden;margin-bottom:var(--sp-5)}
+.attn-row{display:flex;align-items:center;gap:var(--sp-3);background:var(--bg);padding:11px 14px;font-size:var(--fs-sm)}
+.attn-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.attn-row.bad .attn-dot{background:var(--red)} .attn-row.warn .attn-dot{background:var(--orange)}
+.attn-txt{color:var(--text);min-width:0}
+.attn-row .mini{margin-left:auto;flex-shrink:0}
+
+/* ---------- page detail: problems + structure in one object ---------- */
+.pd-problems{border:1px solid var(--red-bd);background:var(--red-dim);border-radius:var(--r-md);
+  padding:var(--sp-3) var(--sp-4);margin:var(--sp-3) 0}
+.pd-problems-h{font-size:var(--fs-sm);color:var(--text);margin-bottom:var(--sp-2);
+  display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap}
+.prob{display:flex;align-items:flex-start;gap:var(--sp-3);padding:7px 0;border-top:1px solid var(--red-bd);font-size:var(--fs-xs)}
+.prob>div{min-width:0;display:flex;flex-direction:column;gap:2px}
+.prob b{color:var(--text);font-weight:550}
+.prob-truth{color:var(--text-dim)}
+.prob .mini{margin-left:auto;flex-shrink:0}
+.pd-struct{display:flex;flex-direction:column;gap:var(--sp-3);padding:var(--sp-3) var(--sp-4);
+  background:var(--bg-inset);border:1px solid var(--border);border-radius:var(--r-md)}
+.pd-struct>div{display:flex;gap:var(--sp-3);align-items:baseline;flex-wrap:wrap}
+.sk{font:var(--fs-2xs) var(--mono);text-transform:uppercase;letter-spacing:.08em;
+  color:var(--text-faint);width:88px;flex-shrink:0}
+.chips{display:flex;flex-wrap:wrap;gap:5px;min-width:0}
+.chip{font:var(--fs-2xs) var(--mono);border-radius:var(--r-sm);padding:3px 8px;
+  border:1px solid var(--border);background:var(--panel-2);color:var(--text-dim)}
+.chip.static{cursor:default}
+.chip.go{cursor:pointer;color:var(--accent);border-color:var(--accent-ring);background:var(--accent-dim)}
+.chip.go:hover{background:var(--accent-ring);color:#08090c}
+
 /* keyboard shortcut reference (native dialog: focus trap + Esc for free) */
 .keyhint{background:none;border:none;color:var(--text-faint);font:var(--fs-2xs) var(--sans);
   cursor:pointer;padding:0;text-align:left;display:flex;align-items:center;gap:5px}
@@ -505,6 +579,10 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
   <div class="content">
     <div class="topbar">
       <div class="crumb"><span id="crumb-project">irag</span> <span style="color:var(--text-faint)">/</span> <b id="crumb-tab">Overview</b></div>
+      <button class="cmdk-trigger" id="cmdk-open" aria-label="Search and commands">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span>Search pages, views, actions</span><kbd>⌘K</kbd>
+      </button>
       <div class="tb-right">
         <span id="tb-stat"></span>
         <span class="tb-live" id="tb-live"><span class="d"></span><span id="tb-live-txt">live · 3s</span></span>
@@ -550,6 +628,8 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
         </li>
       </ol>
     </div>
+    <!-- what to do, before how many rows exist -->
+    <div class="attn" id="attn" hidden></div>
     <div class="grid-cards" id="cards">
       <div class="card skel-card"><div class="card-h"><span class="label">est tokens</span></div><div class="value skel"></div></div>
       <div class="card skel-card"><div class="card-h"><span class="label">pages</span></div><div class="value skel"></div></div>
@@ -756,6 +836,19 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
   </div>
 </div>
 
+<dialog id="cmdk" aria-label="Search and commands">
+  <div class="cmdk-box">
+    <input id="cmdk-input" placeholder="Search pages and memory, or jump to a view…"
+           autocomplete="off" spellcheck="false" aria-label="Search">
+    <div class="cmdk-results" id="cmdk-results" role="listbox"></div>
+    <div class="cmdk-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>↵</kbd> open</span>
+      <span><kbd>esc</kbd> close</span>
+      <span class="cmdk-tip">searches page text, not just names</span>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="keys" aria-label="Keyboard shortcuts">
   <div class="keys-head"><h3>Keyboard shortcuts</h3>
     <button class="setup-x" id="keys-close">Close</button></div>
@@ -834,7 +927,14 @@ document.querySelector('nav.tabs button.active')?.setAttribute("aria-current","p
 const TAB_ORDER=["overview","chat","pages","health","map","sessions","tools","docs"];
 const typing=t=>t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT"||t.isContentEditable);
 addEventListener("keydown",e=>{
+  // ⌘K / Ctrl-K opens the palette from anywhere, including while typing
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==="k"){
+    e.preventDefault();
+    const c=$("#cmdk");c.open?c.close():openPalette();
+    return;
+  }
   if(e.metaKey||e.ctrlKey||e.altKey)return;
+  if($("#cmdk").open)return;             // the palette owns its own keys
   const dlg=$("#keys");
   if(e.key==="Escape"&&dlg.open){dlg.close();return}
   if(typing(e.target)){
@@ -853,6 +953,90 @@ addEventListener("keydown",e=>{
   const i=Number(e.key)-1;
   if(i>=0&&i<TAB_ORDER.length){switchTab(TAB_ORDER[i])}
 });
+/* ---------- command palette ----------
+   In a knowledge base, search IS navigation. Burying it inside one tab
+   made people hunt; this reaches every page, view and action from
+   anywhere. Local pages match instantly; full-text runs against the same
+   FTS index the CLI uses (zero tokens). */
+const VIEW_CMDS=TAB_ORDER.map(t=>({kind:"view",label:TITLES[t],tab:t}));
+const ACTION_CMDS=[
+  {kind:"action",label:"Build / update memory",hint:"sync, synthesize, fact-check",run:()=>{switchTab("overview");runUpdate()}},
+  {kind:"action",label:"Preview what the agent sees",hint:"irag context",run:()=>{switchTab("tools");setTimeout(()=>$("#ctx-form").requestSubmit(),120)}},
+  {kind:"action",label:"Run doctor",hint:"diagnose the setup",run:()=>{switchTab("tools");setTimeout(()=>$("#do-doctor").click(),120)}},
+  {kind:"action",label:"Back up the database",hint:"timestamped copy",run:()=>{switchTab("tools");setTimeout(()=>$("#do-backup").click(),120)}},
+];
+let _cmdItems=[],_cmdSel=0,_cmdSeq=0;
+function openPalette(){
+  const d=$("#cmdk");if(d.open)return;
+  d.showModal();const i=$("#cmdk-input");i.value="";i.focus();paletteSearch("");
+}
+function paletteRender(){
+  const box=$("#cmdk-results");
+  if(!_cmdItems.length){
+    box.innerHTML=`<div class="cmdk-empty">Nothing matches. Try a symbol, a path, or a phrase from a summary.</div>`;
+    return;
+  }
+  box.innerHTML=_cmdItems.map((it,i)=>{
+    const tag=it.kind==="view"?"view":it.kind==="action"?"action":"page";
+    return `<button class="cmdk-item${i===_cmdSel?" sel":""}" data-i="${i}" role="option"
+       aria-selected="${i===_cmdSel}"><span class="cmdk-tag t-${tag}">${tag}</span>
+      <span class="cmdk-label">${esc(it.label)}</span>
+      ${it.hint?`<span class="cmdk-hint">${esc(it.hint)}</span>`:""}</button>`}).join("");
+  box.querySelectorAll(".cmdk-item").forEach(b=>{
+    b.onclick=()=>runPaletteItem(_cmdItems[+b.dataset.i]);
+    b.onmousemove=()=>{_cmdSel=+b.dataset.i;
+      box.querySelectorAll(".cmdk-item").forEach((x,i)=>x.classList.toggle("sel",i===_cmdSel))};
+  });
+  const sel=box.querySelector(".cmdk-item.sel");if(sel)sel.scrollIntoView({block:"nearest"});
+}
+async function paletteSearch(q){
+  const seq=++_cmdSeq;
+  const ql=q.trim().toLowerCase();
+  const views=VIEW_CMDS.filter(v=>!ql||v.label.toLowerCase().includes(ql));
+  const acts=ACTION_CMDS.filter(a=>!ql||a.label.toLowerCase().includes(ql)||(a.hint||"").includes(ql));
+  // local page names match instantly — no round trip
+  const local=(_pages||[]).filter(p=>!ql||p.subject_id.toLowerCase().includes(ql))
+    .slice(0,8).map(p=>({kind:"page",label:p.subject_id,
+      hint:p.version_number?`${p.page_type} · v${p.version_number}`:"not written yet",
+      subject:p.subject_id}));
+  _cmdItems=[...local,...views,...acts];_cmdSel=0;paletteRender();
+  if(ql.length<2)return;
+  try{
+    const hits=await api("/api/search?q="+encodeURIComponent(ql));
+    if(seq!==_cmdSeq)return;                       // a newer keystroke won
+    // FTS returns one row per matching *revision*, so the same page can
+    // come back several times — collapse to one row per subject
+    const seen=new Set(local.map(l=>l.subject));
+    const text=[];
+    for(const h of hits){
+      if(seen.has(h.subject))continue;
+      seen.add(h.subject);
+      text.push({kind:"page",label:h.subject,
+        hint:(h.snippet||"").replace(/\s+/g," ").slice(0,70),subject:h.subject});
+      if(text.length>=8)break;
+    }
+    if(text.length){_cmdItems=[...local,...text,...views,...acts];paletteRender()}
+  }catch(e){/* offline: local matches still work */}
+}
+function runPaletteItem(it){
+  if(!it)return;
+  $("#cmdk").close();
+  if(it.kind==="view")switchTab(it.tab);
+  else if(it.kind==="action")it.run();
+  else{switchTab("pages");setTimeout(()=>viewPageDetail(it.subject),80)}
+}
+$("#cmdk-input").addEventListener("input",e=>paletteSearch(e.target.value));
+$("#cmdk-input").addEventListener("keydown",e=>{
+  if(e.key==="ArrowDown"||e.key==="ArrowUp"){
+    e.preventDefault();
+    if(!_cmdItems.length)return;
+    _cmdSel=(_cmdSel+(e.key==="ArrowDown"?1:-1)+_cmdItems.length)%_cmdItems.length;
+    paletteRender();
+  }else if(e.key==="Enter"){e.preventDefault();runPaletteItem(_cmdItems[_cmdSel])}
+});
+$("#cmdk").addEventListener("click",e=>{if(e.target.id==="cmdk")$("#cmdk").close()});
+$("#cmdk-open").onclick=openPalette;
+
 $("#keyhint").onclick=()=>$("#keys").showModal();
 $("#keys-close").onclick=()=>$("#keys").close();
 $("#keys").addEventListener("click",e=>{if(e.target.id==="keys")$("#keys").close()});
@@ -911,6 +1095,32 @@ async function refreshStatus(){
   const dot=$("#live-dot");
   if(lastTokens!==null&&s.est_tokens_spent>lastTokens){dot.classList.add("burning");setTimeout(()=>dot.classList.remove("burning"),1000)}
   lastTokens=s.est_tokens_spent;
+  renderAttention(s);
+}
+/* Lead with the answer to "what should I do?", not with row counts.
+   Silent when the memory is healthy — an always-on banner is noise. */
+function renderAttention(s){
+  const box=$("#attn");if(!box)return;
+  const items=[];
+  if(s.open_contradictions)items.push({tone:"bad",
+    text:`${s.open_contradictions} claim${s.open_contradictions>1?"s":""} in memory contradict${s.open_contradictions>1?"":"s"} your code`,
+    cta:"Review",go:()=>switchTab("health")});
+  if(s.events_queued)items.push({tone:"warn",
+    text:`${s.events_queued} file change${s.events_queued>1?"s":""} not yet summarised`,
+    cta:"Update now",go:runUpdate});
+  else if(s.pages_due)items.push({tone:"warn",
+    text:`${s.pages_due} page${s.pages_due>1?"s":""} drifting behind the code`,
+    cta:"Update now",go:runUpdate});
+  if(s.events_failed)items.push({tone:"bad",
+    text:`${s.events_failed} synthesis attempt${s.events_failed>1?"s":""} failed`,
+    cta:"Diagnose",go:()=>{switchTab("tools");setTimeout(()=>$("#do-doctor").click(),120)}});
+  if(!items.length){box.hidden=true;return}
+  box.hidden=false;
+  box.innerHTML=items.map((it,i)=>
+    `<div class="attn-row ${it.tone}"><span class="attn-dot"></span>
+      <span class="attn-txt">${esc(it.text)}</span>
+      <button class="mini" data-attn="${i}">${esc(it.cta)}</button></div>`).join("");
+  box.querySelectorAll("[data-attn]").forEach(b=>b.onclick=()=>items[+b.dataset.attn].go());
 }
 let burnRevealed=false;
 async function refreshBurn(){
@@ -1174,6 +1384,31 @@ async function viewPageDetail(subject){
         ${older?`<button class="mini" data-act="diff" data-v1="${older.version_number}" data-v2="${v.version_number}">diff ← v${older.version_number}</button>`:''}
         ${i!==0?`<button class="mini danger" data-act="restore" data-v="${v.version_number}">restore</button>`:'<span class="pill">current</span>'}
       </span></div>`}).join("");
+  // everything about this subject in one place: problems and structure
+  // used to live in the Health and Map tabs, which meant understanding
+  // one file took three tabs
+  const probs=p.contradictions||[];
+  const f=p.facts||{};
+  const probsHtml=probs.length?`
+    <div class="pd-problems">
+      <div class="pd-problems-h">${probs.length} problem${probs.length>1?"s":""} on this page
+        <span class="pill">memory disagrees with the code</span></div>
+      ${probs.map(c=>`<div class="prob">
+        <span class="sev-${c.severity}">${c.severity}</span>
+        <div><b>${esc(c.claim||"")}</b><span class="prob-truth">${esc(c.truth||"")}</span></div>
+        <button class="mini" onclick="resolveFromPage(${c.contradiction_id})">resolve</button>
+      </div>`).join("")}
+    </div>`:"";
+  const chips=(arr,cls)=>arr.map(x=>`<button class="chip ${cls}" data-goto="${esc(String(x)).replace(/"/g,'&quot;')}">${esc(String(x))}</button>`).join("");
+  const structHtml=(f.symbols&&f.symbols.length)||(f.imports&&f.imports.length)||(f.imported_by&&f.imported_by.length)?`
+    <h4>Structure <span class="pill">parsed from the code, always current</span></h4>
+    <div class="pd-struct">
+      ${f.symbols&&f.symbols.length?`<div><span class="sk">defines</span>
+        <div class="chips">${f.symbols.slice(0,24).map(s=>`<span class="chip static" title="${esc(s.kind)} · ${esc(s.file)}:${s.line}">${esc(s.name)}</span>`).join("")}
+        ${f.symbol_count>24?`<span class="chip static">+${f.symbol_count-24} more</span>`:""}</div></div>`:""}
+      ${f.imports&&f.imports.length?`<div><span class="sk">imports</span><div class="chips">${chips(f.imports,"go")}</div></div>`:""}
+      ${f.imported_by&&f.imported_by.length?`<div><span class="sk">imported by</span><div class="chips">${chips(f.imported_by,"go")}</div></div>`:""}
+    </div>`:"";
   d.innerHTML=`
     <div class="pd-head">
       <h3>${esc(subject)}</h3>
@@ -1181,20 +1416,28 @@ async function viewPageDetail(subject){
         <span class="pill">${esc(meta.page_type||'')}</span>
         <span class="pill">${vers.length} version(s)</span>
         ${pinned?'<span class="badge status-open">pinned</span>':''}
-        ${meta.contras?`<span class="badge status-interrupted">${meta.contras} contradiction(s)</span>`:''}
       </div>
     </div>
+    ${probsHtml}
     <div class="pd-actions">
       <button class="mini" data-act="pin" data-pin="${pinned?0:1}">${pinned?'Unpin':'Pin'}</button>
       <button class="mini" data-act="impact">Blast radius</button>
     </div>
     <div id="pd-impact"></div>
     <div id="pd-diff"></div>
-    <h4>Summary</h4>
-    <div class="pd-body">${md(esc(p.body||'(no body)'))}</div>
+    <h4>Summary <span class="pill">what your agent reads</span></h4>
+    <div class="pd-body">${p.body?md(esc(p.body)):'<div class="empty">Not written yet — this page gets a summary on the next Update.</div>'}</div>
+    ${structHtml}
     <h4>Version history</h4>
     <div class="ver-list">${versRows||'<div class="empty">no versions</div>'}</div>`;
+  // import chips navigate to that page — the graph is walkable from here
+  d.querySelectorAll("[data-goto]").forEach(b=>b.onclick=()=>viewPageDetail(b.dataset.goto));
 }
+window.resolveFromPage=async id=>{
+  await postJSON("/api/resolve",{id});
+  if(_curPage)viewPageDetail(_curPage);
+  refreshPages();refreshStatus();
+};
 $("#page-search").oninput=renderPageList;
 $("#page-detail").addEventListener("click",e=>{
   const b=e.target.closest("button[data-act]");if(!b||!_curPage)return;
@@ -1566,6 +1809,9 @@ addEventListener("resize",()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{
 const quiet=fn=>fn().catch(()=>setOnline(false));
 // restore the tab from the URL before the first paint of data
 (()=>{const t=location.hash.slice(1);if(TITLES[t]&&t!=="overview")switchTab(t,true)})();
+// the palette matches page names locally, so it needs the list even if
+// the Pages tab was never opened
+quiet(async()=>{if(!_pages.length)_pages=await api("/api/pages")});
 quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed);quiet(refreshDoctorState);
 setInterval(()=>{quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed)},3000);
 setInterval(()=>{if($("#health").classList.contains("show"))quiet(refreshHealth)},8000);

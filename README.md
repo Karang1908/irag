@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT">
-  <img src="https://img.shields.io/badge/version-4.8.0-purple" alt="Version 4.8.0">
+  <img src="https://img.shields.io/badge/version-4.9.0-purple" alt="Version 4.9.0">
 </p>
 
 <p align="center">
@@ -211,9 +211,13 @@ irag check                      # CI gate: exit 1 if memory disagrees with code
 
 - **Map** — an interactive, Obsidian-style dependency graph: drag to
   pan, scroll to zoom, drag nodes, hover to trace imports.
-- **Pages** — browse the memory itself: read any page, diff its version
-  history, see its blast radius, pin it, roll it back, trace a claim to
-  the commit that created it, and log lessons/decisions.
+- **Search everything** — `⌘K` opens a command palette over every page,
+  view and action, matching page text as well as names (instant, zero
+  tokens).
+- **Pages** — one page, one object: its summary, version history and
+  diffs, the contradictions on it, and what it defines / imports / is
+  imported by (clickable, so the graph is walkable). Pin, roll back, and
+  trace a claim to the commit that created it.
 - **Sessions** — the conversation log with per-file change detail, plus
   the verbatim transcript when capture is enabled.
 - **Overview** — live token burn, metric cards, activity feed.
