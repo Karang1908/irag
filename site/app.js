@@ -114,6 +114,185 @@
     });
   }
 
+  /* ---------- spatial UI: figures behave like planes in depth ----------
+     The .tilt class existed in the markup but had no implementation. Each
+     figure now rotates toward the cursor inside a perspective container
+     and lifts on Z, so the screenshots read as physical surfaces rather
+     than flat images. Tracking is a direct transform (per-frame, so a
+     tween engine is the wrong tool); anime.js eases the release. */
+  if (!REDUCE && window.matchMedia("(pointer:fine)").matches) {
+    document.querySelectorAll(".tilt").forEach(function (el) {
+      var rect = null, rafT = null, tx = 0, ty = 0;
+      var apply = function () {
+        el.style.transform = "perspective(1400px) rotateX(" + tx.toFixed(2) +
+          "deg) rotateY(" + ty.toFixed(2) + "deg) translateZ(14px)";
+        rafT = null;
+      };
+      el.addEventListener("mouseenter", function () {
+        rect = el.getBoundingClientRect();
+        el.style.transition = "transform .18s var(--mist)";
+      });
+      el.addEventListener("mousemove", function (e) {
+        if (!rect) rect = el.getBoundingClientRect();
+        ty = ((e.clientX - rect.left) / rect.width - 0.5) * 9;
+        tx = -((e.clientY - rect.top) / rect.height - 0.5) * 7;
+        if (!rafT) rafT = requestAnimationFrame(apply);
+      }, { passive: true });
+      el.addEventListener("mouseleave", function () {
+        rect = null;
+        el.style.transition = "";
+        if (window.anime) {
+          anime({ targets: { x: tx, y: ty }, x: 0, y: 0, duration: 620,
+            easing: "easeOutQuint",
+            update: function (an) {
+              var o = an.animatables[0].target;
+              el.style.transform = "perspective(1400px) rotateX(" +
+                o.x.toFixed(2) + "deg) rotateY(" + o.y.toFixed(2) +
+                "deg) translateZ(0px)";
+            } });
+        } else { el.style.transform = ""; }
+      });
+    });
+  }
+
+  /* ---------- 3D dependency graph (hero) ----------
+     A real perspective projection, not a CSS fake: nodes live in a unit
+     cube, rotate around Y, and are painted back-to-front with size,
+     opacity and glow driven by depth. Hand-rolled in ~4KB because a 3D
+     library would be 20x the site's entire JS budget on a page whose
+     pitch is "zero dependencies". The cursor orbits the camera, so the
+     hero reads as a space you're looking into rather than a picture. */
+  var g3d = document.getElementById("g3d");
+  if (g3d && g3d.getContext && !REDUCE) {
+    var ctx3 = g3d.getContext("2d");
+    // x, y, z in [-1,1]; r = base radius; hot = accent-coloured
+    var N3 = [
+      [ 0.00, -0.78,  0.05, 5.2, 1], [-0.52, -0.50, -0.42, 3.4, 0],
+      [ 0.55, -0.44,  0.40, 3.6, 0], [-0.72, -0.02,  0.30, 3.3, 0],
+      [ 0.00, -0.14, -0.10, 6.4, 1], [ 0.74, -0.06, -0.34, 3.5, 0],
+      [-0.40,  0.34,  0.55, 3.2, 0], [ 0.38,  0.30, -0.58, 3.3, 0],
+      [-0.86,  0.52, -0.18, 2.9, 0], [ 0.00,  0.52,  0.16, 4.6, 1],
+      [ 0.84,  0.46,  0.28, 3.0, 0], [-0.20,  0.82, -0.40, 2.8, 0],
+      [ 0.46,  0.80,  0.02, 2.9, 0], [-0.62, -0.72,  0.52, 2.7, 0]
+    ];
+    var E3 = [[0,1],[0,2],[0,4],[1,3],[2,5],[4,3],[4,5],[4,6],[4,7],[4,9],
+              [3,8],[6,9],[7,9],[9,10],[9,11],[9,12],[8,11],[10,12],[1,13],
+              [13,3],[2,10]];
+    // camera state; anime.js tweens `cam` for entrance + settle, the rAF
+    // loop keeps the slow orbit and eases toward the cursor
+    var cam = { spin: 0, tiltX: 0, tiltY: 0, depth: 2.2, reveal: 0 };
+    var tgtX = 0, tgtY = 0, raf3 = null, live3 = false, intro3 = false;
+
+    var size3 = function () {
+      var r = g3d.getBoundingClientRect();
+      var dpr = Math.min(2, window.devicePixelRatio || 1);
+      g3d.width = Math.max(1, r.width * dpr);
+      g3d.height = Math.max(1, r.height * dpr);
+      ctx3.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return r;
+    };
+    var box = size3();
+
+    var draw3 = function () {
+      var W = box.width, H = box.height;
+      if (!W || !H) return;
+      ctx3.clearRect(0, 0, W, H);
+      var cx = W / 2, cy = H / 2;
+      var scale = Math.min(W, H) * 0.46, focal = 3.0;
+      var rotY = cam.spin + cam.tiltY, rotX = cam.tiltX;
+      var cosY = Math.cos(rotY), sinY = Math.sin(rotY);
+      var cosX = Math.cos(rotX), sinX = Math.sin(rotX);
+
+      var pts = N3.map(function (n) {
+        // rotate around Y then X
+        var k = cam.reveal;                    // 0 = collapsed at origin
+        var nx = n[0] * k, ny = n[1] * k, nz = n[2] * k;
+        var x = nx * cosY - nz * sinY;
+        var z = nx * sinY + nz * cosY;
+        var y = ny * cosX - z * sinX;
+        z = ny * sinX + z * cosX;
+        var d = focal / (focal + z + (cam.depth - 2.2));  // perspective divide
+        return { x: cx + x * scale * d, y: cy + y * scale * d,
+                 d: d, z: z, r: n[3] * d, hot: n[4] };
+      });
+
+      // edges first, dimmed by their depth
+      E3.forEach(function (e) {
+        var a = pts[e[0]], b = pts[e[1]];
+        var dep = (a.d + b.d) / 2;
+        ctx3.beginPath();
+        ctx3.moveTo(a.x, a.y); ctx3.lineTo(b.x, b.y);
+        ctx3.strokeStyle = "rgba(150,170,200," +
+          (0.05 + Math.pow(Math.max(0, dep - 0.55), 1.7) * 0.5).toFixed(3) + ")";
+        ctx3.lineWidth = 0.5 + dep * 0.7;
+        ctx3.stroke();
+      });
+
+      // nodes back-to-front so nearer ones occlude correctly
+      pts.slice().sort(function (p, q) { return q.z - p.z; })
+        .forEach(function (p) {
+          var t = Math.max(0, Math.min(1, (p.d - 0.6) / 0.75));
+          if (p.hot) {
+            var g = ctx3.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 5);
+            g.addColorStop(0, "rgba(88,166,255," + (0.30 * t).toFixed(3) + ")");
+            g.addColorStop(1, "rgba(88,166,255,0)");
+            ctx3.fillStyle = g;
+            ctx3.beginPath(); ctx3.arc(p.x, p.y, p.r * 5, 0, 6.2832); ctx3.fill();
+          }
+          ctx3.beginPath(); ctx3.arc(p.x, p.y, Math.max(0.6, p.r), 0, 6.2832);
+          ctx3.fillStyle = p.hot
+            ? "rgba(88,166,255," + (0.45 + 0.55 * t).toFixed(3) + ")"
+            : "rgba(226,232,240," + (0.16 + 0.62 * t).toFixed(3) + ")";
+          ctx3.fill();
+        });
+    };
+
+    var tick3 = function () {
+      cam.spin += 0.0022;                        // slow, constant orbit
+      cam.tiltX += (tgtX - cam.tiltX) * 0.055;   // cursor eases the camera
+      cam.tiltY += (tgtY - cam.tiltY) * 0.055;
+      draw3();
+      raf3 = requestAnimationFrame(tick3);
+    };
+    // anime.js choreographs the arrival: the graph unfolds out of the
+    // origin and the camera dollies back, with a proper eased curve
+    // rather than the linear lerp a hand-rolled loop gives you
+    var intro = function () {
+      if (intro3 || !window.anime) { cam.reveal = 1; return; }
+      intro3 = true;
+      anime({ targets: cam, reveal: [0, 1], duration: 1600,
+        easing: "easeOutQuint" });
+      anime({ targets: cam, depth: [3.6, 2.2], duration: 1900,
+        easing: "easeOutQuart" });
+      anime({ targets: cam, tiltX: [-0.5, 0], duration: 2000,
+        easing: "easeOutQuart" });
+    };
+    var start3 = function () { if (!live3) { live3 = true; intro(); tick3(); } };
+    var stop3 = function () {
+      live3 = false;
+      if (raf3) cancelAnimationFrame(raf3);
+      raf3 = null;
+    };
+
+    // spatial: the scene tips toward the cursor, so it reads as depth
+    window.addEventListener("mousemove", function (e) {
+      tgtX = ((e.clientY / window.innerHeight) - 0.5) * 0.5;
+      tgtY = ((e.clientX / window.innerWidth) - 0.5) * 0.6;
+    }, { passive: true });
+
+    if ("IntersectionObserver" in window) {
+      new IntersectionObserver(function (ents) {
+        ents.forEach(function (en) { en.isIntersecting ? start3() : stop3(); });
+      }, { rootMargin: "10% 0px 10% 0px" }).observe(g3d);
+    } else { start3(); }
+    var r3TO;
+    window.addEventListener("resize", function () {
+      clearTimeout(r3TO);
+      r3TO = setTimeout(function () { box = size3(); draw3(); }, 160);
+    });
+    window.addEventListener("load", function () { box = size3(); draw3(); });
+  }
+
   /* ---------- scroll-scrubbed "files become a graph" showcase ----------
      Real file paths start stacked as a plain listing, then fly into graph
      positions and wire themselves together by their actual imports. The

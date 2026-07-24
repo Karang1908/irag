@@ -4,6 +4,30 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.13.0 — 2026-07-25
+
+### Fixed — the site footer had been stuck on v4.2.0 for ten releases
+It was hardcoded. `site/build.py` now reads `__version__` out of
+`irag/__init__.py`, so it can never drift again.
+
+### Added — real 3D in the hero, and spatial depth on the page
+- **The hero graph is now genuinely three-dimensional**: nodes live in a
+  unit cube, rotate on a slow orbit, and are painted back-to-front with
+  size, opacity and glow driven by perspective depth. It is a real
+  projection with z-sorting, not a CSS fake — hand-rolled in ~4KB, because
+  a 3D library would be roughly twenty times the site's entire JS budget
+  on a page whose pitch is "zero dependencies". anime.js drives the
+  arrival (the graph unfolds out of the origin as the camera dollies back)
+  and the cursor orbits the camera on both axes, so the hero reads as a
+  space you are looking into.
+- **Spatial UI on the screenshots.** `.tilt` existed in the markup with no
+  implementation at all; figures now sit in a perspective container and
+  rotate toward the cursor with a Z lift, easing back via anime.js on
+  leave. Fine-pointer devices only.
+- Both degrade properly: `prefers-reduced-motion` keeps the original
+  static SVG and disables the tilt entirely, and the SVG is also the no-JS
+  default, so the hero is never an empty box.
+
 ## 4.12.0 — 2026-07-25
 
 ### Changed — the landing page's scroll section now shows what it claims

@@ -22,6 +22,18 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE = Path(__file__).resolve().parent
 
 GITHUB = "https://github.com/Karang1908/irag"
+
+
+def _version() -> str:
+    """The package's own version — never hardcode it here; the footer went
+    six releases stale that way."""
+    import re as _re
+    m = _re.search(r'__version__\s*=\s*"([^"]+)"',
+                   (ROOT / "irag" / "__init__.py").read_text(encoding="utf-8"))
+    return m.group(1) if m else "dev"
+
+
+VERSION = _version()
 BASE = "https://karang1908.github.io/irag/"
 
 # (slug, sidebar title, source path relative to repo root)
@@ -488,6 +500,9 @@ def hero_graph() -> str:
         f'<text x="{lx}" y="{ly}">{label}</text>'
         for _cx, _cy, _r, label, lx, ly in n)
     return (
+        # the canvas takes over when JS runs (see app.js); the SVG below is
+        # the no-JS default so the hero is never an empty box
+        '<canvas class="g3d" id="g3d" aria-hidden="true"></canvas>'
         '<svg class="ggraph" viewBox="0 0 440 380" fill="none" '
         'role="presentation">'
         f'<g stroke="rgba(242,243,245,.15)" stroke-width="1">{edges}</g>'
@@ -697,7 +712,7 @@ with a database attached."</blockquote>
 <footer class="foot land">
 <span>MIT · <a href="{GITHUB}" target="_blank"
 rel="noopener">Karang1908/irag</a></span>
-<span>v4.2.0 · zero dependencies</span>
+<span>v{VERSION} · zero dependencies</span>
 </footer>
 </main>"""
     return page_shell(

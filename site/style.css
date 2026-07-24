@@ -201,7 +201,16 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
 .install .code-copy:hover{color:var(--text)}
 
 /* hero graph — the code map draws itself */
-.hero-graph{margin:0}
+.hero-graph{margin:0;position:relative}
+/* the canvas replaces the static SVG once JS is running; without JS the
+   SVG stays and the hero is never an empty box */
+.g3d{display:none;width:100%;aspect-ratio:44/38;max-width:440px}
+.js .g3d{display:block}
+.js .hero-graph .ggraph{display:none}
+@media (prefers-reduced-motion: reduce){
+  .g3d{display:none !important}
+  .js .hero-graph .ggraph{display:block}
+}
 .ggraph{width:100%;height:auto;display:block}
 .ggraph .gn{transform-box:fill-box;transform-origin:center}
 .hero-graph figcaption{margin-top:12px;text-align:right}
@@ -265,7 +274,11 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
 .featlist p{color:var(--text-dim);font-size:14.5px;max-width:42ch}
 
 /* shots */
-.shots{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:48px}
+.shots{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:48px;
+  perspective:1400px;perspective-origin:50% 40%}
+.tilt{transform-style:preserve-3d;will-change:transform}
+.tilt:hover{box-shadow:0 30px 70px -20px rgba(0,0,0,.75),
+  0 0 0 1px rgba(88,166,255,.16)}
 .shots figure{margin:0;border:1px solid var(--border);border-radius:14px;overflow:hidden;
   background:var(--bg-inset);will-change:transform}
 .shots img{width:100%;display:block}
