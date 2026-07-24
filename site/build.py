@@ -500,9 +500,6 @@ def hero_graph() -> str:
         f'<text x="{lx}" y="{ly}">{label}</text>'
         for _cx, _cy, _r, label, lx, ly in n)
     return (
-        # the canvas takes over when JS runs (see app.js); the SVG below is
-        # the no-JS default so the hero is never an empty box
-        '<canvas class="g3d" id="g3d" aria-hidden="true"></canvas>'
         '<svg class="ggraph" viewBox="0 0 440 380" fill="none" '
         'role="presentation">'
         f'<g stroke="rgba(242,243,245,.15)" stroke-width="1">{edges}</g>'
@@ -525,6 +522,7 @@ def landing() -> str:
 <a href="{GITHUB}" target="_blank" rel="noopener">GitHub ↗</a>
 </nav>
 </header>
+<canvas class="scene" id="scene" aria-hidden="true"></canvas>
 <main class="landing" id="main">
 <div class="spine" aria-hidden="true"><svg preserveAspectRatio="none">
 <line class="sp-track"/><line class="sp-fill"/></svg></div>

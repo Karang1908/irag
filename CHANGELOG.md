@@ -4,6 +4,32 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.14.0 — 2026-07-25
+
+### Added — the landing page is a 3D space you fly through
+The graph was a small panel beside the wordmark. It is now the **backdrop
+of the entire page**, and scrolling flies a real camera through it.
+
+- **A real camera**, not model rotation: position + look-at, world → view
+  basis → perspective divide, painted back-to-front so near nodes occlude
+  far ones. Six waypoints are interpolated on smoothstep against page
+  scroll, so each section arrives somewhere specific — establishing shot,
+  into `api`, close on `auth`, down into `db`, over to `tests`, then pull
+  back wide. Each waypoint also carries a screen offset, so the
+  establishing shot sits clear of the left-aligned hero copy.
+- The world is four clusters (api / auth / db / tests) wired hub-to-hub
+  along a dependency spine, generated from a fixed seed so the scene is
+  identical on every load.
+- The cursor parallaxes the camera around its target; a slow constant
+  orbit keeps it alive when the page is still.
+- Still zero dependencies: ~6KB of hand-rolled projection. **60fps
+  measured** (avg 16.7ms/frame, 0 frames over 32ms), and it stops
+  rendering entirely when the tab is hidden.
+
+Degradation is real, not nominal: the scene never starts under
+`prefers-reduced-motion`, below 760px, or without JS, and the original
+static hero SVG is what shows in every one of those cases.
+
 ## 4.13.0 — 2026-07-25
 
 ### Fixed — the site footer had been stuck on v4.2.0 for ten releases

@@ -202,15 +202,25 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
 
 /* hero graph — the code map draws itself */
 .hero-graph{margin:0;position:relative}
-/* the canvas replaces the static SVG once JS is running; without JS the
-   SVG stays and the hero is never an empty box */
-.g3d{display:none;width:100%;aspect-ratio:44/38;max-width:440px}
-.js .g3d{display:block}
-.js .hero-graph .ggraph{display:none}
-@media (prefers-reduced-motion: reduce){
-  .g3d{display:none !important}
-  .js .hero-graph .ggraph{display:block}
-}
+/* The graph is the whole page's backdrop when the 3D scene is running, so
+   the small hero figure would just be a duplicate — hide it then. Without
+   JS, on mobile, or under reduced motion the scene never starts and the
+   static SVG is what you see. */
+.scene{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;
+  pointer-events:none;display:block}
+.has-scene .hero-graph{display:none}
+.has-scene .hero{grid-template-columns:1fr;max-width:760px}
+/* content sits above the scene, with a soft scrim so type stays readable
+   over moving nodes */
+.landing,header.top{position:relative;z-index:1}
+.has-scene .hero-copy,.has-scene .sec>*,.has-scene .stat{position:relative}
+.has-scene main.landing::before{content:"";position:fixed;inset:0;z-index:-1;
+  pointer-events:none;
+  background:radial-gradient(120% 85% at 50% 45%,rgba(8,9,12,.62) 0%,
+    rgba(8,9,12,.40) 50%,rgba(8,9,12,.14) 80%,transparent 100%)}
+/* the showcase runs its own graph; drop the backdrop out of its way */
+.has-scene .showcase{background:linear-gradient(rgba(8,9,12,0),
+  rgba(8,9,12,.93) 12%,rgba(8,9,12,.93) 88%,rgba(8,9,12,0))}
 .ggraph{width:100%;height:auto;display:block}
 .ggraph .gn{transform-box:fill-box;transform-origin:center}
 .hero-graph figcaption{margin-top:12px;text-align:right}

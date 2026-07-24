@@ -155,142 +155,210 @@
     });
   }
 
-  /* ---------- 3D dependency graph (hero) ----------
-     A real perspective projection, not a CSS fake: nodes live in a unit
-     cube, rotate around Y, and are painted back-to-front with size,
-     opacity and glow driven by depth. Hand-rolled in ~4KB because a 3D
-     library would be 20x the site's entire JS budget on a page whose
-     pitch is "zero dependencies". The cursor orbits the camera, so the
-     hero reads as a space you're looking into rather than a picture. */
-  var g3d = document.getElementById("g3d");
-  if (g3d && g3d.getContext && !REDUCE) {
-    var ctx3 = g3d.getContext("2d");
-    // x, y, z in [-1,1]; r = base radius; hot = accent-coloured
-    var N3 = [
-      [ 0.00, -0.78,  0.05, 5.2, 1], [-0.52, -0.50, -0.42, 3.4, 0],
-      [ 0.55, -0.44,  0.40, 3.6, 0], [-0.72, -0.02,  0.30, 3.3, 0],
-      [ 0.00, -0.14, -0.10, 6.4, 1], [ 0.74, -0.06, -0.34, 3.5, 0],
-      [-0.40,  0.34,  0.55, 3.2, 0], [ 0.38,  0.30, -0.58, 3.3, 0],
-      [-0.86,  0.52, -0.18, 2.9, 0], [ 0.00,  0.52,  0.16, 4.6, 1],
-      [ 0.84,  0.46,  0.28, 3.0, 0], [-0.20,  0.82, -0.40, 2.8, 0],
-      [ 0.46,  0.80,  0.02, 2.9, 0], [-0.62, -0.72,  0.52, 2.7, 0]
+  /* ---------- fullscreen scroll-flown 3D scene ----------
+     The graph is the page's backdrop, not a panel beside the logo. Nodes
+     live in world space in four clusters (api / auth / db / tests); a real
+     camera with a position and a look-at target flies between waypoints as
+     you scroll, so each section arrives somewhere specific in the graph.
+
+     Real projection: world -> view basis -> perspective divide, painted
+     back-to-front. Hand-rolled (~6KB) because a 3D library would dwarf the
+     site's entire JS budget on a page whose pitch is zero dependencies. */
+  var scene = document.getElementById("scene");
+  if (scene && scene.getContext && !REDUCE &&
+      !window.matchMedia("(max-width:760px)").matches) {
+    var sx = scene.getContext("2d");
+
+    // ---- world: four clusters, wired the way a real project depends ----
+    var CL = [
+      { c: [ 0.0,  1.35,  0.1], n: 7, hue: "api"  },
+      { c: [-1.75, 0.05,  0.5], n: 8, hue: "auth" },
+      { c: [ 0.15,-1.35, -0.3], n: 7, hue: "db"   },
+      { c: [ 1.85, 0.75, -0.7], n: 6, hue: "test" }
     ];
-    var E3 = [[0,1],[0,2],[0,4],[1,3],[2,5],[4,3],[4,5],[4,6],[4,7],[4,9],
-              [3,8],[6,9],[7,9],[9,10],[9,11],[9,12],[8,11],[10,12],[1,13],
-              [13,3],[2,10]];
-    // camera state; anime.js tweens `cam` for entrance + settle, the rAF
-    // loop keeps the slow orbit and eases toward the cursor
-    var cam = { spin: 0, tiltX: 0, tiltY: 0, depth: 2.2, reveal: 0 };
-    var tgtX = 0, tgtY = 0, raf3 = null, live3 = false, intro3 = false;
-
-    var size3 = function () {
-      var r = g3d.getBoundingClientRect();
-      var dpr = Math.min(2, window.devicePixelRatio || 1);
-      g3d.width = Math.max(1, r.width * dpr);
-      g3d.height = Math.max(1, r.height * dpr);
-      ctx3.setTransform(dpr, 0, 0, dpr, 0, 0);
-      return r;
+    var NODES = [], LINKS = [];
+    var seed = 7;
+    var rnd = function () {            // deterministic: same scene each load
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
     };
-    var box = size3();
-
-    var draw3 = function () {
-      var W = box.width, H = box.height;
-      if (!W || !H) return;
-      ctx3.clearRect(0, 0, W, H);
-      var cx = W / 2, cy = H / 2;
-      var scale = Math.min(W, H) * 0.46, focal = 3.0;
-      var rotY = cam.spin + cam.tiltY, rotX = cam.tiltX;
-      var cosY = Math.cos(rotY), sinY = Math.sin(rotY);
-      var cosX = Math.cos(rotX), sinX = Math.sin(rotX);
-
-      var pts = N3.map(function (n) {
-        // rotate around Y then X
-        var k = cam.reveal;                    // 0 = collapsed at origin
-        var nx = n[0] * k, ny = n[1] * k, nz = n[2] * k;
-        var x = nx * cosY - nz * sinY;
-        var z = nx * sinY + nz * cosY;
-        var y = ny * cosX - z * sinX;
-        z = ny * sinX + z * cosX;
-        var d = focal / (focal + z + (cam.depth - 2.2));  // perspective divide
-        return { x: cx + x * scale * d, y: cy + y * scale * d,
-                 d: d, z: z, r: n[3] * d, hot: n[4] };
-      });
-
-      // edges first, dimmed by their depth
-      E3.forEach(function (e) {
-        var a = pts[e[0]], b = pts[e[1]];
-        var dep = (a.d + b.d) / 2;
-        ctx3.beginPath();
-        ctx3.moveTo(a.x, a.y); ctx3.lineTo(b.x, b.y);
-        ctx3.strokeStyle = "rgba(150,170,200," +
-          (0.05 + Math.pow(Math.max(0, dep - 0.55), 1.7) * 0.5).toFixed(3) + ")";
-        ctx3.lineWidth = 0.5 + dep * 0.7;
-        ctx3.stroke();
-      });
-
-      // nodes back-to-front so nearer ones occlude correctly
-      pts.slice().sort(function (p, q) { return q.z - p.z; })
-        .forEach(function (p) {
-          var t = Math.max(0, Math.min(1, (p.d - 0.6) / 0.75));
-          if (p.hot) {
-            var g = ctx3.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 5);
-            g.addColorStop(0, "rgba(88,166,255," + (0.30 * t).toFixed(3) + ")");
-            g.addColorStop(1, "rgba(88,166,255,0)");
-            ctx3.fillStyle = g;
-            ctx3.beginPath(); ctx3.arc(p.x, p.y, p.r * 5, 0, 6.2832); ctx3.fill();
-          }
-          ctx3.beginPath(); ctx3.arc(p.x, p.y, Math.max(0.6, p.r), 0, 6.2832);
-          ctx3.fillStyle = p.hot
-            ? "rgba(88,166,255," + (0.45 + 0.55 * t).toFixed(3) + ")"
-            : "rgba(226,232,240," + (0.16 + 0.62 * t).toFixed(3) + ")";
-          ctx3.fill();
+    CL.forEach(function (cl, ci) {
+      var first = NODES.length;
+      for (var i = 0; i < cl.n; i++) {
+        NODES.push({
+          p: [cl.c[0] + (rnd() - 0.5) * 1.15,
+              cl.c[1] + (rnd() - 0.5) * 1.05,
+              cl.c[2] + (rnd() - 0.5) * 1.15],
+          r: i === 0 ? 6.2 : 2.4 + rnd() * 2.2,
+          hub: i === 0, cl: ci
         });
-    };
-
-    var tick3 = function () {
-      cam.spin += 0.0022;                        // slow, constant orbit
-      cam.tiltX += (tgtX - cam.tiltX) * 0.055;   // cursor eases the camera
-      cam.tiltY += (tgtY - cam.tiltY) * 0.055;
-      draw3();
-      raf3 = requestAnimationFrame(tick3);
-    };
-    // anime.js choreographs the arrival: the graph unfolds out of the
-    // origin and the camera dollies back, with a proper eased curve
-    // rather than the linear lerp a hand-rolled loop gives you
-    var intro = function () {
-      if (intro3 || !window.anime) { cam.reveal = 1; return; }
-      intro3 = true;
-      anime({ targets: cam, reveal: [0, 1], duration: 1600,
-        easing: "easeOutQuint" });
-      anime({ targets: cam, depth: [3.6, 2.2], duration: 1900,
-        easing: "easeOutQuart" });
-      anime({ targets: cam, tiltX: [-0.5, 0], duration: 2000,
-        easing: "easeOutQuart" });
-    };
-    var start3 = function () { if (!live3) { live3 = true; intro(); tick3(); } };
-    var stop3 = function () {
-      live3 = false;
-      if (raf3) cancelAnimationFrame(raf3);
-      raf3 = null;
-    };
-
-    // spatial: the scene tips toward the cursor, so it reads as depth
-    window.addEventListener("mousemove", function (e) {
-      tgtX = ((e.clientY / window.innerHeight) - 0.5) * 0.5;
-      tgtY = ((e.clientX / window.innerWidth) - 0.5) * 0.6;
-    }, { passive: true });
-
-    if ("IntersectionObserver" in window) {
-      new IntersectionObserver(function (ents) {
-        ents.forEach(function (en) { en.isIntersecting ? start3() : stop3(); });
-      }, { rootMargin: "10% 0px 10% 0px" }).observe(g3d);
-    } else { start3(); }
-    var r3TO;
-    window.addEventListener("resize", function () {
-      clearTimeout(r3TO);
-      r3TO = setTimeout(function () { box = size3(); draw3(); }, 160);
+      }
+      // wire each cluster to its own hub
+      for (var j = first + 1; j < NODES.length; j++) LINKS.push([first, j]);
+      // a couple of intra-cluster edges for texture
+      for (var k = 0; k < 3; k++) {
+        var a = first + 1 + Math.floor(rnd() * (cl.n - 1));
+        var b = first + 1 + Math.floor(rnd() * (cl.n - 1));
+        if (a !== b) LINKS.push([a, b]);
+      }
     });
-    window.addEventListener("load", function () { box = size3(); draw3(); });
+    var hubs = NODES.map(function (n, i) { return n.hub ? i : -1; })
+      .filter(function (i) { return i >= 0; });
+    // api -> auth -> db, tests -> api: the dependency spine
+    LINKS.push([hubs[0], hubs[1]], [hubs[1], hubs[2]], [hubs[0], hubs[2]],
+               [hubs[3], hubs[0]]);
+
+    // ---- camera waypoints: where each part of the page lands you ----
+    // o = horizontal screen offset (fraction of width): the hero copy is
+    // left-aligned, so the establishing shot is pushed right of it
+    var WP = [
+      { p: [0.1, 0.15, 4.3], t: [0, 0.05, 0], o:  0.20 }, // establishing
+      { p: [-0.8, 1.5, 2.6], t: [0.0, 1.35, 0.1], o: 0.06 }, // into api
+      { p: [-2.7, 0.2, 1.5], t: [-1.75, 0.05, 0.5], o: -0.04 }, // close on auth
+      { p: [0.4, -1.3, 1.7], t: [0.15, -1.35, -0.3], o: 0.04 }, // dive to db
+      { p: [2.5, 1.0, 2.2], t: [1.85, 0.75, -0.7], o: -0.06 }, // over to tests
+      { p: [0.0, 0.2, 5.6], t: [0, 0, 0], o: 0 }           // pull back wide
+    ];
+    var cam = { p: WP[0].p.slice(), t: WP[0].t.slice(), o: WP[0].o };
+    var camT = { p: WP[0].p.slice(), t: WP[0].t.slice(), o: WP[0].o };
+    var spin = 0, prog = 0, rafS = null, liveS = false;
+    var mx = 0, my = 0, mtx = 0, mty = 0;
+
+    var sizeS = function () {
+      var dpr = Math.min(2, window.devicePixelRatio || 1);
+      scene.width = Math.round(innerWidth * dpr);
+      scene.height = Math.round(innerHeight * dpr);
+      sx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    sizeS();
+
+    var sub = function (a, b) { return [a[0]-b[0], a[1]-b[1], a[2]-b[2]]; };
+    var norm = function (v) {
+      var l = Math.hypot(v[0], v[1], v[2]) || 1;
+      return [v[0]/l, v[1]/l, v[2]/l];
+    };
+    var cross = function (a, b) {
+      return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+    };
+    var dot = function (a, b) { return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]; };
+    var smooth = function (x) { return x * x * (3 - 2 * x); };
+
+    // scroll 0..1 across the page -> a point along the waypoint path
+    var camAt = function (q) {
+      var f = q * (WP.length - 1);
+      var i = Math.min(WP.length - 2, Math.floor(f));
+      var k = smooth(Math.min(1, Math.max(0, f - i)));
+      var A = WP[i], B = WP[i + 1], out = { p: [], t: [] };
+      for (var d = 0; d < 3; d++) {
+        out.p[d] = A.p[d] + (B.p[d] - A.p[d]) * k;
+        out.t[d] = A.t[d] + (B.t[d] - A.t[d]) * k;
+      }
+      out.o = A.o + (B.o - A.o) * k;
+      return out;
+    };
+
+    var drawS = function () {
+      var W = innerWidth, H = innerHeight;
+      sx.clearRect(0, 0, W, H);
+      // orbit + cursor parallax applied around the look-at target
+      var eye = cam.p.slice();
+      var ox = eye[0] - cam.t[0], oz = eye[2] - cam.t[2];
+      var ca = Math.cos(spin + mtx), sa = Math.sin(spin + mtx);
+      eye[0] = cam.t[0] + ox * ca - oz * sa;
+      eye[2] = cam.t[2] + ox * sa + oz * ca;
+      eye[1] += mty;
+
+      var fwd = norm(sub(cam.t, eye));
+      var right = norm(cross(fwd, [0, 1, 0]));
+      var up = cross(right, fwd);
+      var focal = Math.min(W, H) * 0.86;
+      var cx = W / 2 + W * cam.o, cy = H / 2;
+
+      var pts = [];
+      for (var i = 0; i < NODES.length; i++) {
+        var v = sub(NODES[i].p, eye);
+        var z = dot(v, fwd);
+        if (z <= 0.06) { pts.push(null); continue; }   // behind the camera
+        pts.push({
+          x: cx + (dot(v, right) / z) * focal,
+          y: cy - (dot(v, up) / z) * focal,
+          z: z, r: NODES[i].r / z * 5.2, hub: NODES[i].hub
+        });
+      }
+
+      // edges, faded by distance
+      for (var e = 0; e < LINKS.length; e++) {
+        var a = pts[LINKS[e][0]], b = pts[LINKS[e][1]];
+        if (!a || !b) continue;
+        var zz = (a.z + b.z) / 2;
+        var al = Math.max(0, Math.min(0.5, 0.95 / zz));
+        if (al < 0.010) continue;
+        sx.beginPath(); sx.moveTo(a.x, a.y); sx.lineTo(b.x, b.y);
+        sx.strokeStyle = "rgba(150,172,205," + al.toFixed(3) + ")";
+        sx.lineWidth = Math.max(0.45, 2.0 / zz);
+        sx.stroke();
+      }
+
+      // nodes back-to-front so near ones occlude far ones
+      var order = [];
+      for (var n = 0; n < pts.length; n++) if (pts[n]) order.push(n);
+      order.sort(function (u, w) { return pts[w].z - pts[u].z; });
+      order.forEach(function (idx) {
+        var q = pts[idx];
+        if (q.r < 0.25) return;
+        var near = Math.max(0, Math.min(1, (6.0 - q.z) / 5.0));
+        if (q.hub) {
+          var g = sx.createRadialGradient(q.x, q.y, 0, q.x, q.y, q.r * 6);
+          g.addColorStop(0, "rgba(88,166,255," + (0.26 * near).toFixed(3) + ")");
+          g.addColorStop(1, "rgba(88,166,255,0)");
+          sx.fillStyle = g;
+          sx.beginPath(); sx.arc(q.x, q.y, q.r * 6, 0, 6.2832); sx.fill();
+        }
+        sx.beginPath(); sx.arc(q.x, q.y, q.r, 0, 6.2832);
+        sx.fillStyle = q.hub
+          ? "rgba(88,166,255," + (0.45 + 0.5 * near).toFixed(3) + ")"
+          : "rgba(214,224,240," + (0.14 + 0.5 * near).toFixed(3) + ")";
+        sx.fill();
+      });
+    };
+
+    var tickS = function () {
+      spin += 0.00055;
+      var want = camAt(prog);
+      for (var d = 0; d < 3; d++) {                 // ease toward the target
+        camT.p[d] = want.p[d]; camT.t[d] = want.t[d];
+        cam.p[d] += (camT.p[d] - cam.p[d]) * 0.055;
+        cam.t[d] += (camT.t[d] - cam.t[d]) * 0.055;
+      }
+      cam.o += (want.o - cam.o) * 0.055;
+      mtx += (mx - mtx) * 0.05;
+      mty += (my - mty) * 0.05;
+      drawS();
+      rafS = requestAnimationFrame(tickS);
+    };
+
+    var readProg = function () {
+      var max = document.documentElement.scrollHeight - innerHeight;
+      prog = max > 0 ? Math.min(1, Math.max(0, scrollY / max)) : 0;
+    };
+    readProg();
+    addEventListener("scroll", readProg, { passive: true });
+    if (lenis) lenis.on("scroll", readProg);
+    addEventListener("mousemove", function (e) {
+      mx = ((e.clientX / innerWidth) - 0.5) * 0.34;
+      my = ((e.clientY / innerHeight) - 0.5) * -0.5;
+    }, { passive: true });
+    var rsTO;
+    addEventListener("resize", function () {
+      clearTimeout(rsTO); rsTO = setTimeout(function () { sizeS(); drawS(); }, 160);
+    });
+    // pause when the tab is hidden — no point burning frames
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) { liveS = false; if (rafS) cancelAnimationFrame(rafS); }
+      else if (!liveS) { liveS = true; tickS(); }
+    });
+    liveS = true; tickS();
+    document.documentElement.classList.add("has-scene");
   }
 
   /* ---------- scroll-scrubbed "files become a graph" showcase ----------
