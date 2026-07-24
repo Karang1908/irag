@@ -600,7 +600,7 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
         <h3>Three steps to a working memory</h3>
         <button class="setup-x" id="setup-dismiss" title="Hide this">Dismiss</button>
       </div>
-      <p class="setup-lede">Your project is initialised but <b>no summaries have been written yet</b>, so there is nothing for an agent to read.</p>
+      <p class="setup-lede" id="setup-lede"></p>
       <ol class="setup-steps">
         <li class="setup-step" data-step="llm">
           <span class="step-mark">1</span>
@@ -1202,6 +1202,11 @@ function renderSetup(){
   const llm=docPass("llm command"), hooks=docPass("claude code hook");
   if(setupDismissed()||(built&&hooks!==false)){box.hidden=true;return}
   box.hidden=false;
+  // the lede has to track the same live state as the steps, or it ends up
+  // saying "nothing has been written" directly above "memory built ✓"
+  $("#setup-lede").innerHTML=!built
+    ? "Your project is initialised but <b>no summaries have been written yet</b>, so there is nothing for an agent to read."
+    : "The memory is built. <b>One step left</b>: wire the hooks so it stays current on its own.";
   const state={llm:llm,build:built?true:false,hooks:hooks};
   const label={
     llm:{yes:"summariser responds ✓",no:"not reachable yet — check [llm].command",

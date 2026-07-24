@@ -4,6 +4,23 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.11.0 — 2026-07-25
+
+### Changed — README rewritten, screenshots regenerated
+- The screenshots were from 4.2.0 (July 20) and showed a dashboard that no
+  longer exists: no Pages tab, no Tools, no command palette. All five are
+  regenerated at 2× against a realistic demo project, and two new views are
+  documented (the unified page object, and the palette searching page text).
+- README rebuilt around the reader's problem rather than a feature list: a
+  one-line hook, the flagship screenshot immediately, a without/with cost
+  table, then why it's different, quickstart, dashboard, measurements.
+  Every claim in it is a figure measured elsewhere in this changelog.
+
+### Fixed
+- The first-run panel's lede was static while its steps were live, so it
+  could say "no summaries have been written yet" directly above a step
+  reading "memory built ✓". It now tracks the same state as the steps.
+
 ## 4.10.0 — 2026-07-25
 
 ### Fixed — **`from . import x` created no dependency edge** (Python graph was badly incomplete)

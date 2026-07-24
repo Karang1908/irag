@@ -1,163 +1,92 @@
 <p align="center">
-  <img src="docs/assets/irag-banner.svg" alt="irag — pluggable memory for AI coding agents" width="100%">
+  <img src="docs/assets/irag-banner.svg" alt="irag" width="100%">
 </p>
 
+<h3 align="center">Your AI agent re-reads your codebase every session.<br>irag makes it read a database instead.</h3>
+
 <p align="center">
-  <b>Your coding agent re-reads your codebase every single session.<br>
-  You pay for that, every time. irag makes it read a database instead.</b><br>
-  <sub>reads are free SQL &nbsp;·&nbsp; writes run on any cheap model
-  &nbsp;·&nbsp; every claim fact-checked against the real code</sub>
+  <sub><b>reads cost zero tokens</b> &nbsp;·&nbsp; writes run on any cheap model &nbsp;·&nbsp; every claim fact-checked against your real code</sub>
 </p>
 
 <p align="center">
   <img src="https://github.com/Karang1908/iRag/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
-  <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
-  <img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT">
-  <img src="https://img.shields.io/badge/version-4.10.0-purple" alt="Version 4.10.0">
+  <img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="Zero dependencies">
+  <img src="https://img.shields.io/badge/install-one%20command-informational" alt="One command">
+  <img src="https://img.shields.io/badge/license-MIT-yellow" alt="MIT">
 </p>
 
 <p align="center">
-  <a href="https://karang1908.github.io/iRag/"><b>Docs site</b></a> ·
+  <a href="https://karang1908.github.io/iRag/"><b>Docs</b></a> ·
   <a href="https://karang1908.github.io/iRag/docs/quickstart/">Quickstart</a> ·
-  <a href="https://karang1908.github.io/iRag/docs/architecture/">Architecture</a> ·
-  <a href="https://karang1908.github.io/iRag/docs/comparison/">Comparison</a>
+  <a href="https://karang1908.github.io/iRag/docs/architecture/">How it works</a> ·
+  <a href="https://karang1908.github.io/iRag/docs/comparison/">vs. alternatives</a>
 </p>
 
 ```bash
 pip install -e ./irag && irag init      # that's the whole setup
 ```
 
-Every new chat, your agent greps, opens, and re-reads files to work out
-what it already worked out yesterday. **irag pays that cost once, writes
-it down, checks it against your code, and hands it back for free.**
+<p align="center">
+  <img src="docs/assets/pages-memory.jpg" alt="irag dashboard: one page showing a file's summary, structure, and history" width="100%">
+</p>
 
-| **0** | **~650** | **1 file** | **0** |
-|:--:|:--:|:--:|:--:|
-| tokens to search, map, or trace | tokens to brief a fresh session¹ | SQLite — the whole memory | runtime deps, services, keys |
+---
 
-<sub>¹ measured, with prompt caching. The briefing is budget-capped; the
-alternative — re-reading the tree — is not.</sub>
+## The problem
 
-**Why you'll want this:**
+Your agent opens a fresh chat and knows nothing. So it greps. It opens
+twelve files. It re-derives what it already worked out yesterday, and you
+pay for every token of it — again tomorrow.
 
-- **Reads are free, structurally.** `search`, `map`, `impact`, `context`,
-  `recap`, `why` are SQL and parsing. Not "cheap": **zero tokens**, no
-  embeddings, no vector DB. Verified: no LLM call exists on those paths.
-- **Memory that can't quietly lie.** Every claim is fact-checked against
-  your actual code. Hallucinated paths, wrong version pins and phantom
-  symbols become queryable rows, contradicted pages are never served
-  without a warning, and `irag check` fails CI while memory and code
-  disagree. *No other memory tool does this.*
-- **It knows what breaks.** `irag impact irag/db.py` → the 13 modules
-  that transitively depend on it, parsed from the code, in 0.08s.
-- **Every chat resumes where the last one ended** — an ~87-token recap of
-  what previous sessions did and changed, injected automatically. Turn on
-  transcripts and the verbatim conversation is stored too.
-- **Git for your memory.** Append-only revisions, `irag why "<claim>"` to
-  trace any sentence to the commit that caused it, `asof` to time-travel,
-  non-destructive rollback.
-- **One `pip install`, zero dependencies.** Stdlib only. The memory is one
-  SQLite file in your repo — no service, no cloud, no keys. Move it,
-  mount it from another machine, delete it. It's a file.
-- **Works with every agent.** Claude Code hooks make it fully automatic;
-  the installed `AGENTS.md` reaches Codex, Antigravity, and Cursor; git is
-  optional.
+The usual fix is a markdown file the agent re-reads at startup. It goes
+stale in a week, nobody notices, and the agent keeps confidently quoting
+it.
 
-```
-Claude Code   →     irag      →   agy / any LLM CLI
-the operator      the memory        the scribe
-(reads free)    (never thinks)   (writes on a cheap quota)
-```
+**irag pays that cost once, writes it down, checks it against your code,
+and hands it back for free.**
 
-Your expensive coding agent never spends tokens exploring or summarizing.
-It reads memory through zero-LLM SQL queries; a *separate, cheap* model
-writes the summaries; and a deterministic linter fact-checks every claim
-against the actual code — so what the agent reads is **verified, not just
-remembered**.
-
-![Dashboard overview](docs/assets/dashboard-overview.jpg)
-
-## Why
-
-Flat context files (`CLAUDE.md`, `.cursorrules`, memory files) rot:
-stale claims nobody notices, links to files that no longer exist, no way
-to ask *when* something became true or *why* the file says it. These are
-not prose problems — they are **storage problems**, and a relational
-substrate solves all of them:
-
-| Memory | Question it answers | How irag does it |
+|  | without irag | with irag |
 |---|---|---|
-| Structural | "how is the code shaped?" | deterministic AST/regex scan → `irag map`, `irag impact` — **zero LLM tokens** |
-| Semantic | "what is true here, and why?" | LLM-written page per file & folder, append-only versioned, **lint-verified against the code** |
-| Episodic | "what happened in past sessions?" | every agent conversation logged with the exact per-file changes it made |
+| Start a session | re-read the tree | **~650 tokens**, pre-ranked |
+| "What does this file do?" | open and skim it | **0 tokens** — it's a row |
+| "What breaks if I change it?" | trace imports by hand | **0 tokens**, 0.08s, transitive |
+| "What did we decide last week?" | scroll back, or guess | **~87 tokens** |
+| Memory is wrong | you find out the hard way | **CI fails** |
 
-Two principles drive every design decision:
+---
 
-1. **The model never does bookkeeping.** Locating, counting, dating,
-   diffing, scheduling, verifying — all SQL. The LLM only writes prose.
-2. **Memory is data; the agent reads it on demand.** `CLAUDE.md` and
-   `AGENTS.md` are irag's static operator manual, installed by
-   `irag init` (re-installable with `irag export`). The memory itself
-   lives in `.irag/memory.db` — the only source of truth — read through
-   `irag context` / `recap` / `search`, never a file dump.
+## Why it's different
 
-## Where this came from
+**🔒 It can't quietly lie.**
+Every claim is checked against your actual code. Hallucinated paths, wrong
+version pins and phantom symbols become queryable rows; contradicted pages
+are never served without a warning; `irag check` fails CI while memory and
+code disagree. *No other memory tool does this.*
 
-I had a Database Systems assignment coming up and honestly had no idea
-what to build. Around then, Andrej Karpathy put out his LLM Wiki, so I
-started tinkering with it and found the issues fast: it was all just
-files — nothing versioned or checked, nothing stopping it from quietly
-going stale while people kept trusting it. I figured I'd try fixing
-that for the assignment.
+**⚡ Reads are free — structurally, not "cheaply".**
+`search`, `map`, `impact`, `context`, `recap`, `why` are SQL and parsing.
+No embeddings, no vector database, no model call on that path at all.
 
-I picked a law firm as the domain because it sounded fun to build, and
-it turned out to be the right kind of hard too. Law firms don't forgive
-mistakes — a wrong court date or a missed conflict of interest is a
-real failure, not a bad chatbot answer. Building under that pressure
-got me to the actual idea: **it should be a database system with an AI
-layer, not an AI system with a database attached.** Five tables did the
-real work underneath — pages, revisions, links, events, contradictions
-— while the database handled the bookkeeping and the AI only ever wrote
-prose. I tested it by imagining the AI ripped out completely: a full
-working law-firm system was still standing there.
+**🧭 It knows what breaks.**
+`irag impact src/db/store.py` → every module that transitively depends on
+it, parsed from the code, in under a tenth of a second.
 
-That's when it clicked that those five tables were never about law
-firms at all. They were an answer to something bigger: **how do you let
-an AI write things you can actually trust?** So I stripped the law-firm
-parts out and pointed the same core at coding agents — the things that
-forget everything the second you close the terminal. Tools like
-Graphify and claude-mem circling the same problem from different angles
-felt like confirmation it was real.
+**🕰 Git for your memory.**
+Append-only revisions. `irag why "we use opaque tokens"` traces that
+sentence to the commit that caused it. `irag asof 2026-06-01` time-travels.
+Rollback never destroys history.
 
-The full version: [docs/STORY.md](docs/STORY.md).
+**📦 One file, zero dependencies.**
+Stdlib Python. The whole memory is one SQLite file in your repo — no
+service, no cloud, no keys. Move it, mount it from another machine, delete
+it. It's a file.
 
-## The token economics (read this)
+**🔌 Works with the agent you already use.**
+Claude Code hooks make it fully automatic. The installed `AGENTS.md`
+reaches Codex, Antigravity and Cursor. Git is optional.
 
-irag's costs are asymmetric by design:
-
-- **Read path — free.** `context`, `search`, `map`, `impact`, `recap`,
-  `why` are pure SQL. A fresh session starts with a ~3k-token injected
-  briefing instead of 20–100k tokens of grep-and-read exploration.
-- **Write path — pluggable.** Summaries are written by whatever CLI you
-  configure in `.irag/config.toml`. Point it at a **cheap or free
-  model** and the bookkeeping stops competing with your coding agent's
-  quota entirely:
-
-```toml
-# .irag/config.toml — the write path runs on Gemini's free quota
-[llm]
-command = "agy --dangerously-skip-permissions -p {prompt}"
-model_label = "antigravity"
-timeout = 600
-```
-
-Any CLI with the same contract works — `claude -p` (default), a local
-model behind a script, anything that takes a prompt and prints markdown
-(`{prompt}` argv / `{promptfile}` / stdin delivery all supported). The
-linter that fact-checks the output is model-agnostic, so a cheaper
-scribe never weakens the trust layer. Verify your command once with
-`irag doctor --probe-llm` before the first big run.
+---
 
 ## Quickstart
 
@@ -165,99 +94,159 @@ scribe never weakens the trust layer. Verify your command once with
 pip install -e .            # zero dependencies, Python 3.11+
 cd your-project
 irag init                   # works with or without git
-irag doctor --probe-llm     # verify the LLM command works
-irag update                 # first full synthesis (one call per file+folder)
-irag claude-setup           # wire Claude Code hooks (optional, recommended)
+irag doctor --probe-llm     # verify your summariser before spending anything
+irag update                 # build the memory: one call per file and folder
+irag claude-setup           # wire the hooks — after this it runs itself
 ```
 
-Scoping is **directory-wise**: the folder you run `init` in *is* the
-project — an enclosing git repo (a versioned home dir, a monorepo) is
-never silently adopted. Projects nest and multiply, each with its own
-`.irag`, its own generated `CLAUDE.md`/`AGENTS.md` (composing
-hierarchically in Claude Code: global → parent dir → project), and its
-own dashboard.
+After `claude-setup` the loop is mechanical: **SessionStart** injects
+ranked context plus a recap of previous sessions, **Stop** runs `irag
+update` when your agent finishes a turn, **SessionEnd** writes the diary.
+You never think about it again.
 
-After `claude-setup` the loop is fully automatic: **SessionStart** opens
-the conversation log and injects ranked context + a recap of previous
-sessions, **Stop** runs `irag update` after every turn, **SessionEnd**
-writes the diary entry. Other agents (Cursor, Antigravity IDE, Codex)
-get the same instructions through the generated `AGENTS.md` and log
-sessions manually with `irag session-begin` / `session-end`.
-
-Daily driver commands:
+Then, day to day:
 
 ```bash
-irag update                     # sync → synthesize → fact-check → export
-irag search "auth token"        # SQL full-text search (instant, free)
-irag ask "how does login work?" # AI answer with page citations
-irag recap                      # "previously on this project"
-irag check                      # CI gate: exit 1 if memory disagrees with code
+irag search "session expiry"     # instant, free
+irag ask "how does login work?"  # AI answer, with citations
+irag impact src/db/store.py      # blast radius, free
+irag recap                       # "previously on this project"
+irag dashboard                   # the whole thing, in a browser
 ```
 
-## What makes it different
+### Point the writer at a cheap model
 
-- **Contradiction linting against ground truth** — hallucinated paths,
-  wrong version pins, phantom symbols become queryable rows with
-  severity; contradicted pages are never served without a warning;
-  fixed claims auto-resolve; `irag check` fails CI while memory and
-  code disagree. *No other memory tool has this.*
-- **Full provenance** — `irag why "we use JWT"` traces any claim to the
-  revision that introduced it and the commit that triggered it.
-  `irag asof 2026-06-01` time-travels; `irag rollback` is
-  non-destructive (history is never rewritten).
-- **A conversation diary with receipts** — every session is a row:
-  which files changed *and the exact per-file change summary for each*,
-  decisions, lessons, plus an LLM narrative. A brand-new chat resumes
-  for ~150 tokens.
-- **A deterministic code map** — symbols, imports, transitive blast
-  radius (`irag impact`), parsed from the code, always current, zero
-  tokens.
-- **Everything is one SQLite file** — `.irag/memory.db`. Query it, back
-  it up (`irag backup`), mount it from any machine, audit it
-  (`irag doctor`).
+Reads are free; only writing summaries costs anything. Put that on a
+different model from your coding agent:
+
+```toml
+# .irag/config.toml
+[llm]
+command = "agy --dangerously-skip-permissions -p {prompt}"   # or: claude -p
+model_label = "antigravity"
+```
+
+Any CLI that takes a prompt and prints markdown works. The fact-checker is
+model-agnostic, so a cheaper writer never weakens the trust layer.
+
+---
 
 ## The dashboard
 
-`irag dashboard` — a local, zero-dependency web UI:
+`irag dashboard` — local, zero-dependency, and a **full peer of the CLI**.
+Anything you can type, you can click.
 
-![Interactive dependency graph](docs/assets/dependency-graph.jpg)
+<p align="center">
+  <img src="docs/assets/dashboard-overview.jpg" alt="Overview: what needs attention, token burn, live activity" width="100%">
+</p>
 
-- **Map** — an interactive, Obsidian-style dependency graph: drag to
-  pan, scroll to zoom, drag nodes, hover to trace imports.
-- **Search everything** — `⌘K` opens a command palette over every page,
-  view and action, matching page text as well as names (instant, zero
-  tokens).
-- **Pages** — one page, one object: its summary, version history and
-  diffs, the contradictions on it, and what it defines / imports / is
-  imported by (clickable, so the graph is walkable). Pin, roll back, and
-  trace a claim to the commit that created it.
-- **Sessions** — the conversation log with per-file change detail, plus
-  the verbatim transcript when capture is enabled.
-- **Overview** — live token burn, metric cards, activity feed.
-- **Health** — open contradictions with one-click resolve, staleness.
-- **Chat** — auto-routes lookups to instant SQL search and questions to
-  AI answers with citations.
-- **Tools** — preview the exact briefing your agent is injected (with its
-  token count), time-travel with `asof`, and run every operation: sync,
-  scan, lint, CI check, backup, doctor, Obsidian export, re-install the
-  agent guide, wire Claude Code hooks.
-- **Docs** — this documentation, rendered in-app.
+**`⌘K` searches everything** — pages, views, actions, and the *text inside*
+your summaries. Instant, zero tokens.
 
-Anything you can do in the CLI you can do in the GUI — the dashboard is
-a full peer, not a read-only viewer.
+<p align="center">
+  <img src="docs/assets/command-palette.jpg" alt="Command palette searching pages and page text" width="100%">
+</p>
 
-![Session diary](docs/assets/sessions.jpg)
+- **Pages** — one page is one object: summary, version history and diffs,
+  the contradictions on it, and what it defines / imports / is imported by
+  (clickable, so you walk the graph from where you are).
+- **Overview** — what needs attention, each with the button that fixes it.
+- **Health** — contradictions with one-click resolve, staleness.
+- **Map** — an Obsidian-style dependency graph: pan, zoom, trace imports.
+- **Sessions** — every conversation with its per-file changes, and the
+  verbatim transcript when capture is on.
+- **Tools** — preview the exact briefing your agent gets, time-travel, and
+  run every operation without a terminal.
+- **Chat** — routes lookups to instant SQL and questions to AI answers.
+
+<p align="center">
+  <img src="docs/assets/dependency-graph.jpg" alt="Interactive dependency graph" width="49%">
+  <img src="docs/assets/sessions.jpg" alt="Session diary with per-file changes and transcript" width="49%">
+</p>
+
+---
+
+## Measured, not claimed
+
+Run on irag's own source — 20 modules, 5,144 lines — on a laptop:
+
+| | |
+|---|---|
+| Full structural scan | **155 symbols, 70 import edges, 0.08s, 0 tokens** |
+| `irag impact irag/db.py` | **13 dependent modules, 0.08s, 0 tokens** |
+| Resume a past conversation | **~87 tokens** |
+| Brief a fresh session | **~650 tokens** effective, budget-capped |
+| Runtime dependencies | **0** |
+| Static analysis | **pyflakes clean** |
+
+The read path costs nothing because nothing on it calls a model. That's a
+property of the architecture, not a benchmark you have to take on trust.
+
+```bash
+sh tests/test_smoke.sh    # the whole lifecycle, against a mock model — costs nothing
+```
+
+One command exercises init → ingest → synthesize → lint → contradiction
+detection → CI gate → rollback → sessions → search/ask/recap/asof →
+dashboard API → Obsidian export → directory-wise scoping → multi-language
+graph → transcript capture. The mock model in the suite **deliberately
+hallucinates a missing file**, so the fact-checker is proven to catch it
+rather than assumed to. CI runs it on Python 3.11–3.13 on every push.
+
+---
+
+## Why a database, not a markdown file
+
+Flat context files rot: stale claims nobody notices, links to files that
+no longer exist, no way to ask *when* something became true or *why* the
+file says it. Those aren't prose problems, they're **storage problems**.
+
+| Memory | Question it answers | How irag does it |
+|---|---|---|
+| Structural | "how is the code shaped?" | AST/regex scan → `map`, `impact` — **zero tokens** |
+| Semantic | "what is true here, and why?" | a versioned page per file & folder, **lint-verified** |
+| Episodic | "what happened last session?" | every conversation logged with its exact per-file changes |
+
+Two rules drive every design decision:
+
+1. **The model never does bookkeeping.** Locating, counting, dating,
+   diffing, scheduling, verifying — all SQL. The LLM only writes prose.
+2. **Memory is data, read on demand.** `.irag/memory.db` is the only
+   source of truth. `CLAUDE.md` is a static operator manual, not the
+   memory.
 
 ## How it compares
 
 | | Graphify | claude-mem | irag |
 |---|---|---|---|
 | Kind of memory | structural | episodic | structural + semantic + episodic |
-| Can it be wrong? | rarely (a parse) | yes, silently, forever | yes — **and it detects, records, and gates on it** |
-| Cost scales with | commits (free) | conversation volume | repo churn — on whatever cheap model you configure |
+| Can it be wrong? | rarely (a parse) | yes, silently, forever | yes — **and it detects, records and gates CI on it** |
+| Storage | — | vector DB | **one SQLite file, zero deps** |
+| Cost scales with | commits (free) | conversation volume | repo churn, on whatever model you choose |
 
-Full honest comparison (including where the others win):
+Honest full comparison, including where the others win:
 [docs/COMPARISON.md](docs/COMPARISON.md).
+
+## Where this came from
+
+It started as a Database Systems assignment. Karpathy's LLM Wiki had just
+landed and the failure mode was obvious: it was all just files — nothing
+versioned, nothing checked, nothing stopping it going quietly stale while
+people kept trusting it.
+
+I picked a law firm as the domain, which turned out to be the right kind
+of hard: a wrong court date is a real failure, not a bad chatbot answer.
+That pressure produced the actual idea — **a database system with an AI
+layer, not an AI system with a database attached**. Five tables did the
+real work; the AI only ever wrote prose. I tested it by imagining the AI
+ripped out entirely, and a working system was still standing.
+
+Those five tables were never about law firms. They were an answer to
+*how do you let an AI write something you can actually trust?* — so I
+pointed them at coding agents, the things that forget everything the
+moment you close the terminal.
+
+The full version: [docs/STORY.md](docs/STORY.md).
 
 ## Commands (36)
 
@@ -276,53 +265,18 @@ Full reference: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
 ## Documentation
 
-**📖 Full docs site: [karang1908.github.io/iRag](https://karang1908.github.io/iRag/)**
-— searchable, with a quickstart, architecture deep-dive, and full CLI
-reference. Built by `site/build.py` (stdlib, zero deps) and deployed by
-CI on every push. The same content lives in this repo:
+**📖 [karang1908.github.io/iRag](https://karang1908.github.io/iRag/)** —
+searchable, with a quickstart, architecture deep-dive and full CLI
+reference. Built by `site/build.py` (stdlib, zero deps). The same content
+lives here:
 
-- [docs/SETUP.md](docs/SETUP.md) — install, LLM configuration (incl.
-  the agy/Antigravity split), hooks, CI gate
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — schema, data flows,
-  retrieval scoring, design principles
-- [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) — every command & flag
-- [docs/COMPARISON.md](docs/COMPARISON.md) — vs Graphify & claude-mem
-- [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) — contributing /
-  non-negotiables
-- [docs/HANDOFF.md](docs/HANDOFF.md) — for an AI agent picking up
-  *development on irag itself*
+- [SETUP.md](docs/SETUP.md) — install, LLM configuration, hooks, CI gate
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — schema, data flows, retrieval scoring
+- [CLI_REFERENCE.md](docs/CLI_REFERENCE.md) — every command and flag
+- [COMPARISON.md](docs/COMPARISON.md) — vs Graphify & claude-mem
+- [DEVELOPMENT.md](docs/DEVELOPMENT.md) — contributing
+- [HANDOFF.md](docs/HANDOFF.md) — for an agent developing irag itself
 - [CHANGELOG.md](CHANGELOG.md)
-
-## Testing & measurements
-
-```bash
-sh tests/test_smoke.sh    # full lifecycle against a deterministic mock LLM — costs nothing
-```
-
-One command exercises the whole system end-to-end: init → ingest →
-synthesize → lint → contradiction detection → CI gate → rollback →
-sessions → search/ask/recap/asof → dashboard API → Obsidian export →
-directory-wise scoping → multi-language graph → transcript capture. It
-runs against a mock model that deliberately hallucinates a missing file,
-so the fact-checker is proven to catch it rather than assumed to.
-
-**Measured on irag's own source** (20 modules, 5,144 lines), on a laptop:
-
-| what | result |
-|---|---|
-| Structural scan of the whole codebase | **155 symbols, 70 import edges, 0.08s, 0 tokens** |
-| `irag impact irag/db.py` (blast radius) | **13 dependent modules, 0.08s, 0 tokens** |
-| Resume a past conversation (`irag recap`) | **~87 tokens** |
-| Brief a fresh session (`irag context`) | **~650 tokens effective**, capped by config |
-| Runtime dependencies | **0** (stdlib only) |
-| Static analysis | **pyflakes clean** |
-
-Reads cost nothing because nothing on that path calls a model — it's SQL
-over SQLite's FTS5 index plus a parsed symbol table. The one paid step is
-writing summaries, on whatever cheap model you point at it.
-
-CI runs the same suite plus pyflakes and a package build on every push
-(Python 3.11–3.13).
 
 ## Roadmap
 
@@ -334,4 +288,4 @@ CI runs the same suite plus pyflakes and a package build on every push
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) · built by [Karan Garg](https://github.com/Karang1908)

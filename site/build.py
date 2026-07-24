@@ -671,10 +671,10 @@ diff its history, roll one back, trace a claim to the commit that created it, re
 a past conversation verbatim, preview the exact briefing your agent receives, and
 run every maintenance operation. Anything you can type, you can click.</p>
 <div class="shots">
-<figure class="tilt px"><img src="assets/dashboard-overview.jpg" alt="irag dashboard overview" loading="lazy">
-<figcaption>live dashboard: token burn, health, activity</figcaption></figure>
-<figure class="tilt px"><img src="assets/dependency-graph.jpg" alt="Interactive dependency graph" loading="lazy">
-<figcaption>dependency graph: pan, zoom, trace imports</figcaption></figure>
+<figure class="tilt px"><img src="assets/pages-memory.jpg" alt="One page: summary, structure and history" loading="lazy">
+<figcaption>one page, one object: summary, structure, history, problems</figcaption></figure>
+<figure class="tilt px"><img src="assets/command-palette.jpg" alt="Command palette searching page text" loading="lazy">
+<figcaption>⌘K searches page text, not just names &mdash; zero tokens</figcaption></figure>
 </div>
 </section>
 <div class="marq" aria-hidden="true"><div class="marq-in">
