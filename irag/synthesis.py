@@ -350,8 +350,10 @@ def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False) -> bool:
     # version_number is computed inside the INSERT (a subquery evaluated
     # while holding WAL's write lock) so two concurrent writers on the same
     # page can't both read the same MAX and collide; tokens_used counts the
-    # prompt as well as the output (the prompt is usually the larger half)
-    tokens = (len(prompt) + len(body)) // 4
+    # prompt as well as the output (the prompt is usually the larger half),
+    # estimated by the shared, code-aware counter (never claimed exact)
+    from . import tokens as tokens_mod
+    tokens = tokens_mod.count(prompt) + tokens_mod.count(body)
     conn.execute(
         "INSERT INTO revisions(page_id, version_number, body_markdown, "
         "change_summary, triggered_by_event_id, llm_model_used, tokens_used) "

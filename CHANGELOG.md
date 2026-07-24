@@ -4,7 +4,36 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
-## Unreleased
+## 4.3.0 — 2026-07-24
+
+### Added — pluggable memory: verbatim transcripts + a wider code graph
+- **Opt-in conversation transcripts.** `[sessions].capture_transcript`
+  (default **off**) makes `session-end` store the verbatim conversation —
+  your prompts and the agent's replies, tool calls noted as `[tool: X]` —
+  in a new `session_messages` table, read back with the new `irag
+  transcript <id>` command (36 commands total). Claude Code pipes its
+  transcript path in on stdin automatically; other agents pass
+  `--transcript <file.jsonl>`. Internal reasoning and raw tool output are
+  never stored, and capture is off by default because transcripts can
+  carry secrets — enabling it is one config line. `session-end` never
+  blocks on stdin (guarded read).
+- **The structural graph now covers Java, C#, Ruby, PHP, and C/C++** on
+  top of Python/JS/TS/Go/Rust. `irag map`, `irag impact`, and the
+  dashboard graph now show symbols for all of them; import edges resolve
+  for file-relative imports (Ruby `require_relative`, C/C++ `#include
+  "..."`, relative JS/PHP includes). Java/C# contribute symbols but not
+  edges (package-path imports need source roots irag doesn't track). This
+  also closes a latent false-positive: in a mixed-language repo, a symbol
+  claim on a previously-unparsed language's page could be wrongly flagged
+  as a phantom symbol.
+
+### Changed — trustworthy token estimates
+- Token counting is centralized in `irag.tokens` with a code-aware
+  heuristic (closer than the old `chars // 4`, which undercounts
+  punctuation-dense source) and sharpened by `tiktoken` when it happens
+  to be installed. Still reported as an **estimate** — irag stays
+  dependency-free and its default summarizer is Claude, whose exact
+  tokenizer isn't public, so an honest estimate beats a false "exact".
 
 ### Changed — **CLAUDE.md is now a static agent guide installed by `irag init`**
 - `irag init` installs `CLAUDE.md` + `AGENTS.md` — irag's operator manual

@@ -177,8 +177,12 @@ SQL side: instant FTS5 full-text lookup, zero tokens.
 Force-rebuild the structural map (symbols + dependency edges). Runs
 automatically on `init`, `sync`, `context`, `map`, and `impact` whenever
 HEAD has changed, so you rarely need it by hand. Pure parsing — Python
-via `ast`; JS/TS/Go/Rust via regex; zero LLM tokens; capped at 300KB per
-file / 4000 files.
+via `ast`; JS/TS, Go, Rust, Java, C#, Ruby, PHP, and C/C++ via regex;
+zero LLM tokens; capped at 300KB per file / 4000 files. Import edges
+resolve for languages with file-relative imports (JS/TS, Python, Ruby
+`require_relative`, C/C++ `#include "..."`, relative PHP includes); Java
+and C# contribute symbols but not edges (their imports are package paths,
+which need source roots irag doesn't track).
 
 ### `irag map [SUBJECT]`
 
@@ -216,7 +220,7 @@ the operator manual that teaches agents to use `irag map`/`impact`/
 `search`/`why` instead of exploring, and to log with `irag learn`/
 `irag record-decision`.
 
-### `irag session-begin` / `irag session-end [--no-narrate]`
+### `irag session-begin` / `irag session-end [--no-narrate] [--transcript FILE]`
 
 The conversation logger (called automatically by the Claude Code hooks;
 usable by any agent or human). `session-begin` opens a diary entry and
@@ -229,6 +233,19 @@ is unavailable or `--no-narrate`). It also records, redundantly with
 `revisions` (cheap to duplicate, expensive to join every time), the
 exact per-file `change_summary` for every page version written that
 session — this is `changes_detail` in `--json` output.
+
+When `[sessions].capture_transcript = true` (off by default — transcripts
+can contain secrets), `session-end` also stores the **verbatim
+conversation**. Claude Code pipes the transcript path in on stdin
+automatically; other agents pass `--transcript <file.jsonl>`. Read it
+back with `irag transcript`.
+
+### `irag transcript SESSION_ID [--json]`
+
+Print the stored verbatim messages (your prompts + the agent's replies,
+tool calls noted as `[tool: Name]`) for a logged session. Empty unless
+`[sessions].capture_transcript` was on when the session closed. Internal
+reasoning and raw tool output are never stored.
 
 ### `irag sessions [-n N] [--json]`
 

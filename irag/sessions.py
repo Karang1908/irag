@@ -153,6 +153,87 @@ def end(conn: sqlite3.Connection, cfg: dict | None,
     return _close(conn, cfg, row["session_id"], narrate=narrate)
 
 
+def _message_text(content) -> str:
+    """Flatten a Claude-Code transcript `message.content` (a plain string,
+    or a list of typed blocks) into readable text. Assistant turns are
+    block lists (text / thinking / tool_use); user turns are usually a
+    string, or a list carrying a tool_result. We keep prose and note tool
+    calls compactly, and drop internal `thinking` and raw tool output —
+    the goal is a readable record of the exchange, not a byte-for-byte
+    replay."""
+    if isinstance(content, str):
+        return content.strip()
+    if not isinstance(content, list):
+        return ""
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+        btype = block.get("type")
+        if btype == "text":
+            parts.append(str(block.get("text", "")).strip())
+        elif btype == "tool_use":
+            parts.append(f"[tool: {block.get('name', '?')}]")
+        # 'thinking' and 'tool_result' are intentionally skipped
+    return "\n".join(p for p in parts if p).strip()
+
+
+def ingest_transcript(conn: sqlite3.Connection, session_id: int,
+                      transcript_path, max_messages: int = 400,
+                      max_message_chars: int = 4000) -> int:
+    """Parse a Claude-Code JSONL transcript and store its user/assistant
+    messages against `session_id`. Idempotent per session (clears any
+    prior rows first). Returns the number of messages stored."""
+    from pathlib import Path
+    path = Path(transcript_path)
+    if not path.is_file():
+        return 0
+    collected: list[tuple[str, str, str]] = []   # (role, content, ts)
+    with path.open(encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if obj.get("type") not in ("user", "assistant"):
+                continue
+            if obj.get("isMeta") or obj.get("isSidechain"):
+                continue
+            msg = obj.get("message")
+            if not isinstance(msg, dict):
+                continue
+            text = _message_text(msg.get("content"))
+            if not text:
+                continue
+            role = msg.get("role") or obj.get("type")
+            collected.append((role, text[:max_message_chars],
+                              obj.get("timestamp")))
+    if not collected:
+        return 0
+    if len(collected) > max_messages:
+        collected = collected[-max_messages:]   # keep the most recent
+    conn.execute("DELETE FROM session_messages WHERE session_id=?",
+                 (session_id,))
+    conn.executemany(
+        "INSERT INTO session_messages(session_id, seq, role, content, "
+        "created_at) VALUES(?,?,?,?,?)",
+        [(session_id, i, role, content, ts)
+         for i, (role, content, ts) in enumerate(collected)])
+    conn.commit()
+    return len(collected)
+
+
+def transcript(conn: sqlite3.Connection, session_id: int) -> list[dict]:
+    """The stored verbatim messages for a session, in order."""
+    rows = conn.execute(
+        "SELECT seq, role, content, created_at FROM session_messages "
+        "WHERE session_id=? ORDER BY seq", (session_id,)).fetchall()
+    return [dict(r) for r in rows]
+
+
 def row_to_dict(row: sqlite3.Row) -> dict:
     """A `sessions` row as a JSON-ready dict — parses the two JSON-text
     columns (files_changed, changes_detail) instead of leaving them as

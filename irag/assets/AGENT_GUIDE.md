@@ -135,8 +135,9 @@ against the code first.
 
 ## Command index
 
-Read: `context` · `recap` · `sessions` · `search` · `ask` · `map` ·
-`impact` · `why` · `asof` · `diff` · `status` · `stale` · `contradictions`
+Read: `context` · `recap` · `sessions` · `transcript` · `search` · `ask` ·
+`map` · `impact` · `why` · `asof` · `diff` · `status` · `stale` ·
+`contradictions`
 Write: `update` · `learn` · `record-decision` · `resolve`
 Setup (Phase 1 only): `init` · `doctor` · `claude-setup`
 Human-only: `rollback` · `pin` · `backup` · `dashboard` · `obsidian` ·

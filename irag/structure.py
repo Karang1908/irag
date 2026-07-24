@@ -27,7 +27,13 @@ PY_EXT = {".py"}
 JS_EXT = {".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
 GO_EXT = {".go"}
 RS_EXT = {".rs"}
-CODE_EXT = PY_EXT | JS_EXT | GO_EXT | RS_EXT
+JAVA_EXT = {".java"}
+CS_EXT = {".cs"}
+RB_EXT = {".rb"}
+PHP_EXT = {".php"}
+C_EXT = {".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx"}
+CODE_EXT = (PY_EXT | JS_EXT | GO_EXT | RS_EXT | JAVA_EXT | CS_EXT | RB_EXT
+            | PHP_EXT | C_EXT)
 
 JS_SYMBOL_RE = re.compile(
     r"^\s*(?:export\s+)?(?:default\s+)?"
@@ -46,6 +52,60 @@ RS_SYMBOL_RE = re.compile(
     r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:fn\s+(\w+)|struct\s+(\w+)|enum\s+(\w+)|trait\s+(\w+))",
     re.M,
 )
+
+# --- languages added by the graph-widening pass ---------------------
+# The phantom-symbol linter only ever flags a `name()` claim it can't
+# find, so these regexes bias toward *over*-capturing callables: a missed
+# method would falsely flag real code, an extra symbol only softens a
+# check. Type declarations feed `irag map`; method/function captures feed
+# both `map` and the linter.
+JAVA_TYPE_RE = re.compile(
+    r"^\s*(?:(?:public|private|protected|abstract|final|static|sealed|strictfp)\s+)*"
+    r"(?:class|interface|enum|record)\s+(\w+)", re.M)
+# any brace-bodied `[modifiers/return type] name(...) {` — catches
+# modifier-less and package-private methods and constructors that a
+# modifier-anchored pattern would miss (the miss being the unsafe
+# direction: it would falsely flag a real method as a phantom symbol).
+# Control-flow keywords that share this shape are filtered in the loop.
+JAVA_METHOD_RE = re.compile(
+    r"^\s*(?:@\w+[\w.]*(?:\([^)]*\))?\s+)*[\w<>\[\].,?\s]*?\b(\w+)\s*"
+    r"\([^;{]*\)\s*(?:throws[\w,.\s]+)?\{", re.M)
+
+CS_TYPE_RE = re.compile(
+    r"^\s*(?:(?:public|private|protected|internal|abstract|sealed|static|partial)\s+)*"
+    r"(?:class|interface|struct|enum|record)\s+(\w+)", re.M)
+CS_METHOD_RE = re.compile(
+    r"^\s*(?:\[[^\]]*\]\s*)*[\w<>\[\].,?\s]*?\b(\w+)\s*\([^;{]*\)\s*\{", re.M)
+
+# control-flow and expression keywords that the generic method regexes
+# above would otherwise capture as a method named e.g. `if` or `switch`
+_METHOD_SKIP = {"if", "for", "while", "switch", "return", "catch", "do",
+                "else", "new", "synchronized", "throw", "super", "this",
+                "assert", "yield", "lock", "using", "fixed", "await",
+                "instanceof", "sizeof"}
+
+RB_TYPE_RE = re.compile(r"^\s*(?:class|module)\s+([A-Z]\w*)", re.M)
+RB_METHOD_RE = re.compile(r"^\s*def\s+(?:self\.)?([A-Za-z_]\w*[?!=]?)", re.M)
+RB_IMPORT_RE = re.compile(r"""require_relative\s+['"]([^'"]+)['"]""")
+
+PHP_TYPE_RE = re.compile(
+    r"^\s*(?:(?:abstract|final)\s+)*(?:class|interface|trait)\s+(\w+)", re.M)
+PHP_FUNC_RE = re.compile(
+    r"^\s*(?:(?:public|private|protected|static|final|abstract)\s+)*"
+    r"function\s+(\w+)", re.M)
+PHP_IMPORT_RE = re.compile(
+    r"""(?:require|require_once|include|include_once)\s*\(?\s*['"]([^'"]+)['"]""")
+
+C_TYPE_RE = re.compile(
+    r"^\s*(?:typedef\s+)?(?:struct|class|enum|union)\s+(\w+)", re.M)
+C_FUNC_RE = re.compile(
+    r"^[A-Za-z_][\w\s\*&:<>,]*?\b(\w+)\s*\([^;{]*\)\s*(?:const\s*)?"
+    r"(?:noexcept\s*)?\{", re.M)
+C_INCLUDE_RE = re.compile(r'^\s*#\s*include\s+"([^"]+)"', re.M)
+# words that C_FUNC_RE would otherwise mistake for a function name
+_C_KEYWORDS = {"if", "for", "while", "switch", "return", "sizeof", "catch",
+               "do", "else", "defined", "static_assert", "typeof", "and",
+               "or", "not"}
 
 
 def _iter_code_files(repo: Path, cfg: dict):
@@ -67,7 +127,9 @@ def _iter_code_files(repo: Path, cfg: dict):
         yield f, str(rel)
 
 
-IMPORT_EXTS = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rs")
+IMPORT_EXTS = (".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".go", ".rs",
+               ".rb", ".php", ".c", ".h", ".cc", ".cpp", ".hpp", ".cs",
+               ".java")
 
 
 def _resolve_import(path_like: str, repo: Path,
@@ -84,6 +146,24 @@ def _resolve_import(path_like: str, repo: Path,
         if cand in known_files:
             return cand
     return None
+
+
+def _rel_to_repo(rel: str, spec: str) -> str:
+    """Normalise a relative import spec (`./x`, `../y/z`) against the
+    importing file's directory into a repo-relative path, without touching
+    the filesystem. Used by JS/Ruby/C/PHP relative-import resolution."""
+    parts: list[str] = []
+    for p in (Path(rel).parent / spec).parts:
+        if p == "..":
+            if parts:
+                parts.pop()
+        elif p != ".":
+            parts.append(p)
+    return "/".join(parts)
+
+
+def _line(text: str, pos: int) -> int:
+    return text[:pos].count("\n") + 1
 
 
 def _py_parse(text: str, rel: str):
@@ -120,30 +200,60 @@ def _regex_parse(text: str, rel: str, suffix: str):
         for m in JS_SYMBOL_RE.finditer(text):
             name = m.group(1) or m.group(2) or m.group(3)
             kind = "class" if m.group(2) else "function"
-            yield ("sym", name, kind, text[:m.start()].count("\n") + 1)
+            yield ("sym", name, kind, _line(text, m.start()))
         for m in JS_IMPORT_RE.finditer(text):
             spec = m.group(1)
             if spec.startswith("."):  # relative → repo path
-                try:
-                    # normalise without touching the filesystem root
-                    parts = []
-                    for p in (Path(rel).parent / spec).parts:
-                        if p == "..":
-                            if parts:
-                                parts.pop()
-                        elif p != ".":
-                            parts.append(p)
-                    yield ("imp", "/".join(parts))
-                except ValueError:
-                    continue
+                yield ("imp", _rel_to_repo(rel, spec))
     elif suffix in GO_EXT:
         for m in GO_SYMBOL_RE.finditer(text):
-            yield ("sym", m.group(1), "function", text[:m.start()].count("\n") + 1)
+            yield ("sym", m.group(1), "function", _line(text, m.start()))
     elif suffix in RS_EXT:
         for m in RS_SYMBOL_RE.finditer(text):
             name = next(g for g in m.groups() if g)
             kind = "function" if m.group(1) else "type"
-            yield ("sym", name, kind, text[:m.start()].count("\n") + 1)
+            yield ("sym", name, kind, _line(text, m.start()))
+    elif suffix in JAVA_EXT:
+        for m in JAVA_TYPE_RE.finditer(text):
+            yield ("sym", m.group(1), "class", _line(text, m.start()))
+        for m in JAVA_METHOD_RE.finditer(text):
+            if m.group(1) not in _METHOD_SKIP:
+                yield ("sym", m.group(1), "method", _line(text, m.start()))
+        # Java imports are package paths, not files — resolving them needs
+        # source roots we don't track, so Java contributes symbols but no
+        # dependency edges (documented in the graph-widening notes).
+    elif suffix in CS_EXT:
+        for m in CS_TYPE_RE.finditer(text):
+            yield ("sym", m.group(1), "class", _line(text, m.start()))
+        for m in CS_METHOD_RE.finditer(text):
+            if m.group(1) not in _METHOD_SKIP:
+                yield ("sym", m.group(1), "method", _line(text, m.start()))
+    elif suffix in RB_EXT:
+        for m in RB_TYPE_RE.finditer(text):
+            yield ("sym", m.group(1), "class", _line(text, m.start()))
+        for m in RB_METHOD_RE.finditer(text):
+            yield ("sym", m.group(1), "method", _line(text, m.start()))
+        for m in RB_IMPORT_RE.finditer(text):
+            yield ("imp", _rel_to_repo(rel, m.group(1)))
+    elif suffix in PHP_EXT:
+        for m in PHP_TYPE_RE.finditer(text):
+            yield ("sym", m.group(1), "class", _line(text, m.start()))
+        for m in PHP_FUNC_RE.finditer(text):
+            yield ("sym", m.group(1), "function", _line(text, m.start()))
+        for m in PHP_IMPORT_RE.finditer(text):
+            spec = m.group(1)
+            if spec.startswith("."):
+                yield ("imp", _rel_to_repo(rel, spec))
+    elif suffix in C_EXT:
+        for m in C_TYPE_RE.finditer(text):
+            yield ("sym", m.group(1), "type", _line(text, m.start()))
+        for m in C_FUNC_RE.finditer(text):
+            name = m.group(1)
+            if name in _C_KEYWORDS:
+                continue   # `if (...) {`, `while (...) {`, ... are not funcs
+            yield ("sym", name, "function", _line(text, m.start()))
+        for m in C_INCLUDE_RE.finditer(text):
+            yield ("imp", _rel_to_repo(rel, m.group(1)))
 
 
 def scan(conn: sqlite3.Connection, cfg: dict, repo: Path,

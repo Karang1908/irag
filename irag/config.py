@@ -35,6 +35,16 @@ token_budget = 8000
 full_max = 4
 min_score = 20
 
+[sessions]
+# store the verbatim conversation (your prompts + the agent's replies) in
+# the project diary, not just the file changes it made. Off by default:
+# transcripts can contain secrets. When true, SessionEnd ingests the
+# Claude Code transcript; other agents pass one with 'session-end
+# --transcript <file.jsonl>'. Read it back with 'irag transcript <id>'.
+capture_transcript = false
+max_messages = 400          # keep at most this many messages per session
+max_message_chars = 4000    # truncate any single message to this many chars
+
 [check]
 max_staleness = 150
 fail_on_contradictions = true
@@ -62,6 +72,11 @@ DEFAULTS: dict[str, Any] = {
         "token_budget": 8000,
         "full_max": 4,
         "min_score": 20,
+    },
+    "sessions": {
+        "capture_transcript": False,
+        "max_messages": 400,
+        "max_message_chars": 4000,
     },
     "check": {
         "max_staleness": 150,

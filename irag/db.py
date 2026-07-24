@@ -115,6 +115,22 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_time ON sessions(started_at);
 
+-- Verbatim conversation transcript (opt-in: [sessions].capture_transcript).
+-- One row per user/assistant message in a logged session, so the diary can
+-- hold the actual back-and-forth, not only the changes it produced. Off by
+-- default because transcripts can carry secrets; enabling it is one config
+-- line and the SessionEnd hook already pipes the transcript path in.
+CREATE TABLE IF NOT EXISTS session_messages (
+  message_id INTEGER PRIMARY KEY,
+  session_id INTEGER NOT NULL REFERENCES sessions(session_id),
+  seq        INTEGER NOT NULL,
+  role       TEXT NOT NULL,          -- user | assistant
+  content    TEXT NOT NULL,
+  created_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_session_messages
+  ON session_messages(session_id, seq);
+
 -- Working-tree fingerprints for snapshot-mode ingestion (no git needed)
 CREATE TABLE IF NOT EXISTS tree_state (
   path TEXT PRIMARY KEY,

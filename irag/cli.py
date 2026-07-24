@@ -567,14 +567,68 @@ def cmd_session_begin(args) -> int:
     return 0
 
 
+def _stdin_transcript_path(cfg: dict) -> str | None:
+    """A Claude Code SessionEnd hook pipes its payload as JSON on stdin,
+    carrying `transcript_path`. Only look for it when transcript capture is
+    enabled, and never block: `select` with a short timeout means a manual,
+    input-less `session-end` returns immediately instead of hanging."""
+    if not cfg.get("sessions", {}).get("capture_transcript"):
+        return None
+    import sys as _sys
+    import select
+    try:
+        if _sys.stdin.isatty():
+            return None
+        ready, _, _ = select.select([_sys.stdin], [], [], 0.25)
+        if not ready:
+            return None
+        raw = _sys.stdin.read()
+    except (OSError, ValueError):
+        return None
+    if not raw.strip():
+        return None
+    try:
+        return json.loads(raw).get("transcript_path")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+
+
 def cmd_session_end(args) -> int:
     from . import sessions
     conn, cfg, _ = _open()
+    tpath = getattr(args, "transcript", None) or _stdin_transcript_path(cfg)
     rec = sessions.end(conn, cfg, narrate=not args.no_narrate)
     if rec is None:
         print("no open session")
         return 0
-    print(f"session {rec['session_id']} logged: {rec['summary'][:200]}")
+    line = f"session {rec['session_id']} logged: {rec['summary'][:200]}"
+    scfg = cfg.get("sessions", {})
+    if tpath and scfg.get("capture_transcript"):
+        n = sessions.ingest_transcript(
+            conn, rec["session_id"], tpath,
+            max_messages=int(scfg.get("max_messages", 400)),
+            max_message_chars=int(scfg.get("max_message_chars", 4000)))
+        if n:
+            line += f"  (+{n} transcript message(s))"
+    print(line)
+    return 0
+
+
+def cmd_transcript(args) -> int:
+    from . import sessions
+    conn, _, _ = _open()
+    msgs = sessions.transcript(conn, args.session_id)
+    if not msgs:
+        print(f"no transcript stored for session {args.session_id} "
+              "— enable [sessions].capture_transcript in .irag/config.toml")
+        return 0
+    if args.json:
+        print(json.dumps(msgs, indent=2, default=str))
+        return 0
+    for m in msgs:
+        when = (m["created_at"] or "")[:19]
+        print(f"\n### {m['role'].upper()}  {when}".rstrip())
+        print(m["content"])
     return 0
 
 
@@ -726,7 +780,17 @@ def build_parser() -> argparse.ArgumentParser:
                         "conversation (hooks call this)")
     sp.add_argument("--no-narrate", action="store_true",
                     help="skip the LLM narrative; deterministic digest only")
+    sp.add_argument("--transcript", metavar="FILE",
+                    help="ingest this JSONL conversation transcript "
+                         "(Claude Code hooks pass it on stdin automatically; "
+                         "requires [sessions].capture_transcript = true)")
     sp.set_defaults(func=cmd_session_end)
+
+    sp = sub.add_parser("transcript", help="print a logged session's "
+                        "verbatim conversation (if capture is enabled)")
+    sp.add_argument("session_id", type=int)
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_transcript)
 
     sp = sub.add_parser("sessions", help="list the conversation log")
     sp.add_argument("-n", type=int, default=10)

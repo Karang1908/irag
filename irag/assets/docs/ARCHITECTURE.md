@@ -63,6 +63,10 @@ Core relations plus an FTS5 inverted index:
   summary, and `changes_detail` (the full per-file
   `{subject_id, version_number, change_summary}` list, deliberately
   redundant with `revisions` so reading a session never needs a join)
+- **session_messages** — the opt-in verbatim transcript
+  (`[sessions].capture_transcript`): user/assistant messages per session,
+  so the diary can hold the actual conversation, not only its file
+  changes. Off by default (transcripts can carry secrets)
 - **symbols / deps** — the deterministic structural map, rebuilt by the
   scanner, gated on a working-tree content fingerprint (not git HEAD,
   so uncommitted edits are seen)
@@ -90,8 +94,12 @@ pointers or resets staleness — the invariant lives in the database.
 
 `irag.structure.scan` parses source into two relations — ``symbols`` (name,
 kind, file:line per module) and ``deps`` (module→module import edges,
-counted) — Python via `ast`, JS/TS/Go/Rust via regex, rebuilt only when
-HEAD changes. It is pure parsing: deterministic, local, free. The map is
+counted) — Python via `ast`, and JS/TS, Go, Rust, Java, C#, Ruby, PHP,
+and C/C++ via regex, rebuilt only when HEAD changes. Import edges resolve
+for file-relative imports (Ruby `require_relative`, C `#include "..."`,
+relative JS/PHP); Java and C# yield symbols but not edges (package-path
+imports need source roots). It is pure parsing: deterministic, local,
+free. The map is
 load-bearing everywhere: `map`/`impact` answer structural questions
 without token spend; synthesis prompts embed the facts as ground truth
 (fewer hallucinations at the source); the linter verifies symbol claims

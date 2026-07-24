@@ -173,4 +173,59 @@ print('nested scoping ok')
 " || { echo "FAIL: nested project page scoping"; exit 1; }
 rm -rf "$MEGA"
 
+# --- widened structural graph: symbols + import edges for more languages
+# (Java/Ruby/C in addition to Python/JS/Go/Rust) ---
+POLY="$(mktemp -d)"
+mkdir -p "$POLY/lib"
+( cd "$POLY" && git init -q && git config user.email t@t \
+  && git config user.name t )
+printf 'module Helper\n  def self.go; end\nend\n' > "$POLY/lib/helper.rb"
+printf 'require_relative "./helper"\nclass App\n  def run; Helper.go; end\nend\n' \
+  > "$POLY/lib/app.rb"
+printf 'int util(void){return 1;}\n' > "$POLY/lib/util.h"
+printf '#include "util.h"\nint main(void){return util();}\n' > "$POLY/lib/main.c"
+printf 'public class Box { public int size() { return 1; } }\n' \
+  > "$POLY/lib/Box.java"
+( cd "$POLY" && git add -A && git commit -qm poly >/dev/null \
+  && python3 -m irag init >/dev/null 2>&1 && python3 -m irag scan >/dev/null )
+( cd "$POLY" && python3 -m irag map ) | grep -q "lib/Box.java" \
+  || { echo "FAIL: Java symbols missing from the map"; exit 1; }
+( cd "$POLY" && python3 -m irag impact lib/helper.rb ) | grep -q "lib/app.rb" \
+  || { echo "FAIL: ruby require_relative edge not resolved"; exit 1; }
+( cd "$POLY" && python3 -m irag impact lib/util.h ) | grep -q "lib/main.c" \
+  || { echo "FAIL: C #include edge not resolved"; exit 1; }
+rm -rf "$POLY"
+echo "poly-language graph ok"
+
+# --- opt-in transcript capture: the verbatim conversation in the diary ---
+TR="$(mktemp -d)"
+( cd "$TR" && git init -q && git config user.email t@t && git config user.name t \
+  && printf 'x=1\n' > a.py && git add -A && git commit -qm init >/dev/null \
+  && python3 -m irag init >/dev/null 2>&1 )
+python3 - "$TR" << 'PYEOF'
+import sys, pathlib
+cfg = pathlib.Path(sys.argv[1]) / ".irag" / "config.toml"
+cfg.write_text(cfg.read_text().replace("capture_transcript = false",
+                                        "capture_transcript = true"))
+PYEOF
+cat > "$TR/t.jsonl" << 'JEOF'
+{"type":"user","message":{"role":"user","content":"hello there"}}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"META skip me"}}
+{"type":"user","isSidechain":true,"message":{"role":"user","content":"SIDE skip me"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"SECRET reasoning"},{"type":"text","text":"hi back"},{"type":"tool_use","name":"Edit","input":{}}]}}
+JEOF
+( cd "$TR" && python3 -m irag session-begin >/dev/null \
+  && python3 -m irag session-end --no-narrate --transcript t.jsonl >/dev/null )
+TRID=$( cd "$TR" && python3 -c "import sqlite3; print(sqlite3.connect('.irag/memory.db').execute('SELECT MAX(session_id) FROM sessions').fetchone()[0])" )
+( cd "$TR" && python3 -m irag transcript "$TRID" ) > "$TR/out.txt"
+grep -q "hello there" "$TR/out.txt" \
+  || { echo "FAIL: transcript missing the user message"; exit 1; }
+grep -q "\[tool: Edit\]" "$TR/out.txt" \
+  || { echo "FAIL: transcript missing the tool_use note"; exit 1; }
+if grep -qE "META skip me|SIDE skip me|SECRET reasoning" "$TR/out.txt"; then
+  echo "FAIL: transcript leaked meta/sidechain/thinking content"; exit 1
+fi
+rm -rf "$TR"
+echo "transcript capture ok"
+
 echo "SMOKE TEST PASSED"

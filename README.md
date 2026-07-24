@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT">
-  <img src="https://img.shields.io/badge/version-4.2.0-purple" alt="Version 4.2.0">
+  <img src="https://img.shields.io/badge/version-4.3.0-purple" alt="Version 4.3.0">
 </p>
 
 <p align="center">
@@ -231,7 +231,7 @@ irag check                      # CI gate: exit 1 if memory disagrees with code
 Full honest comparison (including where the others win):
 [docs/COMPARISON.md](docs/COMPARISON.md).
 
-## Commands (35)
+## Commands (36)
 
 `init` · `claude-setup` · `doctor` — setup ·
 `sync` · `ingest-commit` · `scan` — detect ·
@@ -240,7 +240,7 @@ Full honest comparison (including where the others win):
 `search` · `map` · `impact` · `stale` · `status` · `diff` ·
 `contradictions` · `asof` — read (SQL, zero tokens) ·
 `ask` · `context` — read (AI) ·
-`session-begin` · `session-end` · `sessions` · `recap` — diary ·
+`session-begin` · `session-end` · `sessions` · `transcript` · `recap` — diary ·
 `pin` · `unpin` · `export` · `check` · `backup` — admin ·
 `dashboard` · `obsidian` · `why` — views & provenance
 
