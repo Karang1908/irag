@@ -146,11 +146,26 @@ so the hook and `irag sync` can overlap safely. `sync` walks
 
 A page is *pending* when it is not pinned and either has never been
 synthesized but has queued events, or its staleness score has reached the
-threshold. The prompt is diff-aware: module name, changed-file list,
-commit messages, capped contents of up to 5 changed files (~6000 chars
-total), and the current body ("none — write the first version"). The
-configured command receives the prompt on stdin and must return the full
-updated markdown on stdout. Queued events move to `processing`, then
+threshold.
+
+A **file** prompt carries: structural facts (symbols/imports, labelled
+ground truth), the parsed blast radius, commit messages, the **git diff
+of what actually changed** since the last synthesis (capped 4000 chars,
+spanning the queued commits — or the working tree when the edit isn't
+committed), the file's current content (capped 8000 chars), and the
+current page body ("none — write the first version"). The diff is why
+"## Recent changes" can describe the *change* rather than restate the
+file. In snapshot mode (no git toplevel) the diff is simply absent and
+everything else still works. A **folder** prompt rolls up its direct
+children's summaries instead.
+
+Every page ends with a `CHANGE-SUMMARY:` line, which is stripped from the
+body and stored as the revision's `change_summary` — so `irag sessions`
+and the dashboard show what a conversation really changed. If the model
+omits it, a generic fallback is used.
+
+The configured command receives the prompt on stdin and must return the
+full updated markdown on stdout. Queued events move to `processing`, then
 `completed` (or `failed`); the new revision records which event triggered
 it and which model wrote it.
 

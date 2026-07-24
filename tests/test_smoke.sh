@@ -81,6 +81,19 @@ assert 'subject_id' in last['changes_detail'][0]
 print('session changes_detail ok:', last['changes_detail'][0]['subject_id'])
 " || { echo "FAIL: session changes_detail check"; exit 1; }
 
+# the git diff reaches the synthesis prompt, and the model's own
+# CHANGE-SUMMARY replaces the old "synthesis from N event(s)" boilerplate
+python3 - << 'EOF'
+import sqlite3
+rows = [r[0] or "" for r in sqlite3.connect(".irag/memory.db").execute(
+    "SELECT change_summary FROM revisions")]
+assert any("from a code diff" in s for s in rows), \
+    f"git diff never reached the synthesis prompt: {rows[:6]}"
+assert not any("synthesis from" in s and "event(s)" in s for s in rows), \
+    f"boilerplate change_summary still in use: {rows[:6]}"
+print("change_summary is diff-derived; boilerplate gone")
+EOF
+
 python3 -m irag scan
 python3 -m irag map
 python3 -m irag map src/auth/login.py | grep -q "login" || { echo "FAIL: map missing symbol"; exit 1; }

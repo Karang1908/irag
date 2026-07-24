@@ -4,6 +4,28 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.5.0 — 2026-07-24
+
+### Changed — **synthesis now sees the actual code change, and says what it was**
+- **The git diff is fed to the synthesizer.** A file prompt now carries the
+  unified diff of what changed since the last synthesis (capped 4000
+  chars, spanning the queued commits — or the working tree for an
+  uncommitted edit) alongside the file's current content. Previously the
+  model saw only the *resulting* file and had to infer the change from the
+  commit message, so "## Recent changes" tended to restate the file.
+  Snapshot mode (no git toplevel) simply omits the diff and works as
+  before.
+- **`change_summary` is a real description now.** Every page ends with a
+  `CHANGE-SUMMARY:` line that is stripped from the body and stored on the
+  revision, replacing the old boilerplate `"file synthesis from 1
+  event(s)"`. This is what `irag sessions --json` (`changes_detail`) and
+  the dashboard's Sessions tab display, so the conversation log finally
+  says *what* each session changed. A generic fallback is used if the
+  model omits the line.
+- Docs: the ARCHITECTURE synthesis section was stale (it described a
+  5-file/6000-char prompt that no longer existed); it now matches the
+  implementation.
+
 ## 4.4.0 — 2026-07-24
 
 ### Added — **the dashboard is now a full peer of the CLI**

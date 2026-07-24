@@ -1,14 +1,19 @@
 """irag.synthesis — hierarchical LLM synthesis: file pages, then folders.
 
 Two prompt types. FILE pages summarize one file from its full (capped)
-content plus structural facts. FOLDER pages roll up their direct
+content, its structural facts, and the **git diff of what actually
+changed** since the last synthesis — so "## Recent changes" describes the
+change, not just the resulting file. FOLDER pages roll up their direct
 children's summaries — synthesized bottom-up after files, so the root
-page is a summary of summaries. The model only writes prose; queue
-state, versioning, and staleness live in SQL.
+page is a summary of summaries. Each page ends with a CHANGE-SUMMARY
+line that is stripped from the body and stored as the revision's
+change_summary. The model only writes prose; queue state, versioning,
+and staleness live in SQL.
 """
 from __future__ import annotations
 
 import json
+import re
 import shlex
 import sqlite3
 import subprocess
@@ -52,7 +57,14 @@ HARD RULES:
 3. Versions only as they literally appear in a manifest.
 4. No filler. Every line must tell an agent something actionable.
 5. Uncertain? Omit it. 80-250 words. Plain markdown, no code fences
-   around the page, no preamble — output starts with the # heading."""
+   around the page, no preamble — output starts with the # heading.
+
+AFTER the page, output exactly ONE final line, nothing after it:
+CHANGE-SUMMARY: <one sentence naming what actually changed in the code \
+since the previous version — the specific symbols or behavior, e.g. \
+"added `rate_limit()` and made `login()` call it". Write "initial page" \
+if there is no current page. Never write vague filler like "updated the \
+page".>"""
 
 FOLDER_INSTRUCTION = """You maintain the overview page for ONE folder of \
 a code repository, summarizing its children. AI coding agents read it to \
@@ -79,9 +91,65 @@ HARD RULES:
 1. Backtick every path and symbol.
 2. Mention ONLY children listed below. Never invent structure.
 3. No filler. 100-300 words. Plain markdown, no code fences, no
-   preamble — output starts with the # heading."""
+   preamble — output starts with the # heading.
+
+AFTER the page, output exactly ONE final line, nothing after it:
+CHANGE-SUMMARY: <one sentence naming what actually changed in this \
+folder since the previous version — which child moved things, e.g. \
+"`login.py` gained rate limiting". Write "initial page" if there is no \
+current page. Never write vague filler.>"""
 
 FILE_CONTENT_CAP = 8000
+DIFF_CAP = 4000
+# git's canonical empty-tree object — lets us diff a repository's very
+# first commit (which has no parent) without special-casing it
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+_CHANGE_SUMMARY_RE = re.compile(r"^\s*CHANGE-SUMMARY:\s*(.+?)\s*$", re.I)
+
+
+def _git_diff(repo: Path, subject: str, events) -> str:
+    """The actual code change for ``subject`` since the last synthesis, as
+    a unified diff — so the model describes what *changed*, not merely what
+    the file now says. Spans the queued commit events; falls back to the
+    working tree when the change isn't committed yet. Empty string in
+    snapshot mode (no git toplevel) or on any git error."""
+    from .ingest import git_rooted
+    if not git_rooted(repo):
+        return ""
+    refs = [ev["source_ref"] for ev in events
+            if ev["event_type"] == "commit" and ev["source_ref"]]
+    try:
+        if refs:
+            base = f"{refs[0]}~1"
+            if subprocess.run(["git", "rev-parse", "--verify", "-q", base],
+                              cwd=repo,
+                              capture_output=True).returncode != 0:
+                base = EMPTY_TREE          # first commit in history
+            args = ["git", "diff", "--no-color", base, refs[-1],
+                    "--", subject]
+        else:
+            # uncommitted edit picked up by sync, or snapshot-style event
+            args = ["git", "diff", "--no-color", "HEAD", "--", subject]
+        out = subprocess.run(args, cwd=repo, capture_output=True,
+                             text=True).stdout
+    except OSError:
+        return ""
+    return out[:DIFF_CAP]
+
+
+def _split_change_summary(body: str) -> tuple[str, str | None]:
+    """Pull the model's trailing ``CHANGE-SUMMARY:`` line off the page.
+    It is metadata for the revision row (what `irag sessions` and the
+    dashboard show), not part of the page an agent reads, so it must not
+    stay in the body. Returns (body, summary_or_None)."""
+    lines = body.rstrip().splitlines()
+    for i in range(len(lines) - 1, max(len(lines) - 5, -1), -1):
+        match = _CHANGE_SUMMARY_RE.match(lines[i])
+        if match:
+            del lines[i]
+            return "\n".join(lines).rstrip(), match.group(1)[:300]
+    return body, None
 
 
 def pending_file_pages(conn, cfg) -> list[sqlite3.Row]:
@@ -198,6 +266,11 @@ def build_file_prompt(conn, cfg, page, repo: Path):
         parts.append("CHANGE NOTES:")
         parts.extend(f"- {m}" for m in messages[:8])
         parts.append("")
+    diff = _git_diff(repo, page["subject_id"], events)
+    if diff:
+        parts += [f"CODE DIFF since the last synthesis (first {DIFF_CAP} "
+                  "chars) — this is what ACTUALLY changed; base '## Recent "
+                  "changes' and CHANGE-SUMMARY on it:", diff, ""]
     fpath = repo / page["subject_id"]
     if fpath.is_file():
         try:
@@ -343,6 +416,8 @@ def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False) -> bool:
                 event_ids)
             conn.commit()
         raise
+    # the trailing CHANGE-SUMMARY line is revision metadata, not page text
+    body, llm_summary = _split_change_summary(body)
     if not body:
         raise SystemExit("irag: LLM returned empty output; page not updated")
 
@@ -360,7 +435,10 @@ def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False) -> bool:
         "VALUES(?, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM "
         "revisions WHERE page_id=?), ?,?,?,?,?)",
         (page["page_id"], page["page_id"], body,
-         f"{page['page_type']} synthesis from {len(events)} event(s)",
+         # a real description of the change when the model gave one; the
+         # old generic line only as a fallback
+         llm_summary or (f"{page['page_type']} synthesis from "
+                         f"{len(events)} event(s)"),
          newest_event, cfg["llm"]["model_label"], tokens))
     if event_ids:
         conn.execute(
