@@ -207,6 +207,16 @@ printf 'public class Box { public int size() { return 1; } }\n' \
   || { echo "FAIL: ruby require_relative edge not resolved"; exit 1; }
 ( cd "$POLY" && python3 -m irag impact lib/util.h ) | grep -q "lib/main.c" \
   || { echo "FAIL: C #include edge not resolved"; exit 1; }
+# `from . import x` is the dominant intra-package Python style and must
+# create a real edge (it used to resolve to the package dir only)
+mkdir -p "$POLY/pkg"
+printf 'def helper(): pass\n' > "$POLY/pkg/util.py"
+printf 'from . import util\ndef run(): return util.helper()\n' > "$POLY/pkg/main.py"
+printf '' > "$POLY/pkg/__init__.py"
+( cd "$POLY" && git add -A && git commit -qm rel >/dev/null && python3 -m irag scan >/dev/null )
+( cd "$POLY" && python3 -m irag impact pkg/util.py ) | grep -q "pkg/main.py" \
+  || { echo "FAIL: 'from . import util' did not create a dependency edge"; exit 1; }
+echo "relative-import edges ok"
 rm -rf "$POLY"
 echo "poly-language graph ok"
 

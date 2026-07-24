@@ -433,3 +433,13 @@ html.lenis,html.lenis body{height:auto}
   .marq-in{animation:none}
   .btn::before{display:none}
 }
+
+
+/* proof grid: measured numbers, landing page */
+.proof{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
+  gap:1px;background:var(--border);border:1px solid var(--border);
+  border-radius:var(--r-md);overflow:hidden;margin:34px 0}
+.pf{background:var(--bg);padding:22px 20px;display:flex;flex-direction:column;gap:7px}
+.pf b{font-family:var(--display);font-size:1.35rem;font-weight:600;letter-spacing:-.01em;
+  color:var(--text);font-variant-numeric:tabular-nums}
+.pf span{font-size:14px;color:var(--text-dim);line-height:1.5}

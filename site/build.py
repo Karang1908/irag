@@ -517,11 +517,12 @@ def landing() -> str:
 <div class="hero-copy">
 <p class="eyebrow hero-eyebrow">Pluggable memory for AI coding agents</p>
 <h1 class="hero-name" aria-label="irag"><span>i</span><span>r</span><span>a</span><span>g</span><span class="hn-dot">.</span></h1>
-<p class="lede">Plug a memory into any coding agent (Claude Code, Cursor,
-Codex) and it stops re-learning your codebase every session.
-<b>irag remembers what every file does, what changed and why, and what
-each session decided</b>: one SQLite file inside your repo, fact-checked
-against the real code, so it can never quietly lie.</p>
+<p class="lede">Your coding agent re-reads your codebase every single
+session, and you pay for it every time. <b>irag pays that cost once,
+writes it down, checks it against your code, and hands it back for
+free</b>: what every file does, what changed and why, what each session
+decided. One SQLite file inside your repo, fact-checked against the real
+code, so it can never quietly lie.</p>
 <div class="cta">
 <a class="btn primary" href="docs/quickstart/">Get started</a>
 <a class="btn ghost" href="{GITHUB}" target="_blank" rel="noopener">GitHub ↗</a>
@@ -534,9 +535,9 @@ against the real code, so it can never quietly lie.</p>
 </figure>
 </section>
 <section class="stats" aria-label="irag in numbers">
-<div class="stat"><b data-cnt="3" data-suf="k">3k</b><span>tokens to
-brief a fresh session, vs 20–100k of re-exploration</span></div>
-<div class="stat"><b data-cnt="150" data-pre="~">~150</b><span>tokens to
+<div class="stat"><b data-cnt="0">0</b><span>tokens to search, map,
+or trace a claim: those paths never call a model</span></div>
+<div class="stat"><b data-cnt="87" data-pre="~">~87</b><span>tokens to
 resume any past conversation, with its per-file changes</span></div>
 <div class="stat"><b data-cnt="1" data-suf=" file">1 file</b><span>the
 entire memory: SQLite, inside your repo, mounts anywhere</span></div>
@@ -640,6 +641,27 @@ injected automatically.</p></li>
 <code>AGENTS.md</code> reaches Codex, Antigravity, and Cursor. Git is
 optional.</p></li>
 </ol>
+</section>
+<section class="sec" id="proof">
+<h2 class="sec-t">Measured, not claimed.</h2>
+<p class="lede">Run on irag's own source: 20 modules, 5,144 lines. The read
+path costs nothing because nothing on it calls a model, which is a
+property of the architecture rather than a benchmark you have to trust.</p>
+<div class="proof">
+<div class="pf"><b>155 symbols · 70 edges</b><span>full structural scan
+in 0.08s, zero tokens</span></div>
+<div class="pf"><b>13 modules</b><span>blast radius of one file,
+transitive, parsed from the code</span></div>
+<div class="pf"><b>~87 tokens</b><span>to resume a past conversation with
+its per-file changes</span></div>
+<div class="pf"><b>0 dependencies</b><span>stdlib only, one SQLite file,
+pyflakes clean</span></div>
+</div>
+<p class="lede">One command runs the whole lifecycle end-to-end: ingest,
+synthesize, fact-check, CI gate, rollback, sessions, dashboard API,
+multi-language graph. The mock model in the suite deliberately
+hallucinates a missing file, so the fact-checker is proven to catch it
+rather than assumed to.</p>
 </section>
 <section class="sec">
 <h2 class="sec-t">See what it knows.</h2>

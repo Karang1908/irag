@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <b>Plug a memory into any coding agent — it stops re-learning your
-  codebase every session.</b><br>
+  <b>Your coding agent re-reads your codebase every single session.<br>
+  You pay for that, every time. irag makes it read a database instead.</b><br>
   <sub>reads are free SQL &nbsp;·&nbsp; writes run on any cheap model
   &nbsp;·&nbsp; every claim fact-checked against the real code</sub>
 </p>
@@ -14,7 +14,7 @@
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/dependencies-zero-brightgreen" alt="Zero dependencies">
   <img src="https://img.shields.io/badge/license-MIT-yellow" alt="License: MIT">
-  <img src="https://img.shields.io/badge/version-4.9.0-purple" alt="Version 4.9.0">
+  <img src="https://img.shields.io/badge/version-4.10.0-purple" alt="Version 4.10.0">
 </p>
 
 <p align="center">
@@ -28,28 +28,41 @@
 pip install -e ./irag && irag init      # that's the whole setup
 ```
 
-| **3k** | **~150** | **1 file** | **0** |
+Every new chat, your agent greps, opens, and re-reads files to work out
+what it already worked out yesterday. **irag pays that cost once, writes
+it down, checks it against your code, and hands it back for free.**
+
+| **0** | **~650** | **1 file** | **0** |
 |:--:|:--:|:--:|:--:|
-| tokens to brief a fresh session | tokens to resume any past chat | SQLite — the entire memory | runtime deps, services, keys |
+| tokens to search, map, or trace | tokens to brief a fresh session¹ | SQLite — the whole memory | runtime deps, services, keys |
+
+<sub>¹ measured, with prompt caching. The briefing is budget-capped; the
+alternative — re-reading the tree — is not.</sub>
 
 **Why you'll want this:**
 
-- **Pluggable memory** — one `pip install`, one `irag init`. The whole
-  memory is a single SQLite file in your repo: no service, no cloud, no
-  keys. Unplug it, move it, mount it from any agent on any machine.
-- **Your agent never greps again** — search, code map, blast radius, and
-  context come from SQL, not from the model re-reading your tree.
-- **Memory that can't quietly lie** — the only memory tool that
-  fact-checks its own claims against your code, records what's wrong,
-  and fails CI while memory and code disagree.
-- **Reads cost ~nothing** — a ~3k-token briefing replaces 20–100k tokens
-  of re-exploration; writes go on whatever cheap or free model you point
-  at it.
-- **Every chat resumes where the last one ended** — a ~150-token recap
-  of what previous sessions did and changed, injected automatically.
-- **Works with every agent** — Claude Code hooks make it fully
-  automatic; generated `AGENTS.md` reaches Codex, Antigravity, and
-  Cursor; git is optional.
+- **Reads are free, structurally.** `search`, `map`, `impact`, `context`,
+  `recap`, `why` are SQL and parsing. Not "cheap": **zero tokens**, no
+  embeddings, no vector DB. Verified: no LLM call exists on those paths.
+- **Memory that can't quietly lie.** Every claim is fact-checked against
+  your actual code. Hallucinated paths, wrong version pins and phantom
+  symbols become queryable rows, contradicted pages are never served
+  without a warning, and `irag check` fails CI while memory and code
+  disagree. *No other memory tool does this.*
+- **It knows what breaks.** `irag impact irag/db.py` → the 13 modules
+  that transitively depend on it, parsed from the code, in 0.08s.
+- **Every chat resumes where the last one ended** — an ~87-token recap of
+  what previous sessions did and changed, injected automatically. Turn on
+  transcripts and the verbatim conversation is stored too.
+- **Git for your memory.** Append-only revisions, `irag why "<claim>"` to
+  trace any sentence to the commit that caused it, `asof` to time-travel,
+  non-destructive rollback.
+- **One `pip install`, zero dependencies.** Stdlib only. The memory is one
+  SQLite file in your repo — no service, no cloud, no keys. Move it,
+  mount it from another machine, delete it. It's a file.
+- **Works with every agent.** Claude Code hooks make it fully automatic;
+  the installed `AGENTS.md` reaches Codex, Antigravity, and Cursor; git is
+  optional.
 
 ```
 Claude Code   →     irag      →   agy / any LLM CLI
@@ -280,11 +293,33 @@ CI on every push. The same content lives in this repo:
   *development on irag itself*
 - [CHANGELOG.md](CHANGELOG.md)
 
-## Testing
+## Testing & measurements
 
 ```bash
-sh tests/test_smoke.sh    # end-to-end against a deterministic mock LLM — no tokens
+sh tests/test_smoke.sh    # full lifecycle against a deterministic mock LLM — costs nothing
 ```
+
+One command exercises the whole system end-to-end: init → ingest →
+synthesize → lint → contradiction detection → CI gate → rollback →
+sessions → search/ask/recap/asof → dashboard API → Obsidian export →
+directory-wise scoping → multi-language graph → transcript capture. It
+runs against a mock model that deliberately hallucinates a missing file,
+so the fact-checker is proven to catch it rather than assumed to.
+
+**Measured on irag's own source** (20 modules, 5,144 lines), on a laptop:
+
+| what | result |
+|---|---|
+| Structural scan of the whole codebase | **155 symbols, 70 import edges, 0.08s, 0 tokens** |
+| `irag impact irag/db.py` (blast radius) | **13 dependent modules, 0.08s, 0 tokens** |
+| Resume a past conversation (`irag recap`) | **~87 tokens** |
+| Brief a fresh session (`irag context`) | **~650 tokens effective**, capped by config |
+| Runtime dependencies | **0** (stdlib only) |
+| Static analysis | **pyflakes clean** |
+
+Reads cost nothing because nothing on that path calls a model — it's SQL
+over SQLite's FTS5 index plus a parsed symbol table. The one paid step is
+writing summaries, on whatever cheap model you point at it.
 
 CI runs the same suite plus pyflakes and a package build on every push
 (Python 3.11–3.13).

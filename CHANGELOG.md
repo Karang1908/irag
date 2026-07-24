@@ -4,6 +4,28 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.10.0 — 2026-07-25
+
+### Fixed — **`from . import x` created no dependency edge** (Python graph was badly incomplete)
+`from . import db` — the dominant intra-package import style in Python —
+resolved to the *package directory* only, silently discarding the imported
+module. The names in a `from X import a, b` were never considered as
+submodules, so most intra-package edges simply did not exist.
+
+Measured on irag's own source, the fix takes the graph from **20 to 70
+import edges (3.5×)**, and `irag impact irag/db.py` from a confidently
+wrong *"nothing imports this — change is contained"* to the correct **13
+dependent modules**. Any Python project using relative imports had an
+under-reported blast radius. Covered by a new smoke assertion.
+
+### Changed
+- README leads with the actual problem (you pay to re-read your codebase
+  every session) and reports **measured** numbers instead of estimates,
+  with a "Testing & measurements" section: what one command exercises, and
+  results from running irag on its own source.
+- The landing page gains a "Measured, not claimed" section with the same
+  figures, and its hero and stat strip now match them.
+
 ## 4.9.0 — 2026-07-25
 
 ### Changed — **the dashboard is organised around your work, not irag's internals**

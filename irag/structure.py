@@ -185,14 +185,27 @@ def _py_parse(text: str, rel: str):
             for alias in node.names:
                 yield ("imp", alias.name.replace(".", "/"))
         elif isinstance(node, ast.ImportFrom):
-            if node.level:  # relative import: resolve against file dir
+            # `from X import a, b` — each name may itself be a submodule,
+            # not just a symbol. `from . import db` is THE dominant
+            # intra-package style in Python and resolves to the package
+            # dir alone unless the names are considered too. Candidates
+            # that aren't real files are dropped by _resolve_import, so
+            # over-generating here is free.
+            if node.level:  # relative: resolve against the file's dir
                 base = Path(rel).parent
                 for _ in range(node.level - 1):
                     base = base.parent
                 target = base / (node.module or "").replace(".", "/")
-                yield ("imp", str(target).replace("\\", "/"))
+                stem = str(target).replace("\\", "/")
             elif node.module:
-                yield ("imp", node.module.replace(".", "/"))
+                stem = node.module.replace(".", "/")
+            else:
+                continue
+            if stem and stem != ".":
+                yield ("imp", stem)
+            for alias in node.names:
+                yield ("imp", alias.name if stem in ("", ".")
+                       else f"{stem}/{alias.name}")
 
 
 def _regex_parse(text: str, rel: str, suffix: str):
