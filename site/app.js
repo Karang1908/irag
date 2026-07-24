@@ -114,89 +114,139 @@
     });
   }
 
-  /* ---------- scroll-scrubbed anime.js graph showcase ----------
-     A grid of dots (anime stagger-grid) ripples in, a wave sweeps across,
-     then a subset lights up and edges draw between them — the grid
-     coalescing into irag's dependency graph. A *paused* anime.js timeline
-     is seeked by the section's scroll progress (anime.js-landing style). */
-  var scGrid = document.getElementById("sc-grid");
+  /* ---------- scroll-scrubbed "files become a graph" showcase ----------
+     Real file paths start stacked as a plain listing, then fly into graph
+     positions and wire themselves together by their actual imports. The
+     headline claim is *shown*, not asserted: an abstract dot field said
+     nothing about files. A paused anime.js timeline is seeked by the
+     section's scroll progress (anime.js-landing style). */
+  var scNodes = document.getElementById("sc-nodes");
   var scEdges = document.getElementById("sc-edges");
   var showcase = document.getElementById("showcase");
-  if (scGrid && scEdges && showcase && window.anime) {
+  if (scNodes && scEdges && showcase && window.anime) {
     var narrow = window.innerWidth < 820;
-    var COLS = narrow ? 16 : 24, ROWS = narrow ? 9 : 12;
-    scGrid.style.gridTemplateColumns = "repeat(" + COLS + ",1fr)";
-    scGrid.style.gridTemplateRows = "repeat(" + ROWS + ",1fr)";
-    var dots = [];
-    for (var gi = 0; gi < COLS * ROWS; gi++) {
-      var cell = document.createElement("div"); cell.className = "sc-cell";
-      var dot = document.createElement("div"); dot.className = "sc-dot";
-      cell.appendChild(dot); scGrid.appendChild(cell); dots.push(dot);
-    }
-    var at = function (c, r) { return dots[r * COLS + c]; };
-    var NP = narrow
-      ? [[3, 2], [8, 1], [12, 3], [5, 6], [10, 7], [13, 5], [2, 7], [7, 4]]
-      : [[4, 3], [9, 2], [14, 4], [19, 3], [6, 8], [12, 9], [17, 7], [2, 10],
-         [21, 9], [11, 6]];
-    var EP = narrow
-      ? [[0, 1], [1, 2], [0, 3], [3, 4], [2, 5], [4, 5], [3, 6], [1, 7], [4, 7]]
-      : [[0, 1], [1, 2], [2, 3], [0, 4], [1, 9], [4, 5], [5, 6], [2, 6], [3, 6],
-         [4, 7], [5, 9], [6, 8], [9, 1], [8, 4]];
-    var nodeDots = NP.map(function (n) { return at(n[0], n[1]); })
-      .filter(Boolean);
+    // a real (small) dependency graph: these imports are the ones this
+    // shape of project actually has
+    var FILES = [
+      { f: "tests/test_auth.py",    x: 14, y: 15 },
+      { f: "src/api/routes.py",     x: 45, y: 20 },
+      { f: "src/api/errors.py",     x: 78, y: 24 },
+      { f: "src/auth/session.py",   x: 25, y: 50 },
+      { f: "src/auth/password.py",  x: 59, y: 50 },
+      { f: "src/db/store.py",       x: 40, y: 80 },
+      { f: "src/db/models.py",      x: 73, y: 78 }
+    ];
+    var EDGES = [[0, 1], [1, 3], [1, 4], [1, 2], [3, 5], [4, 5], [5, 6]];
+    // if store.py changes, everything upstream of it is the blast radius
+    var HOT = 5, HOT_UP = [3, 4, 1, 0];
 
-    var edgeEls = [];
+    // outer holds the final graph position (and the -50% centering);
+    // the inner chip is what anime animates, so its transform can be
+    // rewritten freely without destroying the centering
+    var nodeEls = [], chipEls = [];
+    FILES.forEach(function (d) {
+      var wrap = document.createElement("div");
+      wrap.className = "sc-node";
+      // on a phone a full path is wider than the stage, so show the file
+      // name only and pull the layout in from the edges
+      wrap.style.left = (narrow ? 50 + (d.x - 50) * 0.62 : d.x) + "%";
+      wrap.style.top = d.y + "%";
+      var chip = document.createElement("div");
+      chip.className = "sc-chip";
+      chip.textContent = narrow ? d.f.split("/").pop() : d.f;
+      wrap.appendChild(chip);
+      scNodes.appendChild(wrap);
+      nodeEls.push(wrap); chipEls.push(chip);
+    });
+
+    var edgeEls = [], offs = [];
     var buildEdges = function () {
       var box = scEdges.getBoundingClientRect();
       if (!box.width) return;
       scEdges.setAttribute("viewBox", "0 0 " + box.width + " " + box.height);
       while (scEdges.firstChild) scEdges.removeChild(scEdges.firstChild);
       edgeEls = [];
-      EP.forEach(function (e) {
-        var a = nodeDots[e[0]], b = nodeDots[e[1]];
+      EDGES.forEach(function (e) {
+        var a = nodeEls[e[0]], b = nodeEls[e[1]];
         if (!a || !b) return;
         var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
-        var p = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        p.setAttribute("class", "sc-edge");
-        p.setAttribute("d", "M" + (ra.left + ra.width / 2 - box.left) + " " +
-          (ra.top + ra.height / 2 - box.top) + " L" +
-          (rb.left + rb.width / 2 - box.left) + " " +
-          (rb.top + rb.height / 2 - box.top));
-        scEdges.appendChild(p); edgeEls.push(p);
+        var pth = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        pth.setAttribute("class", "sc-edge");
+        pth.setAttribute("d",
+          "M" + (ra.left + ra.width / 2 - box.left) + " " +
+                (ra.top + ra.height / 2 - box.top) +
+          "L" + (rb.left + rb.width / 2 - box.left) + " " +
+                (rb.top + rb.height / 2 - box.top));
+        scEdges.appendChild(pth); edgeEls.push(pth);
+      });
+    };
+
+    // where each node sits while the stage is still "just a list"
+    var measureList = function () {
+      var box = scNodes.getBoundingClientRect();
+      offs = nodeEls.map(function (el, i) {
+        var w = chipEls[i].offsetWidth, h = chipEls[i].offsetHeight;
+        var finalX = (FILES[i].x / 100) * box.width;
+        var finalY = (FILES[i].y / 100) * box.height;
+        var gap = Math.min(h + 14, box.height * 0.115);
+        var listY = box.height / 2 + (i - (FILES.length - 1) / 2) * gap;
+        var listX = box.width * (narrow ? 0.30 : 0.34) + w / 2;
+        return { dx: listX - finalX, dy: listY - finalY };
       });
     };
 
     var tl = null;
     var build = function () {
+      measureList();
       buildEdges();
-      tl = anime.timeline({ autoplay: false, easing: "easeOutQuad" });
-      tl.add({ targets: dots, scale: [0, 1], opacity: [0, 0.42],
-        duration: 600,
-        delay: anime.stagger(7, { grid: [COLS, ROWS], from: "center" }) }, 0);
-      tl.add({ targets: dots,
-        scale: [{ value: 1.85, duration: 320 }, { value: 1, duration: 380 }],
-        delay: anime.stagger(7, { grid: [COLS, ROWS], from: "first" }) }, 720);
-      tl.add({ targets: nodeDots, scale: 2.7, opacity: 1,
-        backgroundColor: "#58a6ff", duration: 500,
-        delay: anime.stagger(45) }, 1450);
+      tl = anime.timeline({ autoplay: false, easing: "easeOutQuart" });
+      // 1. the listing types itself in, top to bottom
+      tl.add({
+        targets: chipEls,
+        opacity: [0, 1],
+        translateX: function (el, i) { return [offs[i].dx, offs[i].dx]; },
+        translateY: function (el, i) { return [offs[i].dy + 10, offs[i].dy]; },
+        duration: 420,
+        delay: anime.stagger(70)
+      }, 0);
+      // 2. files fly out into their places in the graph
+      tl.add({
+        targets: chipEls,
+        translateX: function (el, i) { return [offs[i].dx, 0]; },
+        translateY: function (el, i) { return [offs[i].dy, 0]; },
+        duration: 900,
+        easing: "easeOutQuint",
+        delay: anime.stagger(55)
+      }, 1150);
+      // 3. imports resolve into edges
       if (edgeEls.length) {
-        tl.add({ targets: edgeEls, opacity: [0, 1],
-          strokeDashoffset: [anime.setDashoffset, 0], duration: 700,
-          easing: "easeInOutSine", delay: anime.stagger(50) }, 1520);
+        tl.add({
+          targets: edgeEls,
+          opacity: [0, 1],
+          strokeDashoffset: [anime.setDashoffset, 0],
+          duration: 620,
+          easing: "easeInOutSine",
+          delay: anime.stagger(70)
+        }, 1900);
       }
-      tl.add({ targets: nodeDots,
-        scale: [{ value: 3.1, duration: 320 }, { value: 2.7, duration: 420 }],
-        easing: "easeInOutSine" }, 2250);
+      // 4. blast radius: the changed file, then everything that depends on it
+      tl.add({ targets: chipEls[HOT], duration: 380,
+        easing: "easeOutQuart" }, 2700)
+        .add({ targets: HOT_UP.map(function (i) { return chipEls[i]; }),
+          duration: 460, delay: anime.stagger(90),
+          easing: "easeOutQuart" }, 2820);
+      // the highlight itself is a class, so it survives seeking backwards
+      tl.add({ targets: {}, duration: 1 }, 3400);
     };
     build();
 
     var caps = [
-      ["Files become a graph.",
-       "A node for every file, an edge for every import. One map your agent queries instead of re-reading the tree."],
-      ["Imports become edges.",
-       "irag parses the dependencies and wires the nodes deterministically, with no tokens and always current."],
-      ["One graph, queryable.",
-       "Structure, neighbors, blast radius: all read from SQL in an instant."]
+      ["Your files.",
+       "A list. Every new session, your agent opens them one by one to work out what they already do."],
+      ["Become a graph.",
+       "irag parses every import into an edge \u2014 deterministic, always current, and it costs no tokens."],
+      ["So you can ask what breaks.",
+       "Change one file and every module that breaks is a query away, not a guess."]
     ];
     var capT = document.getElementById("sc-cap-t");
     var capP = document.getElementById("sc-cap-p");
@@ -204,6 +254,13 @@
     var setCap = function (i) {
       if (i === cur) return;
       cur = i;
+      // the blast-radius highlight belongs to the last beat only
+      var hot = i === 2;
+      if (nodeEls[HOT]) nodeEls[HOT].classList.toggle("hot", hot);
+      HOT_UP.forEach(function (n) {
+        if (nodeEls[n]) nodeEls[n].classList.toggle("dep", hot);
+      });
+      scEdges.classList.toggle("lit", hot);
       if (capT) capT.style.opacity = "0";
       if (capP) capP.style.opacity = "0";
       clearTimeout(capTO);
@@ -219,8 +276,15 @@
     };
 
     if (REDUCE) {
+      // land on the finished graph, highlight included — the last beat is
+      // the point of the section, not a flourish layered on top of it
       if (tl) tl.seek(tl.duration);
       cur = 2;
+      if (nodeEls[HOT]) nodeEls[HOT].classList.add("hot");
+      HOT_UP.forEach(function (n) {
+        if (nodeEls[n]) nodeEls[n].classList.add("dep");
+      });
+      scEdges.classList.add("lit");
       if (capT) capT.textContent = caps[2][0];
       if (capP) capP.textContent = caps[2][1];
     } else {

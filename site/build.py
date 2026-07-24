@@ -583,7 +583,7 @@ agent queries instead of re-reading the tree.</p>
 </div>
 <div class="sc-stage">
 <svg class="sc-edges" id="sc-edges" aria-hidden="true"></svg>
-<div class="sc-grid" id="sc-grid" aria-hidden="true"></div>
+<div class="sc-nodes" id="sc-nodes" aria-hidden="true"></div>
 </div>
 <p class="sc-hint" aria-hidden="true">scroll</p>
 </div>

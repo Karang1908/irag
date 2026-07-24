@@ -4,6 +4,35 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.12.0 — 2026-07-25
+
+### Changed — the landing page's scroll section now shows what it claims
+The headline read "Files become a graph" over a field of 288 abstract dots
+that rippled, pulsed, and then lit ten of themselves at random. The claim
+was asserted, never shown, and the wave sweep carried no meaning at all —
+which is exactly why it read as arbitrary motion.
+
+It now animates **real file paths**: seven of them start stacked as a plain
+listing, fly out into graph positions, and wire themselves together along
+their **actual imports**. The last beat highlights one file and the four
+modules that depend on it, so the section ends on blast radius — the thing
+the product is actually for. Three captions carry the argument: *Your
+files.* → *Become a graph.* → *So you can ask what breaks.*
+
+The scroll-scrub itself (a rAF loop lerping the timeline playhead) is
+unchanged; only what it animates changed.
+
+### Fixed
+- Positioning and animation were fighting: `.sc-node` centred itself with
+  `transform:translate(-50%,-50%)`, which anime.js overwrites wholesale
+  when it animates `translateX/Y`. Split into a positioning wrapper and an
+  animated chip.
+- Reduced motion landed on the finished graph but skipped the blast-radius
+  highlight, which is the point of the last beat.
+- A full path is wider than the stage on a phone: narrow viewports now show
+  file names only, with the layout pulled in from the edges.
+- Removed the dot-grid CSS left behind by the rewrite.
+
 ## 4.11.0 — 2026-07-25
 
 ### Changed — README rewritten, screenshots regenerated
