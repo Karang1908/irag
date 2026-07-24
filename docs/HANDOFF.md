@@ -26,7 +26,7 @@ so a brand-new chat can resume a project for ~150 tokens instead of
 thousands of tokens of re-exploration. Everything lives in one SQLite
 file (`.irag/memory.db`) that any agent, on any machine, can mount.
 
-Current version: **4.16.0**. ~4,600 lines of Python, zero runtime
+Current version: **4.17.0**. ~4,600 lines of Python, zero runtime
 dependencies (stdlib only — `sqlite3`, `http.server`, `ast`, `tomllib`).
 Package name `irag`, console command `irag`, config dir `.irag/`.
 

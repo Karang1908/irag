@@ -217,17 +217,17 @@
     // so the rail flies around the page instead of sitting in a fixed strip.
     // The canvas is behind the copy, so a marker can never cover text.
     var STOPS = [
-      { sel: ".hero",  n: hubs[0], off: [0.1, 0.15, 4.3],  o:  0.30,
+      { sel: ".hero",  n: hubs[0], off: [0.1, 0.15, 4.3],  o:  0.30, oy: 0,
         anchor: [0.945, 0.42], label: "Overview" },
-      { sel: "#why",   n: hubs[1], off: [-1.0, 0.35, 1.9], o: -0.34,
+      { sel: "#why",   n: hubs[1], off: [-1.0, 0.35, 1.9], o: -0.34, oy: 0,
         anchor: [0.955, 0.20], label: "Why" },
-      { sel: "#how",   n: hubs[0], off: [0.55, 0.55, 1.85], o: 0.36,
+      { sel: "#how",   n: hubs[0], off: [0.55, 0.55, 1.85], o: 0.36, oy: 0,
         anchor: [0.048, 0.38], label: "How it runs" },
-      { sel: "#built", n: hubs[2], off: [0.5, -0.55, 1.75], o: -0.35,
+      { sel: "#built", n: hubs[2], off: [0.5, -0.55, 1.75], o: 0.30, oy: -0.30,
         anchor: [0.950, 0.70], label: "Architecture" },
-      { sel: "#proof", n: hubs[3], off: [0.85, 0.5, 1.8],  o: 0.34,
+      { sel: "#proof", n: hubs[3], off: [0.85, 0.5, 1.8],  o: 0.34, oy: 0,
         anchor: [0.045, 0.22], label: "Measured" },
-      { sel: "#dash",  n: hubs[2], off: [-0.9, -0.35, 2.4], o: -0.33,
+      { sel: "#dash",  n: hubs[2], off: [-0.9, -0.35, 2.4], o: -0.33, oy: -0.28,
         anchor: [0.952, 0.46], label: "Dashboard" }
     ].map(function (st) {
       st.el = document.querySelector(st.sel);
@@ -239,8 +239,8 @@
     }).filter(function (st) { return st.el; });
 
     // live camera + the target it eases toward (weigh() writes camT)
-    var cam  = { p: STOPS[0].p.slice(), t: STOPS[0].t.slice(), o: STOPS[0].o };
-    var camT = { p: STOPS[0].p.slice(), t: STOPS[0].t.slice(), o: STOPS[0].o };
+    var cam  = { p: STOPS[0].p.slice(), t: STOPS[0].t.slice(), o: STOPS[0].o, oy: STOPS[0].oy };
+    var camT = { p: STOPS[0].p.slice(), t: STOPS[0].t.slice(), o: STOPS[0].o, oy: STOPS[0].oy };
 
     var spin = 0, rafS = null, liveS = false, active = -1;
     var railX = 0, railY = 0;
@@ -290,7 +290,7 @@
           var a = Math.min(1, STOPS[j].c * 1.55);
           el.style.setProperty("--at", a.toFixed(3));
         }
-        var want = { p: [0, 0, 0], t: [0, 0, 0], o: 0 };
+        var want = { p: [0, 0, 0], t: [0, 0, 0], o: 0, oy: 0 };
         for (var k = 0; k < STOPS.length; k++) {
           var st = STOPS[k];
           for (var d2 = 0; d2 < 3; d2++) {
@@ -298,8 +298,9 @@
             want.t[d2] += st.t[d2] * st.w;
           }
           want.o += st.o * st.w;
+          want.oy += (st.oy || 0) * st.w;
         }
-        camT.p = want.p; camT.t = want.t; camT.o = want.o;
+        camT.p = want.p; camT.t = want.t; camT.o = want.o; camT.oy = want.oy;
       }
       if (best !== active) { active = best; paintRail(); }
     };
@@ -319,7 +320,7 @@
       var right = norm(cross(fwd, [0, 1, 0]));
       var up = cross(right, fwd);
       var focal = Math.min(W, H) * 0.86;
-      var cx = W / 2 + W * cam.o, cy = H / 2;
+      var cx = W / 2 + W * cam.o, cy = H / 2 + H * (cam.oy || 0);
 
       var pts = [];
       for (var i = 0; i < NODES.length; i++) {
@@ -388,12 +389,29 @@
           sx.arc(q.x, q.y, q.r + 11 + (1 - af) * 26, 0, 6.2832);
           sx.strokeStyle = "rgba(88,166,255," + (0.55 * af).toFixed(3) + ")";
           sx.lineWidth = 1.1; sx.stroke();
-          sx.font = "500 11px ui-monospace,Menlo,monospace";
-          sx.fillStyle = "rgba(226,236,252," + (0.8 * af).toFixed(3) + ")";
-          var lft = q.x > W / 2;                 // label away from centre
+          // the name of the node you've arrived at: this is a headline in
+          // the scene, not a footnote — it has to hold its own next to
+          // 16px body copy, so it is set large, bright, and haloed so it
+          // stays legible over edges and glow
+          sx.save();
+          sx.font = "600 21px ui-monospace,SFMono-Regular,Menlo,monospace";
+          if ("letterSpacing" in sx) sx.letterSpacing = "0.06em";
+          // place it away from the centre column, but flip sides rather
+          // than let a long name ("Architecture") run off the viewport
+          var lft = q.x > W / 2;
+          var tw = sx.measureText(STOPS[active].label).width;
+          if (lft && q.x + q.r + 22 + tw > W - 18) lft = false;
+          else if (!lft && q.x - q.r - 22 - tw < 18) lft = true;
           sx.textAlign = lft ? "left" : "right";
-          sx.fillText(STOPS[active].label.toLowerCase(),
-                      q.x + (lft ? q.r + 18 : -(q.r + 18)), q.y + 4);
+          var lx = q.x + (lft ? q.r + 22 : -(q.r + 22)), ly = q.y + 7;
+          sx.shadowColor = "rgba(4,6,10,.95)";
+          sx.shadowBlur = 14;
+          sx.fillStyle = "rgba(12,16,24," + (0.9 * af).toFixed(3) + ")";
+          sx.fillText(STOPS[active].label, lx, ly);   // halo pass
+          sx.shadowBlur = 0;
+          sx.fillStyle = "rgba(238,245,255," + (0.97 * af).toFixed(3) + ")";
+          sx.fillText(STOPS[active].label, lx, ly);
+          sx.restore();
           sx.textAlign = "left";
         }
       });
@@ -443,6 +461,7 @@
         cam.t[d] += (camT.t[d] - cam.t[d]) * 0.062;
       }
       cam.o += (camT.o - cam.o) * 0.062;
+      cam.oy += ((camT.oy || 0) - (cam.oy || 0)) * 0.062;
       mtx += (mx - mtx) * 0.05;
       mty += (my - mty) * 0.05;
       drawS();

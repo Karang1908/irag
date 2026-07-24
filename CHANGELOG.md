@@ -4,6 +4,22 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.17.0 — 2026-07-25
+
+### Changed — the node's name is readable now
+It was 11px and dim, competing with 16px body copy and losing. It is now
+**21px semibold with a dark halo** and its original casing, so it holds its
+own as a label in the scene rather than reading as a footnote.
+
+Placement had to follow:
+- The label **flips to the other side of the node** when a long name
+  ("Architecture") would otherwise run off the viewport, measured with
+  `measureText` rather than guessed.
+- Sections whose content is a **full-width grid** have no side margin to
+  put a node in, so the focal node now also takes a **vertical** screen
+  offset and lifts into the empty band beside the heading. "Architecture"
+  was landing directly on the "Pluggable memory" copy.
+
 ## 4.16.0 — 2026-07-25
 
 ### Changed — the rail is made of the nodes now, and it flies
