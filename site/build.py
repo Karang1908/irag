@@ -5,7 +5,7 @@ Reads the repo's markdown docs, converts them with a purpose-sized
 markdown renderer, and emits a static site into _site/ — a landing page
 plus one pretty-URL page per doc, with sidebar navigation, per-page
 table of contents, client-side search, and relative links throughout
-(so the site works under any base path, e.g. GitHub Pages' /iRag/).
+(so the site works under any base path, e.g. GitHub Pages' /irag/).
 
 Usage:  python3 site/build.py            # writes ./_site
         python3 site/build.py --out DIR
@@ -21,8 +21,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SITE = Path(__file__).resolve().parent
 
-GITHUB = "https://github.com/Karang1908/iRag"
-BASE = "https://karang1908.github.io/iRag/"
+GITHUB = "https://github.com/Karang1908/irag"
+BASE = "https://karang1908.github.io/irag/"
 
 # (slug, sidebar title, source path relative to repo root)
 PAGES = [
@@ -445,7 +445,7 @@ def doc_page(slug: str, title: str, html: str,
 <article>{html}</article>
 <div class="pagers">{prev_html}{next_html}</div>
 <footer class="foot">MIT licensed · built from
-<a href="{GITHUB}" target="_blank" rel="noopener">Karang1908/iRag</a>
+<a href="{GITHUB}" target="_blank" rel="noopener">Karang1908/irag</a>
 · <a href="{GITHUB}/blob/main/{src}" target="_blank"
 rel="noopener">Edit this page on GitHub</a></footer>
 </main>
@@ -696,7 +696,7 @@ with a database attached."</blockquote>
 </section>
 <footer class="foot land">
 <span>MIT · <a href="{GITHUB}" target="_blank"
-rel="noopener">Karang1908/iRag</a></span>
+rel="noopener">Karang1908/irag</a></span>
 <span>v4.2.0 · zero dependencies</span>
 </footer>
 </main>"""

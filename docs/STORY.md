@@ -47,7 +47,7 @@ hundred and fifty tokens, like no time passed.
 
 Where to go from here:
 
-- [Quickstart](https://karang1908.github.io/iRag/docs/quickstart/) —
+- [Quickstart](https://karang1908.github.io/irag/docs/quickstart/) —
   running in five minutes
 - [Architecture](ARCHITECTURE.md) — the five tables, all grown up
 - [Comparison](COMPARISON.md) — vs Graphify and claude-mem, honestly

@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="https://github.com/Karang1908/iRag/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <img src="https://github.com/Karang1908/irag/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/python-3.11%2B-blue" alt="Python 3.11+">
   <img src="https://img.shields.io/badge/dependencies-0-brightgreen" alt="Zero dependencies">
   <img src="https://img.shields.io/badge/install-one%20command-informational" alt="One command">
@@ -17,10 +17,10 @@
 </p>
 
 <p align="center">
-  <a href="https://karang1908.github.io/iRag/"><b>Docs</b></a> ·
-  <a href="https://karang1908.github.io/iRag/docs/quickstart/">Quickstart</a> ·
-  <a href="https://karang1908.github.io/iRag/docs/architecture/">How it works</a> ·
-  <a href="https://karang1908.github.io/iRag/docs/comparison/">vs. alternatives</a>
+  <a href="https://karang1908.github.io/irag/"><b>Docs</b></a> ·
+  <a href="https://karang1908.github.io/irag/docs/quickstart/">Quickstart</a> ·
+  <a href="https://karang1908.github.io/irag/docs/architecture/">How it works</a> ·
+  <a href="https://karang1908.github.io/irag/docs/comparison/">vs. alternatives</a>
 </p>
 
 ```bash
@@ -265,7 +265,7 @@ Full reference: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
 ## Documentation
 
-**📖 [karang1908.github.io/iRag](https://karang1908.github.io/iRag/)** —
+**📖 [karang1908.github.io/irag](https://karang1908.github.io/irag/)** —
 searchable, with a quickstart, architecture deep-dive and full CLI
 reference. Built by `site/build.py` (stdlib, zero deps). The same content
 lives here:

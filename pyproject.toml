@@ -27,11 +27,11 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/Karang1908/iRag"
-Documentation = "https://karang1908.github.io/iRag/"
-Repository = "https://github.com/Karang1908/iRag"
-Changelog = "https://github.com/Karang1908/iRag/blob/main/CHANGELOG.md"
-Issues = "https://github.com/Karang1908/iRag/issues"
+Homepage = "https://github.com/Karang1908/irag"
+Documentation = "https://karang1908.github.io/irag/"
+Repository = "https://github.com/Karang1908/irag"
+Changelog = "https://github.com/Karang1908/irag/blob/main/CHANGELOG.md"
+Issues = "https://github.com/Karang1908/irag/issues"
 
 [project.scripts]
 irag = "irag.cli:main"
