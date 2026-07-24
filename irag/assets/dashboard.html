@@ -372,6 +372,33 @@ pre.diff .diff-hunk{color:var(--purple)}
 .prov-row .pk{font-family:var(--mono);font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:.08em;color:var(--text-faint);padding-top:2px}
 
 .maint-actions{display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap;margin-bottom:var(--sp-3)}
+/* first-run guidance + plain-language panel captions */
+.hint{font-size:var(--fs-xs);color:var(--text-dim);margin:-2px 0 var(--sp-3);max-width:68ch;line-height:1.5}
+.hint b{color:var(--text)}
+.setup{border:1px solid var(--accent-ring);background:var(--accent-dim);border-radius:var(--r-lg);
+  padding:var(--sp-5) var(--sp-5) var(--sp-4);margin-bottom:var(--sp-6)}
+.setup-head{display:flex;align-items:baseline;gap:var(--sp-3)}
+.setup-head h3{font-family:var(--display);font-size:var(--fs-lg);font-weight:600;border:none;padding:0}
+.setup-x{margin-left:auto;background:none;border:none;color:var(--text-faint);cursor:pointer;
+  font:var(--fs-xs) var(--sans);text-decoration:underline;text-underline-offset:3px}
+.setup-x:hover{color:var(--text)}
+.setup-lede{font-size:var(--fs-sm);color:var(--text-dim);margin:6px 0 var(--sp-4);max-width:70ch}
+.setup-lede b{color:var(--text)}
+.setup-steps{list-style:none;display:flex;flex-direction:column;gap:var(--sp-3)}
+.setup-step{display:flex;gap:var(--sp-3);align-items:flex-start}
+.setup-step>div{display:flex;flex-direction:column;gap:3px;min-width:0;font-size:var(--fs-sm)}
+.setup-step .step-mark{flex-shrink:0;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;
+  background:var(--panel-2);color:var(--text-dim);font:600 var(--fs-2xs) var(--mono);margin-top:1px}
+.setup-step.done .step-mark{background:var(--green-dim);color:var(--green);border:1px solid var(--green-bd)}
+.setup-step.done .step-mark::after{content:"✓";font-size:.7rem}
+.setup-step.done .step-mark{font-size:0}
+.setup-step.done>div>b{color:var(--text-dim);font-weight:500}
+.step-why{color:var(--text-dim);font-size:var(--fs-xs);line-height:1.5;max-width:66ch}
+.step-state{font-family:var(--mono);font-size:var(--fs-2xs)}
+.step-state.ok{color:var(--green)} .step-state.todo{color:var(--orange)}
+.setup-step button.mini{align-self:flex-start;margin-top:4px}
+@media (prefers-reduced-motion: no-preference){.setup{animation:card-in .4s var(--ease) both}}
+
 .op-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:var(--sp-2)}
 .op-grid button{width:100%}
 .op-grid button:disabled{opacity:.45;cursor:default}
@@ -441,6 +468,41 @@ pre.diff .diff-hunk{color:var(--purple)}
   <section id="overview" class="show">
     <h2 class="page-title">Overview</h2>
     <div class="page-sub">Live state of the knowledge base — refreshes every 3 seconds.</div>
+    <!-- first-run guidance: shown only while the memory is still empty,
+         each step reflecting real state from /api/status + /api/doctor -->
+    <div class="setup" id="setup" hidden>
+      <div class="setup-head">
+        <h3>Three steps to a working memory</h3>
+        <button class="setup-x" id="setup-dismiss" title="Hide this">Dismiss</button>
+      </div>
+      <p class="setup-lede">Your project is initialised but <b>no summaries have been written yet</b>, so there is nothing for an agent to read.</p>
+      <ol class="setup-steps">
+        <li class="setup-step" data-step="llm">
+          <span class="step-mark">1</span>
+          <div>
+            <b>Point irag at a summariser.</b>
+            <span class="step-why">Edit <code>.irag/config.toml</code> → <code>[llm].command</code>. Use a <em>cheap</em> model here — this is the scribe, not your coding agent.</span>
+            <span class="step-state"></span>
+          </div>
+        </li>
+        <li class="setup-step" data-step="build">
+          <span class="step-mark">2</span>
+          <div>
+            <b>Build the memory.</b>
+            <span class="step-why">One call per file and folder, once. After this, reading is free SQL forever.</span>
+            <span class="step-state"></span>
+          </div>
+        </li>
+        <li class="setup-step" data-step="hooks">
+          <span class="step-mark">3</span>
+          <div>
+            <b>Make it automatic.</b>
+            <span class="step-why">Claude Code hooks inject memory at session start and update it after every turn, so you never think about it again.</span>
+            <span class="step-state"></span>
+          </div>
+        </li>
+      </ol>
+    </div>
     <div class="grid-cards" id="cards">
       <div class="card skel-card"><div class="card-h"><span class="label">est tokens</span></div><div class="value skel"></div></div>
       <div class="card skel-card"><div class="card-h"><span class="label">pages</span></div><div class="value skel"></div></div>
@@ -529,10 +591,12 @@ pre.diff .diff-hunk{color:var(--purple)}
     <div class="row" style="grid-template-columns:1fr 1fr">
       <div class="panel">
         <h3>Open contradictions</h3>
+        <p class="hint">Something the memory claims that your code disproves — a hallucination caught mechanically. Fix the code or re-run Update, then it clears itself. Resolve one by hand if the flag is wrong.</p>
         <table id="contras"><thead><tr><th>page</th><th>claim</th><th>truth</th><th>sev</th><th></th></tr></thead><tbody></tbody></table>
       </div>
       <div class="panel">
         <h3>Staleness · top</h3>
+        <p class="hint">How far each page has drifted from the code since it was last written. Pages past the threshold get rewritten on the next Update — you don't need to do anything. Click a row to read the page.</p>
         <table id="staletab"><thead><tr><th>page</th><th>type</th><th>score</th></tr></thead><tbody></tbody></table>
         <div id="page-view" style="display:none"></div>
       </div>
@@ -603,16 +667,17 @@ pre.diff .diff-hunk{color:var(--purple)}
       </div>
       <div class="panel">
         <h3>Operations</h3>
+        <p class="hint">Everyday upkeep. You rarely need these — <b>Update</b> on the Overview already runs sync, synthesis and lint together. Hover any button to see what it does.</p>
         <div class="op-grid">
-          <button class="ghost-btn" data-op="sync">Sync</button>
-          <button class="ghost-btn" data-op="scan">Scan map</button>
-          <button class="ghost-btn" data-op="lint">Lint</button>
-          <button class="ghost-btn" data-op="check">CI check</button>
-          <button class="ghost-btn" data-op="export">Re-install guide</button>
-          <button class="ghost-btn" data-op="obsidian">Obsidian vault</button>
-          <button class="ghost-btn" data-op="claude-setup">Wire hooks</button>
-          <button class="ghost-btn" id="do-backup">Back up DB</button>
-          <button class="ghost-btn" id="do-doctor">Doctor</button>
+          <button class="ghost-btn" data-op="sync" title="Notice which files changed and queue them. Detects only — Update is what writes the summaries.">Sync</button>
+          <button class="ghost-btn" data-op="scan" title="Re-read the code structure: which symbols exist and which file imports which. Costs no tokens.">Scan map</button>
+          <button class="ghost-btn" data-op="lint" title="Fact-check every page against the real code and record anything that no longer matches.">Lint</button>
+          <button class="ghost-btn" data-op="check" title="The gate you'd run in CI: fails when memory and code disagree. Shows the same pass/fail here.">CI check</button>
+          <button class="ghost-btn" data-op="export" title="Rewrite CLAUDE.md and AGENTS.md — the instructions that teach an agent to use irag. Never overwrites a file you wrote.">Re-install guide</button>
+          <button class="ghost-btn" data-op="obsidian" title="Write the whole memory out as an Obsidian vault you can browse as a graph.">Obsidian vault</button>
+          <button class="ghost-btn" data-op="claude-setup" title="Wire the Claude Code hooks so memory is injected and updated automatically.">Wire hooks</button>
+          <button class="ghost-btn" id="do-backup" title="Copy the entire memory to a timestamped file in .irag/backups.">Back up DB</button>
+          <button class="ghost-btn" id="do-doctor" title="Check the whole setup — git, database, LLM command, hooks — and report what's wrong.">Doctor</button>
         </div>
         <div id="maint-msg" class="inline-msg"></div>
         <pre id="op-out" class="ctx-out" style="display:none"></pre>
@@ -717,7 +782,7 @@ const CARDS=[
   {key:"db",label:"db size",ic:IC.db,get:s=>(s.db_bytes/1024).toFixed(0)+" KB"},
   {key:"dirty",label:"uncommitted",ic:IC.git,num:true,get:s=>s.dirty_files},
 ];
-let cardsBuilt=false,lastTokens=null;
+let cardsBuilt=false,lastTokens=null,_lastStatus=null;
 function buildCards(){
   $("#cards").innerHTML=CARDS.map((d,i)=>
     `<div class="card" style="--i:${i}"><div class="card-h">
@@ -725,6 +790,7 @@ function buildCards(){
 }
 async function refreshStatus(){
   const s=await api("/api/status");
+  _lastStatus=s;renderSetup();
   if(!cardsBuilt){buildCards();cardsBuilt=true}
   CARDS.forEach(d=>{
     const el=$(`.value[data-key="${d.key}"]`);if(!el)return;
@@ -780,7 +846,7 @@ async function refreshFeed(){
     `<div class="fr"><span class="t">${(e.t||"").slice(5,19)}</span><span class="kind k-${e.kind}">${e.kind}</span><span class="subj">${esc(e.subject)}</span><span class="detail">${esc(e.detail||"")}${e.tokens?" · ~"+e.tokens+" tok":""}</span></div>`).join("")
     :`<div class="empty">No activity yet — run <code>irag update</code> to synthesize the first pages.</div>`;
 }
-$("#run-update").onclick=async()=>{
+async function runUpdate(){
   const btn=$("#run-update");btn.disabled=true;
   try{
     await api("/api/update",{method:"POST",body:"{}"});
@@ -792,12 +858,71 @@ $("#run-update").onclick=async()=>{
     try{
       const u=await api("/api/update-log");
       $("#update-log").textContent=u.log.slice(-2).join("  ·  ");
-      if(!u.running){clearInterval(poll);btn.disabled=false;refreshStatus();refreshBurn();refreshFeed()}
+      if(!u.running){clearInterval(poll);btn.disabled=false;refreshStatus();refreshBurn();refreshFeed();refreshDoctorState()}
     }catch(e){
       clearInterval(poll);btn.disabled=false;
       $("#update-log").textContent="lost contact with the server";
     }
   },800);
+}
+$("#run-update").onclick=runUpdate;
+
+/* ---------- first-run guidance ----------
+   Three real blockers, each reflecting live state rather than a canned
+   checklist: is a summariser configured, has anything been synthesized,
+   are the hooks wired. Self-clears once the memory exists and stays gone
+   once dismissed. */
+let _doctor=null;
+// keyed by project root, not origin: the dashboard reuses ports across
+// projects, so a bare key would hide this for a different project
+const setupKey=()=>"irag-setup-done:"+((_lastStatus&&_lastStatus.root)||"");
+const setupDismissed=()=>{try{return localStorage.getItem(setupKey())==="1"}catch(e){return false}};
+async function refreshDoctorState(){
+  try{_doctor=await api("/api/doctor")}catch(e){_doctor=null}
+  renderSetup();
+}
+function docPass(fragment){
+  if(!_doctor)return null;                       // unknown until doctor runs
+  const row=_doctor.find(r=>r.name.toLowerCase().includes(fragment));
+  return row?row.level==="PASS":null;
+}
+function renderSetup(){
+  const box=$("#setup");if(!box)return;
+  const built=(_lastStatus?_lastStatus.revisions:0)>0;
+  const llm=docPass("llm command"), hooks=docPass("claude code hook");
+  if(setupDismissed()||(built&&hooks!==false)){box.hidden=true;return}
+  box.hidden=false;
+  const state={llm:llm,build:built?true:false,hooks:hooks};
+  const label={
+    llm:{yes:"summariser responds ✓",no:"not reachable yet — check [llm].command",
+         wait:"checking…"},
+    build:{yes:"memory built ✓",no:"nothing written yet",wait:""},
+    hooks:{yes:"hooks wired ✓",no:"not wired — runs manually until you do",wait:"checking…"},
+  };
+  box.querySelectorAll(".setup-step").forEach(li=>{
+    const k=li.dataset.step,v=state[k];
+    li.classList.toggle("done",v===true);
+    const st=li.querySelector(".step-state");
+    st.className="step-state "+(v===true?"ok":v===false?"todo":"");
+    st.textContent=v===true?label[k].yes:v===false?label[k].no:label[k].wait;
+    let btn=li.querySelector("button");
+    const needs=(k==="build"&&!built)||(k==="hooks"&&hooks===false)||(k==="llm"&&llm!==true);
+    if(needs&&!btn){
+      btn=document.createElement("button");btn.className="mini";
+      btn.textContent=k==="llm"?"Re-check":k==="build"?"Build memory now":"Wire hooks";
+      btn.onclick=async()=>{
+        btn.disabled=true;
+        if(k==="build"){switchTab("overview");await runUpdate()}
+        else if(k==="hooks"){await postJSON("/api/op",{op:"claude-setup"})}
+        await refreshDoctorState();btn.disabled=false;
+      };
+      li.querySelector("div").appendChild(btn);
+    }else if(!needs&&btn){btn.remove()}
+  });
+}
+$("#setup-dismiss").onclick=()=>{
+  try{localStorage.setItem(setupKey(),"1")}catch(e){}
+  $("#setup").hidden=true;
 };
 
 /* ---------- chat ---------- */
@@ -836,11 +961,17 @@ $("#chat-form").onsubmit=async e=>{
 /* ---------- health ---------- */
 async function refreshHealth(){
   const cs=await api("/api/contradictions");
+  // "no contradictions" only means something once pages actually exist —
+  // with an empty memory a green tick would be a lie
+  const noMemory=(_lastStatus?_lastStatus.revisions:0)===0;
   $("#contras tbody").innerHTML=cs.length?cs.map(c=>
     `<tr><td>${esc(c.subject_id)}</td><td>${esc(c.claim||"")}</td><td>${esc(c.truth||"")}</td>
      <td class="sev-${c.severity}">${c.severity}</td>
      <td><button class="mini" onclick="resolveC(${c.contradiction_id})">resolve</button></td></tr>`).join("")
-    :`<tr><td colspan="5" style="color:var(--green)">none — memory agrees with the code ✓</td></tr>`;
+    :noMemory
+      ?`<tr><td colspan="5">Nothing to check yet — no summaries have been written.
+         Build the memory from the Overview tab first.</td></tr>`
+      :`<tr><td colspan="5" style="color:var(--green)">none — every claim still matches the code ✓</td></tr>`;
   const st=await api("/api/stale");
   const mx=Math.max(1,...st.map(p=>p.staleness_score));
   $("#staletab tbody").innerHTML=st.length?st.slice(0,30).map(p=>{
@@ -878,8 +1009,8 @@ function renderPageList(){
       (p.contras?`<span class="pdot bad" title="${p.contras} open contradiction(s)"></span>`:'');
     return `<button class="page-item${p.subject_id===_curPage?' active':''}" data-s="${esc(p.subject_id).replace(/"/g,'&quot;')}">
       <span class="pi-name">${esc(p.subject_id)}</span>
-      <span class="pi-meta">${p.page_type} · v${p.version_number||'–'} ${flags}</span></button>`}).join("")
-    :`<div class="empty">No pages match.</div>`;
+      <span class="pi-meta">${p.page_type} · ${p.version_number?"v"+p.version_number:"not written yet"} ${flags}</span></button>`}).join("")
+    :`<div class="empty">${_pages.length?"No page matches that filter.":"No pages yet — build the memory from the Overview tab."}</div>`;
   document.querySelectorAll("#page-list .page-item").forEach(b=>b.onclick=()=>viewPageDetail(b.dataset.s));
 }
 async function viewPageDetail(subject){
@@ -1088,7 +1219,8 @@ function createGraph(container){
     // settle stays roughly linear in N and never janks large graphs
     resize();const warm=Math.max(30,Math.min(140,Math.floor(12000/Math.max(nodes.length,1))));
     for(let i=0;i<warm;i++)physics(1);fit();renderLegend(nodes);
-    setInfo(`${nodes.length} modules · ${links.length} import edges`);
+    setInfo(`${nodes.length} module${nodes.length===1?"":"s"} · `
+      +`${links.length} import edge${links.length===1?"":"s"}`);
   }
   function physics(a){
     const N=nodes.length;
@@ -1277,7 +1409,7 @@ addEventListener("resize",()=>{clearTimeout(resizeT);resizeT=setTimeout(()=>{
   if($("#overview").classList.contains("show"))refreshBurn();
 },200)});
 const quiet=fn=>fn().catch(()=>setOnline(false));
-quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed);
+quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed);quiet(refreshDoctorState);
 setInterval(()=>{quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed)},3000);
 setInterval(()=>{if($("#health").classList.contains("show"))quiet(refreshHealth)},8000);
 </script>

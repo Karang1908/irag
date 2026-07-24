@@ -4,6 +4,36 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.7.0 — 2026-07-25
+
+### Fixed — **the dashboard claimed a clean bill of health on an empty memory**
+- With zero revisions written, Health reported *"none — memory agrees with
+  the code ✓"*. There was no memory to agree with anything; the green tick
+  was actively misleading on exactly the projects least able to spot it.
+  It now distinguishes "nothing to check yet" from "every claim still
+  matches the code", keyed on whether any revision exists.
+
+### Added — first-run guidance
+- **A three-step setup panel on Overview**, shown only while the memory is
+  actually unusable, with each step reflecting live state rather than a
+  canned checklist: is a summariser reachable (from `doctor`), has anything
+  been synthesized (from `status`), are the hooks wired (from `doctor`).
+  Steps that are done collapse to a tick; the ones that aren't carry the
+  button that fixes them (*Build memory now*, *Wire hooks*). It self-clears
+  once the project works, and is dismissible — the dismissal is keyed by
+  **project root**, since the dashboard reuses ports across projects.
+- **Plain-language captions** on the panels whose vocabulary is opaque to
+  a newcomer: what a contradiction actually is, what a staleness score
+  means and that it resolves itself, and that Operations are rarely needed
+  because Update already runs sync + synthesis + lint.
+- **Tooltips on all nine operation buttons** — "Sync", "Lint" and "CI
+  check" are meaningless verbs until you know the model.
+
+### Changed
+- Pages shows "not written yet" instead of a cryptic `v–`, and the empty
+  list distinguishes "no pages yet" from "no page matches that filter".
+- Fixed "1 modules" pluralization in the dependency-graph caption.
+
 ## 4.6.0 — 2026-07-24
 
 ### Added — **the UI now does everything the CLI does**
