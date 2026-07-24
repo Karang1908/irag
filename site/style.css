@@ -341,7 +341,6 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
 
   transition:stroke .3s var(--ease),fill .3s var(--ease)}
 .sp-node.on{fill:var(--accent);stroke:var(--accent)}
-@media (min-width:1280px){.spine{display:block}}
 
 /* docs reading progress bar */
 .readbar{position:fixed;top:0;left:0;right:0;height:2px;z-index:60;background:var(--accent);
