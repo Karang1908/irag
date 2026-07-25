@@ -4,6 +4,45 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.34.0 — 2026-07-25
+
+### Fixed — `cmd_update` threw away the key it had just resolved (regression)
+4.33.0 made attribution strict and resolved a key in `_open()`. But
+`cmd_update` then called `set_active_key(_session_key(args))`, which is
+`None` without a hook payload — and `set_active_key` did
+`_ACTIVE_KEY = key or None`, so it *cleared* the key `_open()` had just
+resolved. With strict matching, those unstamped rows then matched nothing:
+
+```
+open session key:       auto-f415705210364f4b
+_open() resolved     -> auto-f415705210364f4b     correct
+cmd_update override  -> None                      discarded
+session reports:        "No file changes recorded this session."
+```
+
+One session open, one file changed, and the diary said nothing happened —
+defeating the intent of the previous fix, and hitting exactly the cases
+`_resolve_key` was written for: manual `irag update` and payload-less agents.
+
+`set_active_key` is now **set-only** — a falsy key is ignored rather than
+clearing a resolved one. That removes the class of mistake instead of guarding
+one call site. `sessions.begin()` additionally claims the process for the
+session it just opened, including a minted key.
+
+### Fixed — a concurrent writer had no way to identify itself
+With two or more sessions open, `_resolve_key` cannot infer the writer and
+mints a process key nobody owns, so the work is credited to nobody. `--id`
+existed on `session-begin`/`session-end` but not on any *write* command, so
+there was no workaround. It is now accepted by `update`, `sync`, `synthesize`
+and `ingest-commit`, and an explicit `--id` is applied in `main()` before
+anything opens the database, so it always wins over `_open()`'s guess.
+Measured with two sessions open: `agy --id conv-AGY` is credited with its own
+file, and Claude Code correctly reports none.
+
+### Fixed
+`_window_facts`'s docstring still described the `OR session_key IS NULL`
+clause three lines above the comment explaining its removal. Text only.
+
 ## 4.33.0 — 2026-07-25
 
 ### Fixed — attribution was still wrong in the exact case it was built for

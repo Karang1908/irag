@@ -209,8 +209,18 @@ _ACTIVE_KEY: str | None = None
 
 
 def set_active_key(key: str | None) -> None:
+    """Record who this process writes for.
+
+    A falsy key is IGNORED rather than clearing an already-resolved one.
+    `cmd_update` called this with the result of an optional `--id`, which is
+    None without a hook payload, and so wiped the key `_open()` had just
+    resolved from the sole open session: every write became unattributable and
+    the diary reported that nothing had happened. Set-only removes that whole
+    class of mistake instead of guarding each call site.
+    """
     global _ACTIVE_KEY
-    _ACTIVE_KEY = key or None
+    if key:
+        _ACTIVE_KEY = key
 
 
 def active_key() -> str | None:

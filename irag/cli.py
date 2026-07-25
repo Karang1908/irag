@@ -744,6 +744,11 @@ def cmd_record_decision(args) -> int:
 # ------------------------------------------------------------------
 # parser
 # ------------------------------------------------------------------
+ID_HELP = ("conversation id this run belongs to; pass it when another agent "
+           "may be working this repo at the same time, so the diary credits "
+           "the right session")
+
+
 def build_parser() -> argparse.ArgumentParser:
     from . import __version__
     p = argparse.ArgumentParser(
@@ -757,14 +762,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("init", help="initialize irag in this repo").set_defaults(
         func=cmd_init)
-    sub.add_parser("sync", help="ingest commits since last sync").set_defaults(
-        func=cmd_sync)
+    sp = sub.add_parser("sync", help="ingest commits since last sync")
+    sp.add_argument("--id", metavar="KEY", help=ID_HELP)
+    sp.set_defaults(func=cmd_sync)
 
     sp = sub.add_parser("ingest-commit", help="ingest a single commit")
     sp.add_argument("ref")
+    sp.add_argument("--id", metavar="KEY", help=ID_HELP)
     sp.set_defaults(func=cmd_ingest_commit)
 
     sp = sub.add_parser("synthesize", help="update pending pages via the LLM")
+    sp.add_argument("--id", metavar="KEY", help=ID_HELP)
     sp.add_argument("--dry-run", action="store_true",
                     help="print prompts instead of calling the LLM")
     sp.add_argument("--limit", type=int)
@@ -821,6 +829,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sp = sub.add_parser("update", help="sync + synthesize + lint + export "
                                        "in one shot (the agent trigger)")
+    sp.add_argument("--id", metavar="KEY", help=ID_HELP)
     sp.add_argument("--limit", type=int)
     sp.set_defaults(func=cmd_update)
 
@@ -950,6 +959,13 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
+    # Claim the conversation before anything opens the database: _open()
+    # only guesses when nothing has been declared, and an explicit --id must
+    # win over that guess. Doing it here covers every command carrying the
+    # flag, rather than each one remembering to.
+    explicit = getattr(args, "id", None)
+    if explicit:
+        db.set_active_key(str(explicit))
     try:
         sys.exit(args.func(args))
     except KeyboardInterrupt:

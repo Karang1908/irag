@@ -621,4 +621,28 @@ assert "not_mine.py" not in kf, f"keyed session claimed foreign work: {kf}"
 PYEOF
 echo "cross-agent attribution ok"
 
+# --- the active key must never be cleared (regression guard) ---------------
+# cmd_update called set_active_key with an optional --id, which is None
+# without a hook payload, wiping the key _open() had just resolved: with
+# strict matching every write became unattributable and the diary reported
+# that nothing had happened. Set-only removes the whole class.
+python3 - << 'PYEOF' || { echo "FAIL: active key regression"; exit 1; }
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db
+db.set_active_key("resolved-key")
+db.set_active_key(None)
+assert db.active_key() == "resolved-key", "a falsy key cleared a resolved one"
+db.set_active_key("")
+assert db.active_key() == "resolved-key", "an empty key cleared a resolved one"
+db.set_active_key("explicit")
+assert db.active_key() == "explicit", "an explicit key must win"
+PYEOF
+# and the flag exists on every write path, so an agent can always say who it is
+for c in update sync synthesize ingest-commit session-begin session-end; do
+  python3 -m irag "$c" --help 2>&1 | grep -q -- "--id" \
+    || { echo "FAIL: 'irag $c' has no --id, so a concurrent agent cannot identify itself"; exit 1; }
+done
+echo "active key + --id coverage ok"
+
 echo "SMOKE TEST PASSED"

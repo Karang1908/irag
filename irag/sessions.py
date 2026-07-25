@@ -62,6 +62,9 @@ def begin(conn: sqlite3.Connection, agent: str = "claude-code",
         "session_key) VALUES(?,?,?,?)", (agent, ev, rv, key))
     sid = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
     conn.commit()
+    # whatever this process writes from here on belongs to the session it just
+    # opened - including a key that was minted rather than passed in
+    db.set_active_key(key)
     return sid
 
 
@@ -71,9 +74,12 @@ def _window_facts(conn, row) -> dict:
     "Everything since I started" is wrong the moment two conversations
     overlap: the window has no upper bound and no owner, so each session
     claimed the other's files and wrote false history into the very diary
-    `irag recap` feeds to the next session. When the session has a key we
-    count only rows stamped with it - plus unstamped rows in its window, so a
-    manual `irag update` with no id is still credited rather than lost.
+    `irag recap` feeds to the next session. A keyed session therefore counts
+    only rows stamped with its OWN key. Unstamped rows are credited to nobody:
+    an agent that supplies no hook payload writes only unstamped rows, and
+    handing those to whichever session happened to be open is precisely the
+    false history this guards against. Writes resolve a key in `_open()`, so
+    unstamped rows are the exception - see `cli._resolve_key`.
     """
     ev0 = row["start_event_id"] or 0
     rv0 = row["start_revision_id"] or 0
