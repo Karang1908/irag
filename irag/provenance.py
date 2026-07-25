@@ -32,11 +32,35 @@ def why_data(conn: sqlite3.Connection, claim: str) -> dict | None:
     ).fetchone()
     if not row:
         return None
+    # Searching every revision is the point - provenance means tracing a claim
+    # to the change that CREATED it. But `why` is also the command an agent
+    # reaches for to check whether memory asserts something, and answering
+    # "yes, here it is" from a superseded revision, with no hint it is
+    # historical, is a wrong answer to that question. Say which it is.
+    cur = conn.execute(
+        "SELECT current_revision_id FROM pages WHERE page_id=?",
+        (row["page_id"],)).fetchone()
+    current_rev = cur["current_revision_id"] if cur else None
+    is_current = current_rev is not None and current_rev == row["revision_id"]
+    still_holds = is_current
+    current_version = row["version_number"]
+    if not is_current and current_rev is not None:
+        # does the claim survive into the current revision at all?
+        still = conn.execute(
+            "SELECT 1 FROM revisions_fts WHERE rowid=? AND revisions_fts "
+            "MATCH ? LIMIT 1", (current_rev, q)).fetchone()
+        still_holds = still is not None
+        cv = conn.execute(
+            "SELECT version_number FROM revisions WHERE revision_id=?",
+            (current_rev,)).fetchone()
+        current_version = cv["version_number"] if cv else None
     out = {"subject_id": row["subject_id"], "title": row["title"],
            "version_number": row["version_number"],
            "created_at": row["created_at"],
            "llm_model_used": row["llm_model_used"],
-           "change_summary": row["change_summary"], "event": None}
+           "change_summary": row["change_summary"], "event": None,
+           "is_current": is_current, "still_holds": still_holds,
+           "current_version": current_version}
     ev_id = row["triggered_by_event_id"]
     if not ev_id:
         return out
@@ -64,13 +88,22 @@ def why(conn: sqlite3.Connection, claim: str) -> None:
         print(f"no revision matches: {claim!r}")
         return
     print(f"claim matches page  : {row['title']} ({row['subject_id']})")
+    note = ""
+    if not row.get("is_current"):
+        cv = row.get("current_version")
+        note = (f"  [superseded; current is v{cv}, claim still present]"
+                if row.get("still_holds")
+                else f"  [superseded; current is v{cv}, claim NO LONGER "
+                     "present — memory does not assert this today]")
     print(f"revision            : v{row['version_number']} "
-          f"({row['created_at']}, by {row['llm_model_used'] or 'unknown'})")
+          f"({row['created_at']}, by {row['llm_model_used'] or 'unknown'})"
+          f"{note}")
     if row["change_summary"]:
         print(f"change summary      : {row['change_summary']}")
     ev = row["event"]
     if not ev:
-        print("triggered by        : human/rollback (no event recorded)")
+        print("triggered by        : no event recorded "
+              "(hand-written, rollback, or pre-dates event logging)")
         return
     print(f"triggered by event  : #{ev['event_id']} {ev['event_type']}"
           f" (ref {ev['source_ref'] or '-'})")

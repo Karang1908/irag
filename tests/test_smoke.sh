@@ -764,4 +764,42 @@ assert sessions.end_stale(conn, cfg, everything=True) == [live]
 PYEOF
 echo "cross-attribution + stale semantics ok"
 
+# --- why must not pass off history as current (regression guard) -----------
+# `why` searches every revision, which is right for provenance - but it is
+# also the command an agent uses to check whether memory asserts something,
+# and it answered "yes, here it is" from a superseded revision with no hint.
+python3 - << 'PYEOF' || { echo "FAIL: why current/historical"; exit 1; }
+import pathlib, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, provenance
+
+p = pathlib.Path(tempfile.mkdtemp()) / ".irag" / "memory.db"
+db.ensure_db(p); conn = db.connect(str(p))
+c = conn.execute("INSERT INTO pages(page_type,title,subject_type,subject_id)"
+                 " VALUES('module','s','module','src/store.ts')")
+pid = c.lastrowid
+def rev(n, body, summary):
+    r = conn.execute("INSERT INTO revisions(page_id,version_number,"
+                     "body_markdown,change_summary,llm_model_used) "
+                     "VALUES(?,?,?,?,'test')", (pid, n, body, summary))
+    conn.execute("UPDATE pages SET current_revision_id=? WHERE page_id=?",
+                 (r.lastrowid, pid))
+    conn.commit()
+rev(1, "the store holds state", "initial")
+rev(2, "the store holds state and flibbertigibbet", "added it")
+rev(3, "the store holds state", "removed it")
+
+gone = provenance.why_data(conn, "flibbertigibbet")
+assert gone, "why found nothing for a claim that did exist"
+assert gone["is_current"] is False, "a v2 match reported as current"
+assert gone["still_holds"] is False, \
+    "a claim deleted in v3 reported as still holding"
+assert gone["current_version"] == 3, gone["current_version"]
+
+kept = provenance.why_data(conn, "state")
+assert kept and kept["still_holds"] is True, \
+    "a claim present in the current revision reported as gone"
+PYEOF
+echo "why current/historical ok"
+
 echo "SMOKE TEST PASSED"

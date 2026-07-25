@@ -4,6 +4,46 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.38.0 — 2026-07-25
+
+### Fixed — `irag why` presented superseded claims as current
+`why_data` searched every revision and returned the best-ranked match with no
+check against the page's current revision. Add a claim in v2, remove it in v3,
+then ask:
+
+```
+$ irag why flibbertigibbet
+claim matches page  : src/store.ts (src/store.ts)
+revision            : v2 (2026-07-25 15:44:40, by test)
+change summary      : added flibbertigibbet
+```
+
+Current memory says the opposite, and nothing in the output said so.
+
+Searching all revisions is correct — provenance means tracing a claim to the
+change that *created* it. But `why` is also the command an agent reaches for
+to check whether memory asserts something, and "yes, here it is" from a
+superseded revision is a wrong answer to that question. This is the one
+command whose job is verifying claims, so the conflation matters more here
+than anywhere else.
+
+The result now carries `is_current`, `still_holds` and `current_version`, and
+the CLI says which it is:
+
+```
+revision : v2 (…)  [superseded; current is v3, claim NO LONGER present
+                    — memory does not assert this today]
+revision : v1 (…)  [superseded; current is v3, claim still present]
+```
+
+The dashboard passes `why_data` straight through, so it gains the same fields.
+
+### Changed
+`why` printed `triggered by: human/rollback (no event recorded)` for any
+revision without a triggering event, which reads oddly for revisions that were
+neither. It now says `no event recorded (hand-written, rollback, or pre-dates
+event logging)`.
+
 ## 4.37.0 — 2026-07-25
 
 ### Fixed — one agent's work was filed under another's name
