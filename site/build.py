@@ -54,6 +54,28 @@ SECTIONS = [
     ("Understanding it", ["architecture", "comparison", "story"]),
     ("Contributing", ["development", "changelog"]),
 ]
+# The published changelog shows only the most recent releases. CHANGELOG.md
+# itself stays complete - it is the historical record, and the file is what
+# `irag` ships and what the repo shows. This trims the rendered page only.
+CHANGELOG_KEEP = 8
+
+
+def _trim_changelog(text: str, keep: int = CHANGELOG_KEEP) -> str:
+    """Keep the intro plus the newest `keep` release sections."""
+    parts = re.split(r"^(?=## )", text, flags=re.M)
+    head, releases = parts[0], parts[1:]
+    if len(releases) <= keep:
+        return text
+    older = len(releases) - keep
+    return (
+        head
+        + "".join(releases[:keep])
+        + "## Earlier releases\n\n"
+        + f"{older} earlier entries are omitted here. The complete history "
+        + f"lives in [CHANGELOG.md]({GITHUB}/blob/main/CHANGELOG.md).\n"
+    )
+
+
 # markdown links to these sources get rewritten to site URLs
 MD_LINK_MAP = {Path(src).name: slug for slug, _t, src in PAGES}
 
@@ -741,6 +763,8 @@ def build(out: Path) -> int:
     order = [s for s, _t, _p in PAGES]
     for idx, (slug, title, src) in enumerate(PAGES):
         source = (ROOT / src).read_text(encoding="utf-8")
+        if slug == "changelog":
+            source = _trim_changelog(source)
         html, toc, plain = md_to_html(source, "../../")
         prev_slug = order[idx - 1] if idx > 0 else None
         next_slug = order[idx + 1] if idx + 1 < len(order) else None
