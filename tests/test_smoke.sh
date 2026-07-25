@@ -881,4 +881,45 @@ for name in ("src/real.py", "src/unicode.py", "src/empty.py"):
 PYEOF
 echo "binary content detection ok"
 
+# --- source that turns binary must not leave a stale page ------------------
+# file_subject now returns None for binary content, which makes such a file
+# invisible to the snapshot diff: no event, no staleness, no tombstone. The
+# page kept asserting functions that no longer exist, in a file that is no
+# longer code, and at staleness 0 would never be re-synthesized to correct
+# itself. Deletion must STILL tombstone rather than purge.
+BF=$(mktemp -d)
+mkdir -p "$BF/src"
+( cd "$BF" && git init -q . )
+printf 'def alpha(): return 1\n' > "$BF/src/keep.py"
+printf 'def beta(): return 2\n'  > "$BF/src/gone.py"
+printf 'def gamma(): return 3\n' > "$BF/src/turns_binary.py"
+( cd "$BF" && git add -A && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 )
+( cd "$BF" && python3 - << 'PYEOF'
+import pathlib, subprocess, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, ingest
+root = pathlib.Path(".").resolve()
+conn = db.connect(str(root / ".irag" / "memory.db")); cfg = config.load(root)
+ingest.sync(conn, cfg, root)
+base = {r[0] for r in conn.execute(
+    "SELECT subject_id FROM pages WHERE subject_type='file'")}
+assert "src/turns_binary.py" in base, base
+(root / "src" / "gone.py").unlink()
+(root / "src" / "turns_binary.py").write_bytes(b"\x00\x01compiled")
+subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                "commit", "-qm", "c"], cwd=root, check=True)
+ingest.sync(conn, cfg, root)
+now = {r[0] for r in conn.execute(
+    "SELECT subject_id FROM pages WHERE subject_type='file'")}
+assert "src/keep.py" in now, f"a live source page was purged: {now}"
+assert "src/gone.py" in now, f"a deleted file lost its tombstone: {now}"
+assert "src/turns_binary.py" not in now, \
+    f"a file that turned binary kept its stale page: {now}"
+PYEOF
+) || { echo "FAIL: source-turns-binary purge"; rm -rf "$BF"; exit 1; }
+rm -rf "$BF"
+echo "source-turns-binary purge ok"
+
 echo "SMOKE TEST PASSED"

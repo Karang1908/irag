@@ -277,11 +277,33 @@ def _content_already_known(conn, repo: Path, subject: str) -> bool:
     return bool(page and page["current_revision_id"])
 
 
+def _no_longer_source(sid: str, subject_type: str, cfg: dict,
+                      repo: Path) -> bool:
+    """True if this subject has stopped being trackable source.
+
+    Two ways that happens. It became ignored - a new .iragignore entry. Or the
+    file is still on disk but is no longer *source*: a build artifact, a
+    pickle or compiled output written over a source path. The second is
+    invisible to the snapshot diff, because `file_subject` now returns None
+    for it, so no event fires, no staleness accrues, and the page sits there
+    asserting functions that no longer exist in a file that is no longer code.
+
+    A file that was DELETED is deliberately excluded here - deletion has its
+    own handling, which writes a tombstone page rather than forgetting it.
+    """
+    if is_ignored(sid, cfg, repo):
+        return True
+    if subject_type != "file":
+        return False
+    path = repo / sid
+    return path.is_file() and looks_binary(path)
+
+
 def purge_ignored(conn: sqlite3.Connection, cfg: dict, repo: Path) -> int:
     """Remove pages (and their revisions/contradictions/links/symbols) for
-    subjects that are NOW ignored — so adding .iragignore entries after
-    init actually forgets them. Queued events for them are skipped.
-    Session history text is untouched. Returns pages removed."""
+    subjects that are no longer trackable source — newly ignored, or turned
+    binary under a source path. Queued events for them are skipped. Session
+    history text is untouched. Returns pages removed."""
     removed = 0
     rows = conn.execute(
         "SELECT page_id, subject_id, subject_type FROM pages "
@@ -290,7 +312,7 @@ def purge_ignored(conn: sqlite3.Connection, cfg: dict, repo: Path) -> int:
         sid = row["subject_id"]
         if sid == ".":
             continue
-        if not is_ignored(sid, cfg, repo):
+        if not _no_longer_source(sid, row["subject_type"], cfg, repo):
             continue
         pid = row["page_id"]
         conn.execute("DELETE FROM contradictions WHERE page_id=?", (pid,))

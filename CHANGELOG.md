@@ -4,6 +4,39 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.40.1 — 2026-07-25
+
+### Fixed — a source file that turns binary left a stale page behind
+Consequence of 4.40.0. Once `file_subject` returns `None` for binary content,
+such a file becomes invisible to the snapshot diff — so nothing fires:
+
+```
+sync after it turned binary : 0 event(s)
+page still present          : yes    staleness: 0
+body still claims           : Defines `alpha()`.
+```
+
+The page went on asserting a function that no longer exists, in a file that is
+no longer code, and at staleness 0 it would never be re-synthesized to correct
+itself. Reachable whenever a build artifact, pickle or compiled output is
+written over a source path.
+
+Routed through `purge_ignored`, which already owns "this subject is no longer
+ours": it now also drops a page whose file is still on disk but has stopped
+being source. Deletion is deliberately excluded and keeps its existing
+tombstone behaviour — verified together, since the two must not be confused:
+
+```
+src/keep.py          kept       : True
+src/gone.py          tombstoned : True (staleness 30)
+src/turns_binary.py  purged     : True
+```
+
+The contradiction linter already caught part of this — a backticked
+`` `alpha()` `` claim on the dead page raises `missing_symbol`, so `irag check`
+failed and retrieval attached a ⚠ warning. Prose claims escaped that, and
+nothing purged or refreshed the page.
+
 ## 4.40.0 — 2026-07-25
 
 ### Fixed — binary files with a source extension were synthesized as source
