@@ -26,18 +26,18 @@
   --sans:"Satoshi",-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
   --display:"Clash Display",var(--sans);
   /* ---- type scale ---- */
-  --fs-2xs:.6875rem; --fs-xs:.75rem; --fs-sm:.8125rem; --fs-base:.875rem;
-  --fs-md:.9375rem; --fs-lg:1.0625rem; --fs-xl:1.3rem; --fs-2xl:1.7rem;
+  --fs-2xs:.75rem; --fs-xs:.8125rem; --fs-sm:.875rem; --fs-base:.9375rem;
+  --fs-md:1rem; --fs-lg:1.15rem; --fs-xl:1.45rem; --fs-2xl:1.9rem;
   /* ---- spacing ---- */
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
   --r-sm:6px; --r-md:10px; --r-lg:14px;
   --dur:170ms; --ease:cubic-bezier(.22,1,.36,1);
-  --sidebar-w:220px;
+  --sidebar-w:250px;
   --z-nav:10; --z-modal:30;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{scrollbar-color:var(--border-strong) transparent}
-body{background:var(--bg);color:var(--text);font:var(--fs-base)/1.55 var(--sans);-webkit-font-smoothing:antialiased;position:relative}
+body{background:var(--bg);color:var(--text);font:16px/1.68 var(--sans);-webkit-font-smoothing:antialiased;position:relative}
 /* ambient depth: one soft accent glow, one neutral */
 /* Same world as the marketing site: its ambient glow plus a faint, STATIC
    node constellation. Static on purpose — this is a task surface, and
@@ -110,9 +110,9 @@ nav.tabs button.active::before{content:"";position:absolute;left:3px;top:50%;tra
 .tb-live.off .d{background:var(--red);box-shadow:0 0 6px var(--red);animation:none}
 @media (prefers-reduced-motion: no-preference){.tb-live .d{animation:blink 2s ease-in-out infinite}}
 @keyframes blink{50%{opacity:.4}}
-main{padding:34px var(--sp-8) 60px;max-width:1240px;width:100%}
-h2.page-title{font-family:var(--display);font-size:1.6rem;font-weight:600;letter-spacing:-.015em;margin-bottom:6px}
-.page-sub{color:var(--text-dim);font-size:var(--fs-sm);padding-bottom:var(--sp-5);
+main{padding:40px var(--sp-8) 72px;max-width:1360px;width:100%}
+h2.page-title{font-family:var(--display);font-size:2.2rem;font-weight:600;letter-spacing:-.022em;margin-bottom:8px;line-height:1.1}
+.page-sub{color:var(--text-dim);font-size:var(--fs-md);line-height:1.6;max-width:78ch;padding-bottom:var(--sp-5);
   border-bottom:1px solid var(--border);margin-bottom:var(--sp-6)}
 
 section{display:none}
@@ -486,10 +486,10 @@ dialog#keys::backdrop{background:rgba(4,5,7,.66);backdrop-filter:blur(3px)}
 
 
 /* ---------- Visualize: the codebase in 3D ---------- */
-.viz-wrap{display:grid;grid-template-columns:1fr 400px;gap:var(--sp-5);align-items:start}
+.viz-wrap{display:grid;grid-template-columns:1fr 380px;gap:var(--sp-5);align-items:start}
 .viz-stage.is-full{height:100vh;border-radius:0;border:0}
 .viz-stage:fullscreen{background:var(--bg)}
-.viz-stage{position:relative;height:min(70vh,660px);background:var(--bg-inset);
+.viz-stage{position:relative;height:min(84vh,900px);background:var(--bg-inset);
   border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
 .viz-stage::after{content:"";position:absolute;inset:0;pointer-events:none;
   background:radial-gradient(120% 90% at 50% 45%,transparent 55%,rgba(8,9,12,.55) 100%)}
@@ -513,7 +513,7 @@ dialog#keys::backdrop{background:rgba(4,5,7,.66);backdrop-filter:blur(3px)}
   font:var(--fs-2xs) var(--mono);color:var(--text);white-space:nowrap;
   box-shadow:0 8px 24px rgba(0,0,0,.55)}
 .viz-panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--r-lg);
-  padding:var(--sp-5);max-height:min(70vh,660px);overflow:auto}
+  padding:var(--sp-5);max-height:min(84vh,900px);overflow:auto}
 .vp-head h3{font-family:var(--mono);font-size:var(--fs-md);color:var(--text);
   text-transform:none;letter-spacing:0;border:none;padding:0;word-break:break-all}
 .vp-head{margin-bottom:var(--sp-3)}
@@ -1902,12 +1902,21 @@ const VIZ=(()=>{
       n.x+=n.vx;n.y+=n.vy;n.z+=n.vz;
     });
   }
-  // frame everything: pick a camera distance from the layout's extent so
-  // the whole codebase is visible however many files it has
+  // Auto-fit by measurement rather than formula: project at the current
+  // distance, see where the outermost node actually lands, correct, repeat.
+  // A few passes converge and it stays right for any graph shape or stage
+  // size — a closed-form guess was either clipping or shrinking to a dot.
   function fit(){
-    if(!nodes.length)return;
+    if(!nodes.length||!W||!H)return;
+    const target=Math.min(W,H)*0.40;         // fill ~80% of the short side
     let m=0;nodes.forEach(n=>{m=Math.max(m,Math.hypot(n.x,n.y,n.z))});
-    dist=Math.max(1.9,Math.min(9,m*2.15+0.9));
+    dist=Math.max(1.6,m*2.2+1);
+    for(let pass=0;pass<4;pass++){
+      let ext=0;
+      project().forEach(q=>{ext=Math.max(ext,Math.abs(q.x-W/2),Math.abs(q.y-H/2))});
+      if(ext<1)break;
+      dist=Math.max(1.6,Math.min(30,dist*(ext/target)));
+    }
   }
   function project(){
     const cy=Math.cos(rotY),sy=Math.sin(rotY),cx=Math.cos(rotX),sx2=Math.sin(rotX);
@@ -1915,7 +1924,7 @@ const VIZ=(()=>{
     return nodes.map(n=>{
       let x=n.x*cy-n.z*sy,z=n.x*sy+n.z*cy;
       let y=n.y*cx-z*sx2;z=n.y*sx2+z*cx;
-      const d=dist/(dist+z);
+      const d=2.4/(dist+z);          // a real perspective divide
       return {n,x:ox+x*f*d/2.4,y:oy+y*f*d/2.4,z,d,r:Math.max(1,n.r*d)};
     });
   }
@@ -2019,7 +2028,7 @@ const VIZ=(()=>{
       stage=document.getElementById("viz-stage");
       cv=document.getElementById("viz-canvas");if(!cv)return;
       ctx=cv.getContext("2d");size();
-      addEventListener("resize",()=>{if(live){size()}});
+      addEventListener("resize",()=>{if(live){size();fit()}});
       cv.addEventListener("mousedown",e=>{drag={x:e.clientX,y:e.clientY,moved:false}});
       addEventListener("mouseup",e=>{
         if(drag&&!drag.moved){const r=cv.getBoundingClientRect();
@@ -2056,7 +2065,7 @@ const VIZ=(()=>{
         setTimeout(()=>{size();fit()},60);
       });
     }
-    live=true;size();poll();
+    live=true;size();fit();poll();
     if(!raf)frame();
     if(!VIZ._t)VIZ._t=setInterval(()=>{if(live)poll()},4000);
   }

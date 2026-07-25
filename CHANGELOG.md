@@ -4,6 +4,33 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.23.0 — 2026-07-25
+
+### Changed — the dashboard now matches the site's *scale*, not just its tokens
+Every colour, font and radius already matched, which is why token
+comparisons kept saying "identical" while the two still looked different.
+Rendered side by side, the dashboard was running at about 81% of the site:
+
+| | site | dashboard (before) |
+|---|---|---|
+| heading | 38px | 25.6px |
+| body | 16px / 26.9 | 14px / 21.7 |
+| sidebar | 250px | 220px |
+
+The whole type scale, the base font, the nav, the content width and the
+sidebar are now the site's.
+
+### Changed — a much larger visualisation
+The 3D stage goes from `min(70vh, 660px)` to `min(84vh, 900px)`.
+
+### Fixed — the 3D view never actually zoomed
+`d = dist / (dist + z)` equals 1 whenever `z == 0`, so changing the camera
+distance did nothing to the scale: the graph either overflowed the stage or
+collapsed to a dot, and enlarging the stage made it worse. It is a real
+perspective divide now, and the auto-fit **measures** where the outermost
+node lands and corrects, instead of guessing with a closed-form formula.
+The graph fills ~83% of the stage and is verified unclipped.
+
 ## 4.22.0 — 2026-07-25
 
 ### Fixed — the docs sidebar was being painted over, and the page was slow

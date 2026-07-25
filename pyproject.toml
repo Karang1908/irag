@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "irag"
-version = "4.22.0"
+version = "4.23.0"
 description = "Project Knowledge Base — relational memory for AI coding agents"
 readme = "README.md"
 requires-python = ">=3.11"
