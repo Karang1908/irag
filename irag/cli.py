@@ -44,7 +44,13 @@ def _resolve_key(conn) -> str:
     import uuid
     try:
         rows = conn.execute(
-            "SELECT session_key FROM sessions WHERE status='open'").fetchall()
+            "SELECT session_key FROM sessions WHERE status='open' "
+            # A row left open long enough is a crash, not a live conversation.
+            # Excluding those restores the crash tolerance that keying removed:
+            # without it, two agents that both failed to close left the repo
+            # permanently unable to see "exactly one open", so every later
+            # agent silently lost attribution - one refusal poisoned the repo.
+            "AND started_at > datetime('now', '-12 hours')").fetchall()
     except sqlite3.OperationalError:
         rows = []
     if len(rows) == 1 and rows[0]["session_key"]:
@@ -666,8 +672,17 @@ def cmd_session_end(args) -> int:
     key = _session_key(args)      # before stdin is consumed for transcript
     db.set_active_key(key)
     tpath = getattr(args, "transcript", None) or _stdin_transcript_path(cfg)
+    if getattr(args, "stale", False):
+        closed = sessions.end_stale(conn, cfg)
+        print(f"closed {len(closed)} dangling session(s): "
+              f"{closed or 'none were open'}")
+        return 0
     rec = sessions.end(conn, cfg, narrate=not args.no_narrate, key=key)
     if rec is None:
+        if key:
+            raise SystemExit(
+                f"irag: no open session matches --id {key!r}. "
+                "'irag sessions' lists open sessions with their ids and keys.")
         print("no open session")
         return 0
     line = f"session {rec['session_id']} logged: {rec['summary'][:200]}"
@@ -717,9 +732,11 @@ def cmd_sessions(args) -> int:
     for r in rows:
         when = (r["started_at"] or "")[:16]
         files = len(json.loads(r["files_changed"] or "[]"))
+        key = r["session_key"] if "session_key" in r.keys() else None
+        tail = f"  id={key}" if (key and r["status"] == "open") else ""
         print(f"[{r['session_id']}] {when}  {r['status']:<11} "
               f"{files} file(s), {r['versions_written']} version(s), "
-              f"{r['decisions']}d/{r['lessons']}l")
+              f"{r['decisions']}d/{r['lessons']}l{tail}")
         if r["summary"]:
             print(f"    {r['summary'][:300]}")
     return 0
@@ -863,7 +880,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--no-narrate", action="store_true",
                     help="skip the LLM narrative; deterministic digest only")
     sp.add_argument("--id", metavar="KEY",
-                    help="close the session opened with this id")
+                    help="close the session with this key (or session id)")
+    sp.add_argument("--stale", action="store_true",
+                    help="close EVERY open session as interrupted; the escape "
+                         "hatch when dangling rows block attribution")
     sp.add_argument("--transcript", metavar="FILE",
                     help="ingest this JSONL conversation transcript "
                          "(Claude Code hooks pass it on stdin automatically; "

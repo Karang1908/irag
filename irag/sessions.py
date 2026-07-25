@@ -212,10 +212,13 @@ def end(conn: sqlite3.Connection, cfg: dict | None,
     and left the other's unrecorded.
     """
     if key:
+        # accept either the session key or the plain session id: the refusal
+        # message lists ids, `irag sessions` shows ids, and being strict about
+        # which one meant the printed recovery step did nothing.
         row = conn.execute(
             "SELECT session_id FROM sessions WHERE status='open' "
-            "AND session_key=? ORDER BY session_id DESC LIMIT 1",
-            (key,)).fetchone()
+            "AND (session_key=? OR CAST(session_id AS TEXT)=?) "
+            "ORDER BY session_id DESC LIMIT 1", (key, str(key))).fetchone()
     else:
         # No key given. Every session now carries one, so the old
         # "session_key IS NULL" lookup matched nothing and reported "no open
@@ -237,16 +240,36 @@ def end(conn: sqlite3.Connection, cfg: dict | None,
                 # the very cross-close this key was introduced to stop. No
                 # rule over shared state can decide this, so refuse instead
                 # of guessing wrong.
+                listing = "\n".join(
+                    f"    --id {r['session_id']}   (key {r['session_key']})"
+                    for r in anon)
                 raise SystemExit(
-                    "irag: several unidentified sessions are open "
-                    f"({', '.join(str(r['session_id']) for r in anon)}) and "
-                    "irag cannot tell which is yours — closing one would end "
-                    "another agent's. Re-run with 'irag session-end --id "
-                    "<key>' using the id printed by 'irag session-begin'.")
+                    "irag: several unidentified sessions are open and irag "
+                    "cannot tell which is yours — closing one would end "
+                    "another agent's conversation. Close yours explicitly:\n"
+                    f"{listing}\n"
+                    "  ('irag sessions' lists these too. If none is yours, "
+                    "they are stale: 'irag session-end --stale' closes every "
+                    "open session.)")
             row = anon[0] if anon else None
     if not row:
         return None
     return _close(conn, cfg, row["session_id"], narrate=narrate)
+
+
+def end_stale(conn, cfg) -> list[int]:
+    """Close every open session as interrupted. The escape hatch for a repo
+    left with dangling rows - two agents open, neither closing, after which
+    `_resolve_key` can never again see "exactly one open" and every later
+    agent silently loses attribution."""
+    rows = conn.execute("SELECT session_id FROM sessions WHERE status='open' "
+                        "ORDER BY session_id").fetchall()
+    closed = []
+    for row in rows:
+        _close(conn, cfg, row["session_id"], narrate=False,
+               status="interrupted")
+        closed.append(row["session_id"])
+    return closed
 
 
 def _message_text(content) -> str:

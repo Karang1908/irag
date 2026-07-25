@@ -4,6 +4,50 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.36.0 — 2026-07-25
+
+4.35.0 made `session-end` refuse to guess between unidentified sessions, which
+was right — but a refusal left the repo stranded, and the recovery instruction
+it printed could not be followed.
+
+### Fixed — the printed recovery step did nothing
+The refusal listed session **ids** (`2, 1`) while `--id` matched only session
+**keys**, and `irag sessions` never showed keys at all. Following the advice
+exactly:
+
+```
+$ irag session-end --id 2
+no open session          [exit 0]
+```
+
+Silent, successful, and wrong. Three changes: `--id` now accepts a session id
+or a key, `irag sessions` shows the key of every open session, and an `--id`
+that matches nothing exits **1** with a message instead of reporting "no open
+session". The refusal itself now prints a copy-pasteable `--id` line per
+session together with its key.
+
+### Fixed — one refusal poisoned the repo permanently
+Nothing reaped dangling sessions: `begin()` only closes rows carrying the same
+key, so a session that refused to close (or crashed) stayed open forever. Once
+two rows were open, `_resolve_key` could never again see "exactly one open",
+so **every later agent silently lost attribution** — a solo agent working the
+same repo afterwards reported "No file changes recorded this session." The
+crash tolerance the original design had was lost when keying was introduced,
+and only same-key recovery replaced it.
+
+`_resolve_key` now ignores open rows older than 12 hours, which are crashes
+rather than live conversations, and `irag session-end --stale` closes every
+open session as interrupted — the deliberate escape hatch, named in the
+refusal message. Verified: after two stranded sessions and a `--stale`, a solo
+keyless agent is credited with its own work again.
+
+### Known limitation
+With two sessions genuinely open at once and neither passing `--id`, a write
+still belongs to nobody. That is not a heuristic that can be improved — no
+rule over "who is open" can identify the caller. `session-begin` prints the id
+to use, the write commands accept it, and the agent guide instructs it; short
+of that, no-history remains preferable to false history.
+
 ## 4.35.0 — 2026-07-25
 
 Ends the session-attribution thread by removing the guesswork instead of

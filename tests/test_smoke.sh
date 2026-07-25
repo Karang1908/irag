@@ -687,4 +687,41 @@ assert rec and rec["session_id"] == solo, "the sole open session must still clos
 PYEOF
 echo "unidentified concurrent agents ok"
 
+# --- stranded sessions must be escapable (regression guard) ----------------
+# A refused session-end left rows open forever, after which _resolve_key could
+# never again see "exactly one open" - so one refusal silently cost every
+# later agent its attribution, with no way out but editing SQLite by hand.
+python3 - << 'PYEOF' || { echo "FAIL: stranded session recovery"; exit 1; }
+import pathlib, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, sessions
+
+dbp = pathlib.Path(tempfile.mkdtemp()) / ".irag" / "memory.db"
+db.ensure_db(dbp)
+conn = db.connect(str(dbp)); cfg = config.load(dbp.parent.parent)
+a = sessions.begin(conn, agent="agy")
+b = sessions.begin(conn, agent="cursor")
+try:
+    sessions.end(conn, cfg, narrate=False)
+    raise AssertionError("end() guessed between unidentified sessions")
+except SystemExit as exc:
+    text = str(exc)
+    # the message has to be followable: it must name each session AND its key
+    assert "--id" in text, text
+    for sid in (a, b):
+        assert f"--id {sid}" in text, f"session {sid} not offered: {text}"
+    assert "--stale" in text, "no escape hatch offered"
+
+# --id must accept the session id the message printed, not only the key
+rec = sessions.end(conn, cfg, narrate=False, key=str(a))
+assert rec and rec["session_id"] == a, "--id did not accept a session id"
+
+# and --stale clears whatever is left
+left = sessions.end_stale(conn, cfg)
+assert left == [b], f"--stale should have closed {b}, closed {left}"
+assert not conn.execute("SELECT 1 FROM sessions WHERE status='open'").fetchone(), \
+    "sessions still open after --stale"
+PYEOF
+echo "stranded session recovery ok"
+
 echo "SMOKE TEST PASSED"
