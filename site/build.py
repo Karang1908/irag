@@ -590,9 +590,9 @@ versions), not opinions. <a href="docs/comparison/">Full comparison →</a></p>
 <section class="showcase" id="showcase" aria-label="irag turns your files into a graph">
 <div class="sc-sticky">
 <div class="sc-cap">
-<h2 class="sc-cap-t" id="sc-cap-t">Files become a graph.</h2>
-<p class="sc-cap-p" id="sc-cap-p">A node for every file. An edge for every import. One map your
-agent queries instead of re-reading the tree.</p>
+<h2 class="sc-cap-t" id="sc-cap-t">Your agent looks it up.</h2>
+<p class="sc-cap-p" id="sc-cap-p">A node for every file, an edge for every import: one map your
+agent queries instead of re-reading your tree, instantly and for zero tokens.</p>
 </div>
 <div class="sc-stage">
 <svg class="sc-edges" id="sc-edges" aria-hidden="true"></svg>

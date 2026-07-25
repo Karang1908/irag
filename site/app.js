@@ -739,8 +739,8 @@
        "A list. Every new session, your agent opens them one by one to work out what they already do."],
       ["Become a graph.",
        "irag parses every import into an edge \u2014 deterministic, always current, and it costs no tokens."],
-      ["So you can ask what breaks.",
-       "Change one file and every module that breaks is a query away, not a guess."]
+      ["So your agent looks it up.",
+       "Structure, neighbours, blast radius: read straight from the graph in an instant, without opening a file or spending a token."]
     ];
     var capT = document.getElementById("sc-cap-t");
     var capP = document.getElementById("sc-cap-p");
@@ -789,6 +789,11 @@
       // only runs while the section is near the viewport.
       var curT = 0, lastSeek = -1, raf = null, active = false;
       var loop = function () {
+        var box = showcase.getBoundingClientRect();
+        if (box.bottom < -200 || box.top > window.innerHeight + 200) {
+          raf = requestAnimationFrame(loop);   // idle when far off-screen
+          return;
+        }
         var target = progAt() * tl.duration;
         curT += (target - curT) * 0.11;         // the smoothing
         if (Math.abs(target - curT) < 0.5) curT = target;
@@ -806,15 +811,12 @@
         if (raf) cancelAnimationFrame(raf);
         raf = null;
       };
-      if ("IntersectionObserver" in window) {
-        new IntersectionObserver(function (ents) {
-          ents.forEach(function (en) {
-            if (en.isIntersecting) start(); else stop();
-          });
-        }, { rootMargin: "50% 0px 50% 0px" }).observe(showcase);
-      } else {
-        start();
-      }
+      // Driven by the loop itself, not an IntersectionObserver: the
+      // observer stopped delivering here (a hand-made identical one
+      // still fired), which left the timeline parked at t=0 and the
+      // section blank. The loop already skips redundant seeks, so a
+      // rect check costs nothing and cannot silently stop firing.
+      start();
       window.addEventListener("load", function () { build(); lastSeek = -1; });
       var scRTO;
       window.addEventListener("resize", function () {

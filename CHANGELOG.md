@@ -4,6 +4,22 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.24.0 — 2026-07-25
+
+### Changed — the showcase lands on the actual selling point
+The final beat was *"So you can ask what breaks"*, which sells blast radius.
+That is a feature, not the reason anyone installs this. It now reads **"So
+your agent looks it up."** — structure, neighbours and blast radius read
+straight from the graph, instantly and for zero tokens. The no-JS fallback
+caption carries the same message.
+
+### Fixed
+- The showcase timeline could sit parked at t=0 with the section blank: it
+  was started by an IntersectionObserver that stopped delivering (a
+  hand-made identical observer still fired). It now drives itself from the
+  render loop and idles by a rect check when far off-screen — the same
+  reason the scroll reveals were moved off IntersectionObserver earlier.
+
 ## 4.23.0 — 2026-07-25
 
 ### Changed — the dashboard now matches the site's *scale*, not just its tokens
