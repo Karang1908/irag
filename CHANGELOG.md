@@ -4,6 +4,26 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.39.1 — 2026-07-25
+
+### Fixed — the dashboard's address was unknowable when backgrounded
+Python block-buffers stdout when it is not a TTY, and `serve_forever()` never
+returns — so the startup banner sat in the buffer for the life of the process
+and never reached a redirected log:
+
+```
+$ nohup irag dashboard > log &     log bytes: 0   (while serving HTTP 200)
+```
+
+The port is chosen at runtime and falls back when one is taken, and that
+banner is the only announcement of which port won — so backgrounding the
+dashboard, the natural way to run it, made its address undiscoverable. The
+banner (and the shutdown line) now flush explicitly.
+
+Verified with output redirected and no `PYTHONUNBUFFERED`: 68 bytes written
+while serving, the port parseable from the log, and a second instance
+correctly announcing its fallback port.
+
 ## 4.39.0 — 2026-07-25
 
 ### Fixed — `irag obsidian` silently dropped pages to note-name collisions

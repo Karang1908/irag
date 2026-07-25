@@ -597,11 +597,18 @@ def serve(root: Path, port: int = 7777, open_browser: bool = True) -> None:
     if server is None:
         raise SystemExit(f"irag: no free port in {port}-{port + 19}")
     url = f"http://127.0.0.1:{port}"
-    print(f"irag dashboard [{root.name or root}]: {url}  (Ctrl-C to stop)")
+    # flush explicitly: Python block-buffers stdout when it is not a TTY, and
+    # serve_forever() below never returns - so redirected to a file or a pipe
+    # this line would sit in the buffer for the life of the process. The port
+    # is chosen at runtime (it falls back when one is taken), and this banner
+    # is the only announcement of which one won, so backgrounding the
+    # dashboard would otherwise make its address unknowable.
+    print(f"irag dashboard [{root.name or root}]: {url}  (Ctrl-C to stop)",
+          flush=True)
     if open_browser:
         import webbrowser
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nstopped")
+        print("\nstopped", flush=True)
