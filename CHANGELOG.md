@@ -4,6 +4,48 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.33.0 — 2026-07-25
+
+### Fixed — attribution was still wrong in the exact case it was built for
+4.32.0 stamped events and revisions with a session key, but allowed
+`session_key = ? OR session_key IS NULL` so a manual `irag update` wasn't
+lost. An agent that supplies no hook payload (agy, Cursor) writes *only*
+unstamped rows — so every keyed session still swept up its work. The
+motivating scenario, Claude Code alongside agy, was unfixed.
+
+Three changes make a key the normal state rather than the exception:
+
+- **Every session gets one.** `begin()` mints `auto-<random>` when none is
+  supplied, so "no key" no longer exists.
+- **Every command resolves one.** `_open()` sets it once, covering `sync`,
+  `learn`, `record-decision`, `ingest-commit` and `synthesize` — previously
+  only `update`, `session-begin` and `session-end` did, so `irag learn` and
+  `irag record-decision`, which the agent guide explicitly tells agents to
+  run, always produced unattributed revisions. With exactly one session open
+  the write is unambiguously that session's; with none or several it gets a
+  process-unique key, so it belongs to nobody rather than to whoever else
+  happened to be open.
+- **Two `INSERT INTO revisions` sites were missing the column entirely** —
+  `learn`/`record-decision` and `rollback`. Both now stamp it.
+
+The diary window is correspondingly strict (`session_key = ?`, no `IS NULL`).
+Measured: a lone agy still gets `Changed 1 file(s): agy_file.py`; running
+keyed Claude Code alongside keyless agy, neither claims the other's work.
+
+Fixing this surfaced two consequences of minting keys, both handled: a keyless
+agent could no longer close its own session (the old lookup searched for
+`session_key IS NULL`, which now matches nothing), and a crashed keyless
+session would never be cleaned up. `end()` without an id now closes the sole
+open session when there is exactly one, and `begin()` still clears the
+keyless lineage, which minted keys identify by their `auto-` prefix.
+
+### Changed
+- The `asof` rejection message claimed unpadded dates are refused; they are
+  accepted and normalised. Only the text was wrong.
+- The agent guide now tells non-Claude-Code agents to pass `--id` to
+  `session-begin`/`session-end` when anything else may be working the same
+  repo, and says what happens if they don't.
+
 ## 4.32.0 — 2026-07-25
 
 ### Fixed — `irag asof` returned the present as history

@@ -163,11 +163,11 @@ def rollback(conn: sqlite3.Connection, subject: str, version: int) -> None:
     # rollback racing a synthesis pass can't collide on the same version
     conn.execute(
         "INSERT INTO revisions(page_id, version_number, body_markdown, "
-        "change_summary, triggered_by_event_id, llm_model_used) "
+        "change_summary, triggered_by_event_id, llm_model_used, session_key) "
         "VALUES(?, (SELECT COALESCE(MAX(version_number),0)+1 FROM revisions "
-        "WHERE page_id=?), ?,?,?, 'human')",
+        "WHERE page_id=?), ?,?,?, 'human', ?)",
         (page["page_id"], page["page_id"], old["body_markdown"],
-         f"rollback to v{version}", event_id),
+         f"rollback to v{version}", event_id, db.active_key()),
     )
     next_version = conn.execute(
         "SELECT version_number v FROM revisions WHERE revision_id=?",

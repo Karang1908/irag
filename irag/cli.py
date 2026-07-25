@@ -23,7 +23,33 @@ def _open(require_init: bool = True) -> tuple[sqlite3.Connection, dict, Path]:
         raise SystemExit("irag: not initialized here — run 'irag init' first")
     cfg = config.load(root)
     conn = db.ensure_db(db_path)
+    # Every command writes something eventually - learn, record-decision,
+    # sync, ingest-commit, synthesize - and each needs to be attributable.
+    # Setting the key here covers them all instead of one call site at a time.
+    if db.active_key() is None:
+        db.set_active_key(_resolve_key(conn))
     return conn, cfg, root
+
+
+def _resolve_key(conn) -> str:
+    """Which conversation this process is writing for.
+
+    With exactly one session open, it is unambiguously that one - this is how
+    an agent with no hook payload (agy, Cursor) still gets its own work
+    attributed. With none or several open we cannot tell, so mint a
+    process-unique key: the work then belongs to nobody rather than being
+    credited to whoever else happened to be open.
+    """
+    import os
+    import uuid
+    try:
+        rows = conn.execute(
+            "SELECT session_key FROM sessions WHERE status='open'").fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    if len(rows) == 1 and rows[0]["session_key"]:
+        return rows[0]["session_key"]
+    return f"proc-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
 
 # ------------------------------------------------------------------
@@ -333,11 +359,11 @@ def _append_log(conn, page_subject: str, page_type: str, title: str,
     # concurrent writer can't collide on the same (page_id, version_number)
     conn.execute(
         "INSERT INTO revisions(page_id, version_number, body_markdown, "
-        "change_summary, triggered_by_event_id, llm_model_used) "
+        "change_summary, triggered_by_event_id, llm_model_used, session_key) "
         "VALUES(?, (SELECT COALESCE(MAX(version_number),0)+1 FROM revisions "
-        "WHERE page_id=?), ?,?,?, 'human')",
+        "WHERE page_id=?), ?,?,?, 'human', ?)",
         (page["page_id"], page["page_id"], body + entry,
-         f"{event_type} recorded", event_id),
+         f"{event_type} recorded", event_id, db.active_key()),
     )
     conn.commit()
 
@@ -439,9 +465,10 @@ def _iso_date(raw: str) -> str:
                 else parsed.strftime("%Y-%m-%d %H:%M:%S"))
     raise SystemExit(
         f"irag: {raw!r} is not a date irag can compare against. Use "
-        "YYYY-MM-DD (e.g. 2026-06-01), optionally with HH:MM:SS. Unpadded "
-        "months/days and phrases like 'yesterday' are rejected because they "
-        "would silently return the present state as if it were history.")
+        "YYYY-MM-DD (e.g. 2026-06-01), optionally with HH:MM:SS; "
+        "YYYY/MM/DD, YYYYMMDD and unpadded months/days are accepted and "
+        "normalised. Phrases like 'yesterday' are refused because they would "
+        "silently return the present state as if it were history.")
 
 
 def cmd_asof(args) -> int:

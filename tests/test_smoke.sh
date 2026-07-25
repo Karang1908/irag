@@ -574,4 +574,51 @@ assert "b_only.py" in b_files, f"B lost its own work: {b_files}"
 PYEOF
 echo "asof validation + attribution ok"
 
+# --- attribution across agent kinds (regression guard) ---------------------
+python3 - << 'PYEOF' || { echo "FAIL: cross-agent attribution"; exit 1; }
+import json, pathlib, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, sessions
+
+dbp = pathlib.Path(tempfile.mkdtemp()) / ".irag" / "memory.db"
+db.ensure_db(dbp)
+conn = db.connect(str(dbp)); cfg = config.load(dbp.parent.parent)
+
+def write(subject, key):
+    c = conn.execute("INSERT INTO pages(page_type,title,subject_type,subject_id)"
+                     " VALUES('module',?,'module',?)", (subject, subject))
+    conn.execute("INSERT INTO events(event_type,source_ref,subject_id,payload,"
+                 "session_key) VALUES('snapshot','r',?,'{}',?)", (subject, key))
+    conn.execute("INSERT INTO revisions(page_id,version_number,body_markdown,"
+                 "change_summary,session_key) VALUES(?,1,'b','c',?)",
+                 (c.lastrowid, key))
+    conn.commit()
+
+# a keyless session still gets a key minted, so "no key" is never the normal
+# state - an agent that supplies no hook payload used to write unstamped rows
+# that every other keyed session then claimed
+lone = sessions.begin(conn, agent="agy")
+lone_key = conn.execute("SELECT session_key FROM sessions WHERE session_id=?",
+                        (lone,)).fetchone()["session_key"]
+assert lone_key, "a keyless session must still be given a key"
+write("agy_file.py", lone_key)
+rec = sessions.end(conn, cfg, narrate=False)      # no --id: must still close it
+assert rec and rec["session_id"] == lone, "a keyless agent could not close its own session"
+files = json.loads(conn.execute(
+    "SELECT files_changed FROM sessions WHERE session_id=?", (lone,)
+).fetchone()[0] or "[]")
+assert files == ["agy_file.py"], f"lone agent lost its own work: {files}"
+
+# concurrent: a keyed session must not absorb another agent's unstamped work
+keyed = sessions.begin(conn, agent="claude-code", key="conv-C")
+other = sessions.begin(conn, agent="agy")
+write("not_mine.py", "proc-999-abcdef")           # attributable to neither
+sessions.end(conn, cfg, narrate=False, key="conv-C")
+kf = json.loads(conn.execute(
+    "SELECT files_changed FROM sessions WHERE session_id=?", (keyed,)
+).fetchone()[0] or "[]")
+assert "not_mine.py" not in kf, f"keyed session claimed foreign work: {kf}"
+PYEOF
+echo "cross-agent attribution ok"
+
 echo "SMOKE TEST PASSED"

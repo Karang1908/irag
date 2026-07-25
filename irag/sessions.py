@@ -35,10 +35,13 @@ def begin(conn: sqlite3.Connection, agent: str = "claude-code",
             "SELECT session_id FROM sessions WHERE status='open' "
             "AND session_key=? ORDER BY session_id DESC", (key,)).fetchall()
     else:
+        # a caller with no key still owns the keyless lineage: minted keys
+        # carry an "auto-" prefix, plus genuinely NULL rows from before keys
+        # existed. Without this a crashed keyless session would never close.
         stale = conn.execute(
             "SELECT session_id FROM sessions WHERE status='open' "
-            "AND (session_key IS NULL OR session_key='') "
-            "ORDER BY session_id DESC").fetchall()
+            "AND (session_key IS NULL OR session_key='' "
+            "OR session_key LIKE 'auto-%') ORDER BY session_id DESC").fetchall()
     for open_row in stale:
         _close(conn, None, open_row["session_id"], narrate=False,
                status="interrupted")
@@ -47,6 +50,13 @@ def begin(conn: sqlite3.Connection, agent: str = "claude-code",
     rv = conn.execute(
         "SELECT COALESCE(MAX(revision_id),0) m FROM revisions"
     ).fetchone()["m"]
+    # Always give the session a key. Letting "no key" be the normal state is
+    # what kept the bug alive: an agent that supplies no hook payload (agy,
+    # Cursor) wrote unstamped rows, and the IS NULL allowance below meant
+    # every keyed session then claimed them.
+    if not key:
+        import uuid
+        key = "auto-" + uuid.uuid4().hex[:16]
     conn.execute(
         "INSERT INTO sessions(agent, start_event_id, start_revision_id, "
         "session_key) VALUES(?,?,?,?)", (agent, ev, rv, key))
@@ -72,10 +82,14 @@ def _window_facts(conn, row) -> dict:
     except (IndexError, KeyError):
         key = None
     if key:
-        ev_where, ev_args = ("event_id > ? AND (session_key = ? OR "
-                             "session_key IS NULL)"), (ev0, key)
-        rv_where, rv_args = ("r.revision_id > ? AND (r.session_key = ? OR "
-                             "r.session_key IS NULL)"), (rv0, key)
+        # strictly this session's own rows. The earlier "OR session_key IS
+        # NULL" was meant to credit a manual `irag update`, but any agent that
+        # supplies no hook payload writes unstamped rows - so it handed one
+        # agent's work to whichever other session happened to be open. Writes
+        # now resolve a key in _open(), making unstamped rows the exception,
+        # and under-reporting beats writing false history into the diary.
+        ev_where, ev_args = "event_id > ? AND session_key = ?", (ev0, key)
+        rv_where, rv_args = "r.revision_id > ? AND r.session_key = ?", (rv0, key)
     else:
         ev_where, ev_args = "event_id > ?", (ev0,)
         rv_where, rv_args = "r.revision_id > ?", (rv0,)
@@ -192,10 +206,19 @@ def end(conn: sqlite3.Connection, cfg: dict | None,
             "AND session_key=? ORDER BY session_id DESC LIMIT 1",
             (key,)).fetchone()
     else:
-        row = conn.execute(
-            "SELECT session_id FROM sessions WHERE status='open' "
-            "AND (session_key IS NULL OR session_key='') "
-            "ORDER BY session_id DESC LIMIT 1").fetchone()
+        # No key given. Every session now carries one, so the old
+        # "session_key IS NULL" lookup matched nothing and reported "no open
+        # session" - a keyless agent could never close its own. Prefer the
+        # unambiguous case (exactly one open), then the keyless lineage.
+        openes = conn.execute(
+            "SELECT session_id, session_key FROM sessions WHERE status='open' "
+            "ORDER BY session_id DESC").fetchall()
+        if len(openes) == 1:
+            row = openes[0]
+        else:
+            row = next((r for r in openes
+                        if not r["session_key"]
+                        or str(r["session_key"]).startswith("auto-")), None)
     if not row:
         return None
     return _close(conn, cfg, row["session_id"], narrate=narrate)
