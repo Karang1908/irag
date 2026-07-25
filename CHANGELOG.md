@@ -4,6 +4,36 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.19.0 — 2026-07-25
+
+### Added — the launch transition
+Clicking **Get started** or **Read the architecture** no longer just loads a
+page. Every node in the graph **collapses into a single point**, the camera
+is thrown through it, and the docs arrive out of the white-out. The nodes
+are the site's entire visual language, so navigation is built from them
+rather than a generic fade.
+
+### Changed — it flies now, instead of panning
+The camera eased laterally between stops, which read as scrolling past a
+backdrop. It now **lifts away from its target in transit and dives back in
+on arrival** — measured: 35,295 painted pixels at a stop, 6,211 mid-flight,
+46,606 at the next.
+
+### Added — docs share the world
+Doc pages carry the same node field on a slow ambient orbit (no rail, no
+dive, dimmed behind a scrim so type stays the focus) and arrive on the
+animation the landing page hands them.
+
+### Added — fullscreen Visualize
+The 3D codebase view has a fullscreen control; the canvas re-measures and
+re-fits on the way in and out.
+
+### Changed — dashboard and site are one theme
+All 23 shared tokens already matched after 4.18.0; the dashboard now also
+carries the site's ambient glow and node constellation. **Static on
+purpose** — a task surface with live numbers should not have motion behind
+it. Verified the text and metric colours are unchanged.
+
 ## 4.18.0 — 2026-07-25
 
 ### Added — **Visualize: your codebase in 3D, inspectable and live**

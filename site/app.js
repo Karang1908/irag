@@ -6,6 +6,17 @@
   document.documentElement.classList.add("js");
   var REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
+  /* ---------- launch transition: doc links warp through the graph ---- */
+  document.addEventListener("click", function (ev) {
+    var a2 = ev.target.closest && ev.target.closest('a[href]');
+    if (!a2 || ev.metaKey || ev.ctrlKey || ev.shiftKey || a2.target) return;
+    var href = a2.getAttribute("href") || "";
+    // only same-site doc destinations, and only when the scene is running
+    if (!/(^|\/)docs\//.test(href) || !window.__warp) return;
+    ev.preventDefault();
+    window.__warp(href);
+  }, true);
+
   /* ---------- Lenis momentum scrolling — the core Mistral "feel" ------- */
   var lenis = null;
   if (window.Lenis && !REDUCE) {
@@ -238,11 +249,22 @@
       return st;
     }).filter(function (st) { return st.el; });
 
+    // On a docs page none of those sections exist. Same node field, same
+    // colours, but a slow fixed orbit — the page is for reading, so the
+    // backdrop must not compete with it.
+    var AMBIENT = STOPS.length === 0;
+    if (AMBIENT) {
+      STOPS = [{ el: document.body, c: 1, w: 1, n: hubs[0],
+                 p: [0.2, 0.3, 5.2], t: [0, 0, 0], o: 0, oy: 0,
+                 anchor: [1.4, 0.5], label: "" }];
+    }
+
     // live camera + the target it eases toward (weigh() writes camT)
     var cam  = { p: STOPS[0].p.slice(), t: STOPS[0].t.slice(), o: STOPS[0].o, oy: STOPS[0].oy };
     var camT = { p: STOPS[0].p.slice(), t: STOPS[0].t.slice(), o: STOPS[0].o, oy: STOPS[0].oy };
 
     var spin = 0, rafS = null, liveS = false, active = -1;
+    var collapse = 0, rush = 0, warping = false, arrivedness = 1;
     var railX = 0, railY = 0;
     var mx = 0, my = 0, mtx = 0, mty = 0;
 
@@ -302,6 +324,8 @@
         }
         camT.p = want.p; camT.t = want.t; camT.o = want.o; camT.oy = want.oy;
       }
+      // how "arrived" are we? 1 at a stop, ~0 mid-flight
+      arrivedness = best >= 0 ? STOPS[best].c : 0;
       if (best !== active) { active = best; paintRail(); }
     };
 
@@ -310,11 +334,19 @@
       sx.clearRect(0, 0, W, H);
       // orbit + cursor parallax applied around the look-at target
       var eye = cam.p.slice();
+      // in transit the camera lifts away from its target and swoops back
+      // in as the section arrives — the difference between panning past a
+      // graph and flying into part of one
+      var lift = AMBIENT ? 0 : (1 - Math.min(1, arrivedness * 1.35));
       var ox = eye[0] - cam.t[0], oz = eye[2] - cam.t[2];
       var ca = Math.cos(spin + mtx), sa = Math.sin(spin + mtx);
       eye[0] = cam.t[0] + ox * ca - oz * sa;
       eye[2] = cam.t[2] + ox * sa + oz * ca;
-      eye[1] += mty;
+      eye[1] += mty + lift * 0.55;
+      var back = 1 + lift * 0.85;                 // dolly out mid-flight
+      eye[0] = cam.t[0] + (eye[0] - cam.t[0]) * back;
+      eye[1] = cam.t[1] + (eye[1] - cam.t[1]) * back;
+      eye[2] = cam.t[2] + (eye[2] - cam.t[2]) * back;
 
       var fwd = norm(sub(cam.t, eye));
       var right = norm(cross(fwd, [0, 1, 0]));
@@ -323,8 +355,17 @@
       var cx = W / 2 + W * cam.o, cy = H / 2 + H * (cam.oy || 0);
 
       var pts = [];
+      // during the warp every node eases toward the origin, then the
+      // camera is thrown through that point
+      var gather = collapse, thrust = rush * 3.4;
       for (var i = 0; i < NODES.length; i++) {
-        var v = sub(NODES[i].p, eye);
+        var wp = NODES[i].p;
+        var np = gather > 0
+          ? [wp[0] * (1 - gather), wp[1] * (1 - gather), wp[2] * (1 - gather)]
+          : wp;
+        var v = sub(np, eye);
+        if (thrust) { v[0] -= fwd[0] * thrust; v[1] -= fwd[1] * thrust;
+                      v[2] -= fwd[2] * thrust; }
         var z = dot(v, fwd);
         if (z <= 0.06) { pts.push(null); continue; }   // behind the camera
         pts.push({
@@ -360,7 +401,7 @@
       }
       if (aw > 0.0001) { railX = ax * W; railY = ay * H; }
       var slot = Math.min(34, H * 0.046);
-      var focus = active >= 0 && STOPS[active] ? STOPS[active].n : -1;
+      var focus = (AMBIENT || active < 0 || !STOPS[active]) ? -1 : STOPS[active].n;
       var arrived = active >= 0 && STOPS[active] ? STOPS[active].c * 1.55 : 0;
 
       // nodes back-to-front so near ones occlude far ones
@@ -416,6 +457,7 @@
         }
       });
 
+      if (AMBIENT) return;   // no rail on a docs page
       // ---- rail markers: docked when away, flown out when arrived ----
       var mid = (STOPS.length - 1) / 2;
       for (var r2 = 0; r2 < STOPS.length; r2++) {
@@ -429,6 +471,11 @@
         st2.sx = dx2 + (tx2 - dx2) * (1 - dock);
         st2.sy = dy2 + (tyy - dy2) * (1 - dock);
         st2.sr = 3.4 + (Math.max(trr, 3.4) - 3.4) * (1 - dock);
+        if (collapse > 0) {          // the warp pulls the rail in too
+          st2.sx += (W / 2 - st2.sx) * collapse;
+          st2.sy += (H / 2 - st2.sy) * collapse;
+          st2.sr *= (1 - collapse);
+        }
       }
       // connector threading the docked markers
       sx.beginPath();
@@ -454,7 +501,7 @@
     };
 
     var tickS = function () {
-      spin += 0.00055;
+      spin += AMBIENT ? 0.0012 : 0.00055;
       weigh();
       for (var d = 0; d < 3; d++) {                 // ease toward the target
         cam.p[d] += (camT.p[d] - cam.p[d]) * 0.062;
@@ -507,6 +554,32 @@
     });
     liveS = true; tickS();
     document.documentElement.classList.add("has-scene");
+
+    /* ---------- warp: the launch transition ----------
+       Clicking a doc link collapses every node in the graph into a single
+       point, rushes the camera through it, and hands over to the next page
+       on a white-out. The nodes are the site's whole visual language, so
+       the navigation is made of them rather than a generic page fade. */
+    window.__warp = function (href) {
+      if (warping) return;
+      warping = true;
+      var t0 = performance.now(), DUR = 1150;
+      var veil = document.createElement("div");
+      veil.className = "warp-veil";
+      document.body.appendChild(veil);
+      var step = function (t) {
+        var k = Math.min(1, (t - t0) / DUR);
+        // 0-0.45 gather, 0.45-1 rush through
+        collapse = k < 0.45 ? Math.pow(k / 0.45, 1.7)
+                            : 1;
+        rush = k < 0.45 ? 0 : Math.pow((k - 0.45) / 0.55, 2.2);
+        veil.style.opacity = k < 0.62 ? "0"
+          : ((k - 0.62) / 0.38).toFixed(3);
+        if (k < 1) requestAnimationFrame(step);
+        else window.location.href = href;
+      };
+      requestAnimationFrame(step);
+    };
   }
 
   /* ---------- scroll-scrubbed "files become a graph" showcase ----------

@@ -451,9 +451,10 @@ def doc_page(slug: str, title: str, html: str,
         ns, nt = prev_next[1]
         next_html = (f'<a class="pager next" href="../{ns}/">'
                      f"<span>Next</span><b>{nt}</b></a>")
-    body = f"""<div class="wrap">
+    body = f"""<canvas class="scene ambient" id="scene" aria-hidden="true"></canvas>
+<div class="wrap">
 {sidebar(rel, slug)}
-<main class="doc" id="main">
+<main class="doc doc-shell" id="main">
 <article>{html}</article>
 <div class="pagers">{prev_html}{next_html}</div>
 <footer class="foot">MIT licensed · built from
