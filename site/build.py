@@ -530,12 +530,10 @@ def landing() -> str:
 <div class="hero-copy">
 <p class="eyebrow hero-eyebrow">Pluggable memory for AI coding agents</p>
 <h1 class="hero-name" aria-label="irag"><span>i</span><span>r</span><span>a</span><span>g</span><span class="hn-dot">.</span></h1>
-<p class="lede">Your coding agent re-reads your codebase every single
-session, and you pay for it every time. <b>irag pays that cost once,
-writes it down, checks it against your code, and hands it back for
-free</b>: what every file does, what changed and why, what each session
-decided. One SQLite file inside your repo, fact-checked against the real
-code, so it can never quietly lie.</p>
+<p class="lede">Your coding agent re-reads your codebase every session,
+and you pay for it every time. <b>irag pays that cost once, writes it
+down, and hands it back for free</b> — one SQLite file in your repo,
+fact-checked against your real code so it can never quietly lie.</p>
 <div class="cta">
 <a class="btn primary" href="docs/quickstart/">Get started</a>
 <a class="btn ghost" href="{GITHUB}" target="_blank" rel="noopener">GitHub ↗</a>
@@ -590,7 +588,7 @@ versions), not opinions. <a href="docs/comparison/">Full comparison →</a></p>
 <section class="showcase" id="showcase" aria-label="irag turns your files into a graph">
 <div class="sc-sticky">
 <div class="sc-cap">
-<h2 class="sc-cap-t" id="sc-cap-t">Your agent looks it up.</h2>
+<h2 class="sc-cap-t" id="sc-cap-t">So your agent can look it up.</h2>
 <p class="sc-cap-p" id="sc-cap-p">A node for every file, an edge for every import: one map your
 agent queries instead of re-reading your tree, instantly and for zero tokens.</p>
 </div>
@@ -706,6 +704,7 @@ with a database attached."</blockquote>
 <a class="btn primary" href="docs/quickstart/">Get started</a>
 <a class="btn ghost" href="docs/architecture/">Read the architecture</a>
 </div>
+<div class="install"><code>pip install -e ./irag && irag init</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
 </section>
 <footer class="foot land">
 <span>MIT · <a href="{GITHUB}" target="_blank"

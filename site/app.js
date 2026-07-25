@@ -226,13 +226,12 @@
     // `anchor` is where this section parks the rail on screen (fractions of
     // the viewport). It moves section to section — right, top-right, left —
     // so the rail flies around the page instead of sitting in a fixed strip.
-    // The canvas is behind the copy, so a marker can never cover text.
     var STOPS = [
       { sel: ".hero",  n: hubs[0], off: [0.1, 0.15, 4.3],  o:  0.30, oy: 0,
         anchor: [0.945, 0.42], label: "Overview" },
-      { sel: "#why",   n: hubs[1], off: [-1.0, 0.35, 1.9], o: -0.34, oy: 0,
+      { sel: "#why",   n: hubs[1], off: [-1.0, 0.35, 1.9], o: -0.40, oy: -0.16,
         anchor: [0.955, 0.20], label: "Why" },
-      { sel: "#how",   n: hubs[0], off: [0.55, 0.55, 1.85], o: 0.36, oy: 0,
+      { sel: "#how",   n: hubs[0], off: [0.55, 0.55, 1.85], o: 0.34, oy: -0.21,
         anchor: [0.048, 0.38], label: "How it runs" },
       { sel: "#built", n: hubs[2], off: [0.5, -0.55, 1.75], o: 0.30, oy: -0.30,
         anchor: [0.950, 0.70], label: "Architecture" },
@@ -248,6 +247,41 @@
       st.sx = 0; st.sy = 0; st.sr = 4;        // live screen position
       return st;
     }).filter(function (st) { return st.el; });
+
+    // ---- keeping the scene off the words ----
+    // The canvas sits behind the copy, but the copy has no background of its
+    // own, so a bright label drawn "behind" a paragraph still reads as
+    // printed on it. Glyph-level bounds are the wrong test: a label set in
+    // the blank half of a card's heading line clears every letter and still
+    // looks like part of that heading. So measure the *blocks* - the boxes
+    // a reader perceives as occupied - and keep the label out of them
+    // entirely. Cached in document coords, rebuilt rarely; the per-frame
+    // cost is one subtraction per rect.
+    var copyRects = [], copyAge = 0, copyFor = -2;
+    var buildCopyRects = function () {
+      copyRects = []; copyFor = active; copyAge = 0;
+      var cst = STOPS[active];
+      if (!cst || !cst.el) return;
+      var walk = document.createTreeWalker(cst.el, NodeFilter.SHOW_TEXT, null);
+      var sy = window.scrollY || 0, tn, seen = [];
+      while ((tn = walk.nextNode())) {
+        if (!tn.nodeValue || !tn.nodeValue.trim()) continue;
+        var host = tn.parentElement;
+        if (!host || seen.indexOf(host) !== -1) continue;
+        seen.push(host);
+        var rr = host.getBoundingClientRect();
+        if (rr.width < 2 || rr.height < 2) continue;
+        copyRects.push([rr.left, rr.top + sy, rr.right, rr.bottom + sy]);
+      }
+    };
+    var hitsCopy = function (x0, y0, x1, y1) {
+      var sy = window.scrollY || 0;
+      for (var ci = 0; ci < copyRects.length; ci++) {
+        var c = copyRects[ci];
+        if (x0 < c[2] && x1 > c[0] && y0 < c[3] - sy && y1 > c[1] - sy) return true;
+      }
+      return false;
+    };
 
     // On a docs page none of those sections exist. Same node field, same
     // colours, but a slow fixed orbit — the page is for reading, so the
@@ -331,6 +365,9 @@
 
     var drawS = function () {
       var W = innerWidth, H = innerHeight;
+      // reveal animations move the copy after a section becomes active, so
+      // re-measure for a while rather than trusting the arrival frame
+      if (!AMBIENT && (copyFor !== active || ++copyAge > 24)) buildCopyRects();
       sx.clearRect(0, 0, W, H);
       // orbit + cursor parallax applied around the look-at target
       var eye = cam.p.slice();
@@ -441,21 +478,37 @@
           sx.save();
           sx.font = "600 21px ui-monospace,SFMono-Regular,Menlo,monospace";
           if ("letterSpacing" in sx) sx.letterSpacing = "0.06em";
-          // place it away from the centre column, but flip sides rather
-          // than let a long name ("Architecture") run off the viewport
-          var lft = q.x > W / 2;
+          // Put it in clear space: try the roomier side, then the other.
+          // If the copy owns both, drop the label - an unreadable paragraph
+          // costs far more than a missing caption.
           var tw = sx.measureText(STOPS[active].label).width;
-          if (lft && q.x + q.r + 22 + tw > W - 18) lft = false;
-          else if (!lft && q.x - q.r - 22 - tw < 18) lft = true;
-          sx.textAlign = lft ? "left" : "right";
-          var lx = q.x + (lft ? q.r + 22 : -(q.r + 22)), ly = q.y + 7;
-          sx.shadowColor = "rgba(4,6,10,.95)";
-          sx.shadowBlur = 14;
-          sx.fillStyle = "rgba(12,16,24," + (0.9 * af).toFixed(3) + ")";
-          sx.fillText(STOPS[active].label, lx, ly);   // halo pass
-          sx.shadowBlur = 0;
-          sx.fillStyle = "rgba(238,245,255," + (0.97 * af).toFixed(3) + ")";
-          sx.fillText(STOPS[active].label, lx, ly);
+          var ly = q.y + 7, gapx = q.r + 22;
+          // Try the roomier side first, then the other; if both are taken,
+          // step a little up and down looking for a clear band. Stay close
+          // enough that it still reads as this node's caption - past that,
+          // drop it. An unreadable section costs more than a caption.
+          var sides = q.x > W / 2 ? [1, -1] : [-1, 1];
+          var nudge = [0, -34, 34, -68, 68, -100, 100];
+          var lx = 0, room = false;
+          for (var v2 = 0; v2 < nudge.length && !room; v2++) {
+            for (var s2 = 0; s2 < 2 && !room; s2++) {
+              var x0 = sides[s2] > 0 ? q.x + gapx : q.x - gapx - tw;
+              var y0 = ly + nudge[v2];
+              if (x0 < 14 || x0 + tw > W - 14) continue;
+              if (hitsCopy(x0 - 10, y0 - 22, x0 + tw + 10, y0 + 9)) continue;
+              lx = x0; ly = y0; room = true;
+            }
+          }
+          if (room) {
+            sx.textAlign = "left";
+            sx.shadowColor = "rgba(4,6,10,.95)";
+            sx.shadowBlur = 14;
+            sx.fillStyle = "rgba(12,16,24," + (0.9 * af).toFixed(3) + ")";
+            sx.fillText(STOPS[active].label, lx, ly);   // halo pass
+            sx.shadowBlur = 0;
+            sx.fillStyle = "rgba(238,245,255," + (0.97 * af).toFixed(3) + ")";
+            sx.fillText(STOPS[active].label, lx, ly);
+          }
           sx.restore();
           sx.textAlign = "left";
         }
@@ -739,8 +792,8 @@
        "A list. Every new session, your agent opens them one by one to work out what they already do."],
       ["Become a graph.",
        "irag parses every import into an edge \u2014 deterministic, always current, and it costs no tokens."],
-      ["So your agent looks it up.",
-       "Structure, neighbours, blast radius: read straight from the graph in an instant, without opening a file or spending a token."]
+      ["So your agent can look it up.",
+       "Structure, neighbours, blast radius: read straight from the graph, instantly and for almost no tokens."]
     ];
     var capT = document.getElementById("sc-cap-t");
     var capP = document.getElementById("sc-cap-p");
