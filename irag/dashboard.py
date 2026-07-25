@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import time
 import threading
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -61,6 +62,7 @@ class _State:
         self.update_lock = threading.Lock()   # atomic guard for update_running
         self.update_log: list[str] = []
         self.update_running = False
+        self.last_live = 0.0
 
     def conn(self):
         return db.ensure_db(self.root / ".irag" / "memory.db")
@@ -201,6 +203,25 @@ def make_handler(state: _State):
                            ORDER BY c.detected_at DESC""").fetchall()
                     return self._json([dict(r) for r in rows])
                 if url.path == "/api/map":
+                    # The 3D visualiser polls this, and a new file must show
+                    # up on its own. Both calls are zero-token and gated on a
+                    # working-tree fingerprint (no-ops when nothing changed),
+                    # but throttle anyway so a large repo isn't hashed on
+                    # every poll.
+                    if (qs.get("live") and
+                            time.monotonic() - state.last_live > 3.0):
+                        state.last_live = time.monotonic()
+                        try:
+                            from . import ingest
+                            ingest.sync(conn, state.cfg, state.root)
+                            structure.scan(conn, state.cfg, state.root)
+                        except sqlite3.OperationalError:
+                            # another writer holds the DB; the next poll
+                            # picks it up. Never 500 the map for this.
+                            state.last_live = 0.0      # retry immediately
+                        except Exception:
+                            traceback.print_exc()      # never swallow silently
+                            state.last_live = 0.0
                     mods = conn.execute(
                         "SELECT subject_id, COUNT(*) n FROM symbols "
                         "GROUP BY subject_id ORDER BY subject_id"

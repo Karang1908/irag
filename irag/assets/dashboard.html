@@ -16,7 +16,7 @@
      one accent (action/state only) ---- */
   --bg:#08090c; --bg-inset:#0b0d11; --panel:#0f1216; --panel-2:#161a21;
   --border:rgba(235,240,255,.08); --border-strong:rgba(235,240,255,.17);
-  --text:#f2f3f5; --text-dim:#a2a9b4; --text-faint:#707885;
+  --text:#f2f3f5; --text-dim:#a2a9b4; --text-faint:#828a99;
   --accent:#58a6ff; --accent-2:#7cc0ff; --accent-dim:rgba(88,166,255,.12); --accent-ring:rgba(88,166,255,.45);
   --green:#3fb950; --green-dim:#0f2318; --green-bd:#1f4630;
   --red:#f85149; --red-dim:#2a1416; --red-bd:#4c2326;
@@ -30,7 +30,7 @@
   --fs-md:.9375rem; --fs-lg:1.0625rem; --fs-xl:1.3rem; --fs-2xl:1.7rem;
   /* ---- spacing ---- */
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
-  --r-sm:6px; --r-md:9px; --r-lg:13px;
+  --r-sm:6px; --r-md:10px; --r-lg:14px;
   --dur:170ms; --ease:cubic-bezier(.22,1,.36,1);
   --sidebar-w:220px;
   --z-nav:10; --z-modal:30;
@@ -222,6 +222,7 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
   .typing i:nth-child(2){animation-delay:.15s}
   .typing i:nth-child(3){animation-delay:.3s}}
 @keyframes typing{0%,65%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-5px);opacity:1}}
+
 
 /* ---------- docs ---------- */
 #docs-wrap{display:grid;grid-template-columns:210px 1fr;gap:var(--sp-4)}
@@ -469,6 +470,42 @@ dialog#keys::backdrop{background:rgba(4,5,7,.66);backdrop-filter:blur(3px)}
 @media (prefers-reduced-motion: no-preference){
   dialog#keys[open]{animation:card-in .22s var(--ease) both}}
 
+
+/* ---------- Visualize: the codebase in 3D ---------- */
+.viz-wrap{display:grid;grid-template-columns:1fr 400px;gap:var(--sp-5);align-items:start}
+.viz-stage{position:relative;height:min(70vh,660px);background:var(--bg-inset);
+  border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.viz-stage::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:radial-gradient(120% 90% at 50% 45%,transparent 55%,rgba(8,9,12,.55) 100%)}
+#viz-canvas{display:block;width:100%;height:100%;cursor:grab}
+#viz-canvas:active{cursor:grabbing}
+.viz-hud{position:absolute;left:14px;top:12px;z-index:2;font:var(--fs-2xs) var(--mono);
+  color:var(--text-faint);letter-spacing:.04em}
+.viz-legend{position:absolute;right:14px;top:12px;z-index:2;display:flex;flex-wrap:wrap;
+  gap:4px 12px;justify-content:flex-end;max-width:60%}
+.viz-legend span{display:inline-flex;align-items:center;gap:5px;font:var(--fs-2xs) var(--mono);
+  color:var(--text-faint)}
+.viz-legend i{width:7px;height:7px;border-radius:50%}
+.viz-ctrl{position:absolute;right:12px;bottom:12px;z-index:2;display:flex;gap:6px}
+.viz-ctrl button{width:30px;height:30px;border-radius:var(--r-sm);cursor:pointer;
+  background:var(--panel);border:1px solid var(--border-strong);color:var(--text-dim);
+  font:13px var(--sans);display:grid;place-items:center}
+.viz-ctrl button:hover{color:var(--text);border-color:var(--accent-ring)}
+.viz-ctrl button.on{color:var(--accent);border-color:var(--accent-ring)}
+.viz-tip{position:absolute;z-index:3;pointer-events:none;background:var(--panel);
+  border:1px solid var(--border-strong);border-radius:var(--r-sm);padding:5px 9px;
+  font:var(--fs-2xs) var(--mono);color:var(--text);white-space:nowrap;
+  box-shadow:0 8px 24px rgba(0,0,0,.55)}
+.viz-panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--r-lg);
+  padding:var(--sp-5);max-height:min(70vh,660px);overflow:auto}
+.vp-head h3{font-family:var(--mono);font-size:var(--fs-md);color:var(--text);
+  text-transform:none;letter-spacing:0;border:none;padding:0;word-break:break-all}
+.vp-head{margin-bottom:var(--sp-3)}
+.viz-panel h4{font-size:var(--fs-xs);text-transform:uppercase;letter-spacing:.06em;
+  color:var(--text-dim);margin:var(--sp-4) 0 var(--sp-2)}
+@media (max-width:1100px){.viz-wrap{grid-template-columns:1fr}
+  .viz-panel{max-height:none}}
+
 /* ---------- professional data display ----------
    Numbers are read in columns and refresh every 3s; proportional figures
    make them jitter and misalign. Tabular figures everywhere data lives. */
@@ -564,6 +601,7 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
       <button data-tab="chat" aria-label="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Chat</span></button>
       <button data-tab="pages" aria-label="Pages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Pages</span></button>
       <button data-tab="health" aria-label="Health"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Health</span></button>
+      <button data-tab="viz" aria-label="Visualize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5"/><path d="M12 12v10"/></svg><span>Visualize</span></button>
       <button data-tab="map" aria-label="Map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.8"/><circle cx="6" cy="12" r="2.8"/><circle cx="18" cy="19" r="2.8"/><line x1="8.4" y1="13.4" x2="15.6" y2="17.6"/><line x1="15.6" y1="6.4" x2="8.4" y2="10.6"/></svg><span>Map</span></button>
       <button data-tab="sessions" aria-label="Sessions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg><span>Sessions</span></button>
       <button data-tab="tools" aria-label="Tools"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3z"/><circle cx="17.5" cy="6.5" r="3.5"/></svg><span>Tools</span></button>
@@ -733,6 +771,28 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
     </div>
   </section>
 
+  <section id="viz">
+    <h2 class="page-title">Visualize</h2>
+    <div class="page-sub">Your codebase in three dimensions, built from the real symbol and import tables. Drag to orbit, scroll to zoom, click any file to inspect what irag knows about it. It re-reads the map every few seconds, so new files appear on their own.</div>
+    <div class="viz-wrap">
+      <div class="viz-stage" id="viz-stage">
+        <canvas id="viz-canvas"></canvas>
+        <div class="viz-hud" id="viz-hud">loading the map…</div>
+        <div class="viz-legend" id="viz-legend"></div>
+        <div class="viz-ctrl">
+          <button id="vz-in" title="zoom in">+</button>
+          <button id="vz-out" title="zoom out">&minus;</button>
+          <button id="vz-fit" title="reset the view">&#10530;</button>
+          <button id="vz-spin" title="pause rotation" class="on">&#9199;</button>
+        </div>
+        <div class="viz-tip" id="viz-tip" hidden></div>
+      </div>
+      <aside class="viz-panel" id="viz-panel">
+        <div class="empty">Click a file in the graph to inspect it: what it defines, what it imports, what depends on it, and everything irag has written about it.</div>
+      </aside>
+    </div>
+  </section>
+
   <section id="map">
     <h2 class="page-title">Map</h2>
     <div class="page-sub">The codebase as a graph: every module a node, every import an edge. Drag to pan, scroll to zoom, drag a node to pull it around.</div>
@@ -894,10 +954,11 @@ const IC={
 };
 
 /* ---------- tabs ---------- */
-const TITLES={overview:"Overview",chat:"Chat",pages:"Pages",health:"Health",map:"Map",sessions:"Sessions",tools:"Tools",docs:"Docs"};
+const TITLES={overview:"Overview",chat:"Chat",pages:"Pages",viz:"Visualize",health:"Health",map:"Map",sessions:"Sessions",tools:"Tools",docs:"Docs"};
 const perTab={
   overview:()=>{refreshStatus();refreshBurn();refreshFeed()},
   pages:refreshPages,
+  viz:()=>VIZ.enter(),
   health:refreshHealth, map:refreshMap, sessions:refreshSessions,
   docs:()=>{if(!docsLoaded)loadDocs()},
 };
@@ -916,6 +977,7 @@ function switchTab(name,fromHash){
     +(TITLES[name]||"irag")+" · irag";
   (perTab[name]||(()=>{}))();
   if(GRAPH&&name!=="map")GRAPH.stop();   // pause the sim off-tab
+  if(name!=="viz")VIZ.leave();
 }
 document.querySelectorAll("nav.tabs button").forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 addEventListener("hashchange",()=>{
@@ -924,7 +986,7 @@ addEventListener("hashchange",()=>{
 });
 document.querySelector('nav.tabs button.active')?.setAttribute("aria-current","page");
 /* keyboard: 1-6 switch tabs (ignored while typing) */
-const TAB_ORDER=["overview","chat","pages","health","map","sessions","tools","docs"];
+const TAB_ORDER=["overview","chat","pages","viz","health","map","sessions","tools","docs"];
 const typing=t=>t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT"||t.isContentEditable);
 addEventListener("keydown",e=>{
   // ⌘K / Ctrl-K opens the palette from anywhere, including while typing
@@ -1756,6 +1818,223 @@ async function loadTranscript(id){
       `<div class="tmsg ${esc(m.role)}"><div class="trole">${esc(m.role)}</div>
         <div class="tbody">${md(esc(m.content||""))}</div></div>`).join("")+`</div>`;
 }
+
+/* ---------- Visualize: the real codebase in 3D ----------
+   Nodes are your files (sized by symbol count, coloured by top-level
+   folder), edges are real imports — both straight from the symbols/deps
+   tables, so this is your codebase, not a diagram of one. A 3D force
+   layout settles them, a perspective camera projects them, and the map is
+   re-read every few seconds so new files show up without a refresh. */
+const VIZ=(()=>{
+  let cv,ctx,stage,nodes=[],links=[],byId={},raf=null,live=false;
+  let rotY=0,rotX=-0.22,dist=3.1,spin=true,drag=null,hover=null,sel=null;
+  let sig="",dpr=1,W=0,H=0,settle=0;
+  const HUES=[212,262,190,288,152,226,318,44];
+  const hueOf=id=>{const seg=(id.split("/")[0]||id);let h=0;
+    for(const c of seg)h=(h*31+c.charCodeAt(0))>>>0;return HUES[h%HUES.length]};
+
+  function size(){
+    const r=stage.getBoundingClientRect();
+    dpr=Math.min(2,devicePixelRatio||1);W=r.width;H=r.height;
+    cv.width=Math.max(1,W*dpr);cv.height=Math.max(1,H*dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  function build(map){
+    const nm={};
+    (map.files||[]).forEach(f=>nm[f.subject_id]={id:f.subject_id,n:f.n||1});
+    (map.deps||[]).forEach(d=>{if(!nm[d.s])nm[d.s]={id:d.s,n:1};
+                               if(!nm[d.t])nm[d.t]={id:d.t,n:1}});
+    let list=Object.values(nm);
+    if(list.length>260)list=list.sort((a,b)=>b.n-a.n).slice(0,260);
+    const allow=new Set(list.map(n=>n.id)),prev=byId;
+    nodes=list.map(n=>{
+      const o=prev[n.id];
+      return {id:n.id,n:n.n,deg:0,
+        x:o?o.x:(Math.random()-.5)*2.2,y:o?o.y:(Math.random()-.5)*2.2,
+        z:o?o.z:(Math.random()-.5)*2.2,vx:0,vy:0,vz:0,hue:hueOf(n.id)};
+    });
+    byId={};nodes.forEach(n=>byId[n.id]=n);
+    links=(map.deps||[]).filter(d=>allow.has(d.s)&&allow.has(d.t))
+      .map(d=>({s:byId[d.s],t:byId[d.t],w:d.n||1}));
+    links.forEach(l=>{l.s.deg++;l.t.deg++});
+    const mx=Math.max(1,...nodes.map(n=>n.n));
+    nodes.forEach(n=>{n.r=3.2+Math.sqrt(n.n/mx)*9});
+    settle=nodes.length?Math.min(160,Math.floor(9000/nodes.length)):0;
+    for(let i=0;i<settle;i++)physics(1);
+    fit();legend();hud();
+  }
+  function physics(a){
+    const N=nodes.length;
+    for(let i=0;i<N;i++)for(let j=i+1;j<N;j++){
+      const A=nodes[i],B=nodes[j];
+      let dx=B.x-A.x,dy=B.y-A.y,dz=B.z-A.z;
+      let d2=dx*dx+dy*dy+dz*dz||0.0001,d=Math.sqrt(d2);
+      const f=0.055*a/d2,ux=dx/d,uy=dy/d,uz=dz/d;
+      B.vx+=ux*f;B.vy+=uy*f;B.vz+=uz*f;
+      A.vx-=ux*f;A.vy-=uy*f;A.vz-=uz*f;
+    }
+    links.forEach(l=>{
+      const A=l.s,B=l.t;let dx=B.x-A.x,dy=B.y-A.y,dz=B.z-A.z;
+      const d=Math.sqrt(dx*dx+dy*dy+dz*dz)||1,k=(d-0.82)/d*0.045*a;
+      A.vx+=dx*k;A.vy+=dy*k;A.vz+=dz*k;
+      B.vx-=dx*k;B.vy-=dy*k;B.vz-=dz*k;
+    });
+    nodes.forEach(n=>{
+      n.vx+=-n.x*0.012*a;n.vy+=-n.y*0.012*a;n.vz+=-n.z*0.012*a;
+      n.vx*=0.62;n.vy*=0.62;n.vz*=0.62;
+      n.x+=n.vx;n.y+=n.vy;n.z+=n.vz;
+    });
+  }
+  // frame everything: pick a camera distance from the layout's extent so
+  // the whole codebase is visible however many files it has
+  function fit(){
+    if(!nodes.length)return;
+    let m=0;nodes.forEach(n=>{m=Math.max(m,Math.hypot(n.x,n.y,n.z))});
+    dist=Math.max(1.9,Math.min(9,m*2.15+0.9));
+  }
+  function project(){
+    const cy=Math.cos(rotY),sy=Math.sin(rotY),cx=Math.cos(rotX),sx2=Math.sin(rotX);
+    const f=Math.min(W,H)*0.92,ox=W/2,oy=H/2;
+    return nodes.map(n=>{
+      let x=n.x*cy-n.z*sy,z=n.x*sy+n.z*cy;
+      let y=n.y*cx-z*sx2;z=n.y*sx2+z*cx;
+      const d=dist/(dist+z);
+      return {n,x:ox+x*f*d/2.4,y:oy+y*f*d/2.4,z,d,r:Math.max(1,n.r*d)};
+    });
+  }
+  function draw(){
+    if(!W||!H)return;
+    ctx.clearRect(0,0,W,H);
+    const P=project(),idx={};P.forEach((p,i)=>idx[p.n.id]=p);
+    const lit=hover||sel;
+    const near=lit?new Set([lit.id]):null;
+    if(lit)links.forEach(l=>{if(l.s.id===lit.id)near.add(l.t.id);
+                             if(l.t.id===lit.id)near.add(l.s.id)});
+    links.forEach(l=>{
+      const a=idx[l.s.id],b=idx[l.t.id];if(!a||!b)return;
+      const on=!lit||(near.has(l.s.id)&&near.has(l.t.id));
+      ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);
+      ctx.strokeStyle=on?"rgba(120,150,190,"+(0.10+0.34*((a.d+b.d)/2)).toFixed(3)+")"
+                       :"rgba(120,150,190,.05)";
+      ctx.lineWidth=on?Math.max(.5,1.1*((a.d+b.d)/2)):.5;ctx.stroke();
+    });
+    P.slice().sort((u,v)=>v.z-u.z).forEach(p=>{
+      const on=!lit||near.has(p.n.id);
+      const l=on?(46+26*p.d):26, al=on?(0.55+0.45*p.d):0.18;
+      ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,6.2832);
+      ctx.fillStyle="hsla("+p.n.hue+",58%,"+l.toFixed(0)+"%,"+al.toFixed(2)+")";
+      ctx.fill();
+      if(sel&&p.n.id===sel.id){
+        ctx.beginPath();ctx.arc(p.x,p.y,p.r+7,0,6.2832);
+        ctx.strokeStyle="rgba(88,166,255,.9)";ctx.lineWidth=1.6;ctx.stroke();
+      }
+      if((p.r>7||on&&lit)&&p.d>0.7){
+        ctx.font="500 10px ui-monospace,Menlo,monospace";
+        ctx.fillStyle="rgba(226,232,240,"+(on?0.62:0.14).toFixed(2)+")";
+        ctx.fillText(p.n.id.split("/").pop(),p.x+p.r+6,p.y+3.4);
+      }
+    });
+    return P;
+  }
+  let LAST=[];
+  function frame(){
+    if(spin&&!drag)rotY+=0.0022;
+    physics(0.22);                     // keeps settling; new nodes ease in
+    LAST=draw();
+    raf=requestAnimationFrame(frame);
+  }
+  function hud(){
+    const el=$("#viz-hud");if(!el)return;
+    el.textContent=nodes.length
+      ? nodes.length+" file"+(nodes.length===1?"":"s")+" · "+links.length+" import"+(links.length===1?"":"s")
+      : "no structural map yet — run Update, or Scan map from Tools";
+  }
+  function legend(){
+    const segs=[...new Set(nodes.map(n=>n.id.split("/")[0]||n.id))].slice(0,8);
+    $("#viz-legend").innerHTML=segs.map(sg=>
+      '<span><i style="background:hsl('+hueOf(sg)+',58%,62%)"></i>'+esc(sg)+'</span>').join("");
+  }
+  function pick(mx,my){
+    let best=null,bd=1e9;
+    LAST.forEach(p=>{const d=Math.hypot(p.x-mx,p.y-my);
+      if(d<Math.max(9,p.r+5)&&d<bd){bd=d;best=p.n}});
+    return best;
+  }
+  async function inspect(n){
+    sel=n;
+    const el=$("#viz-panel");
+    el.innerHTML='<div class="empty">Loading '+esc(n.id)+'…</div>';
+    let p;
+    try{p=await api("/api/page?subject="+encodeURIComponent(n.id))}
+    catch(e){el.innerHTML='<div class="empty">Could not load that page.</div>';return}
+    if(!sel||sel.id!==n.id)return;
+    const f=p.facts||{},probs=p.contradictions||[];
+    const chips=a=>(a||[]).map(x=>'<button class="chip go" data-go="'+esc(String(x)).replace(/"/g,"&quot;")+'">'+esc(String(x))+'</button>').join("");
+    el.innerHTML=
+      '<div class="vp-head"><h3>'+esc(n.id)+'</h3>'
+      +'<div class="pd-badges"><span class="pill">'+esc(p.page_type||"file")+'</span>'
+      +'<span class="pill">'+n.n+' symbol'+(n.n===1?"":"s")+'</span>'
+      +(p.versions&&p.versions.length?'<span class="pill">v'+p.versions[0].version_number+'</span>':'<span class="pill">not written yet</span>')
+      +'</div></div>'
+      +(probs.length?'<div class="pd-problems"><div class="pd-problems-h">'+probs.length+' problem'+(probs.length>1?"s":"")+' on this page</div>'
+        +probs.map(c=>'<div class="prob"><span class="sev-'+c.severity+'">'+c.severity+'</span><div><b>'+esc(c.claim||"")+'</b><span class="prob-truth">'+esc(c.truth||"")+'</span></div></div>').join("")+'</div>':'')
+      +'<div class="pd-struct">'
+      +(f.symbols&&f.symbols.length?'<div><span class="sk">defines</span><div class="chips">'+f.symbols.slice(0,18).map(sy=>'<span class="chip static">'+esc(sy.name)+'</span>').join("")+'</div></div>':'')
+      +(f.imports&&f.imports.length?'<div><span class="sk">imports</span><div class="chips">'+chips(f.imports)+'</div></div>':'')
+      +(f.imported_by&&f.imported_by.length?'<div><span class="sk">imported by</span><div class="chips">'+chips(f.imported_by)+'</div></div>':'')
+      +'</div>'
+      +'<h4>What irag knows</h4><div class="pd-body">'+(p.body?md(esc(p.body)):'<div class="empty">No summary yet — this page gets one on the next Update.</div>')+'</div>';
+    el.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{
+      const t=byId[b.dataset.go];if(t){inspect(t);centre(t)}
+    });
+  }
+  function centre(n){ rotY=Math.atan2(-n.x,-n.z)||rotY; }
+  async function poll(){
+    try{
+      const m=await api("/api/map?live=1");
+      const s2=(m.files||[]).map(f=>f.subject_id+":"+f.n).join("|")+"#"
+              +(m.deps||[]).map(d=>d.s+">"+d.t).join("|");
+      if(s2!==sig){sig=s2;build(m)}          // only rebuild on real change
+    }catch(e){}
+  }
+  function enter(){
+    if(!cv){
+      stage=document.getElementById("viz-stage");
+      cv=document.getElementById("viz-canvas");if(!cv)return;
+      ctx=cv.getContext("2d");size();
+      addEventListener("resize",()=>{if(live){size()}});
+      cv.addEventListener("mousedown",e=>{drag={x:e.clientX,y:e.clientY,moved:false}});
+      addEventListener("mouseup",e=>{
+        if(drag&&!drag.moved){const r=cv.getBoundingClientRect();
+          const n=pick(e.clientX-r.left,e.clientY-r.top);if(n)inspect(n)}
+        drag=null;});
+      cv.addEventListener("mousemove",e=>{
+        const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+        if(drag){drag.moved=true;rotY+=(e.clientX-drag.x)*0.006;
+          rotX=Math.max(-1.3,Math.min(1.3,rotX+(e.clientY-drag.y)*0.005));
+          drag.x=e.clientX;drag.y=e.clientY;return}
+        const n=pick(mx,my);hover=n;cv.style.cursor=n?"pointer":"grab";
+        const tip=$("#viz-tip");
+        if(n){tip.hidden=false;tip.textContent=n.id+" · "+n.n+" symbol"+(n.n===1?"":"s");
+          tip.style.left=Math.min(mx+14,r.width-tip.offsetWidth-8)+"px";
+          tip.style.top=(my+16)+"px";}
+        else tip.hidden=true;
+      });
+      cv.addEventListener("mouseleave",()=>{hover=null;$("#viz-tip").hidden=true});
+      cv.addEventListener("wheel",e=>{e.preventDefault();
+        dist=Math.max(1.5,Math.min(9,dist*Math.exp(e.deltaY*0.0012)))},{passive:false});
+      $("#vz-in").onclick=()=>dist=Math.max(1.5,dist/1.25);
+      $("#vz-out").onclick=()=>dist=Math.min(9,dist*1.25);
+      $("#vz-fit").onclick=()=>{fit();rotX=-0.22;rotY=0};
+      $("#vz-spin").onclick=e=>{spin=!spin;e.currentTarget.classList.toggle("on",spin)};
+    }
+    live=true;size();poll();
+    if(!raf)frame();
+    if(!VIZ._t)VIZ._t=setInterval(()=>{if(live)poll()},4000);
+  }
+  function leave(){live=false;if(raf){cancelAnimationFrame(raf);raf=null}}
+  return {enter,leave,_t:null};
+})();
 
 /* ---------- docs ---------- */
 let docsLoaded=false;

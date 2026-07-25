@@ -4,6 +4,38 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.18.0 — 2026-07-25
+
+### Added — **Visualize: your codebase in 3D, inspectable and live**
+A new dashboard tab renders **your actual codebase** in three dimensions —
+nodes are your files (sized by symbol count, coloured by top-level folder),
+edges are your real imports, both read straight from the `symbols` and
+`deps` tables. It is your repo, not a diagram of one.
+
+- **Inspectable.** Click any file to open what irag knows about it: what it
+  defines, what it imports, what imports it, its open contradictions, and
+  its written summary. The import chips navigate, so you can walk the
+  dependency graph node to node.
+- **Live.** It re-reads the map every few seconds and rebuilds only when
+  the structure actually changed. `GET /api/map?live=1` runs a sync + scan
+  first (both zero-token and fingerprint-gated, throttled to once per 3s),
+  so **a file you create appears on its own** — verified end to end with no
+  manual scan.
+- 3D force layout, perspective projection, z-sorted painting, auto-fit to
+  the graph's extent; drag to orbit, scroll to zoom, hover to isolate a
+  node and its neighbours. Hand-rolled, no 3D dependency.
+
+### Changed — the dashboard and the site are now one theme
+All 23 shared design tokens are identical. Two were not: `--text-faint`
+(the dashboard's `#707885` failed WCAG AA at 4.47:1 — now `#828a99`, 5.73:1)
+and the `--r-md` / `--r-lg` corner radii.
+
+### Fixed
+- `/api/map?live=1` swallowed every failure with a bare `except: pass`,
+  which hid a real `database is locked` contention error and made the live
+  update look silently broken. Contention now retries on the next poll and
+  anything else is logged.
+
 ## 4.17.0 — 2026-07-25
 
 ### Changed — the node's name is readable now
