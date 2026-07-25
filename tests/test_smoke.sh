@@ -424,4 +424,52 @@ assert len(warn) <= 13, f"warning section unbounded: {len(warn)} lines"
 PYEOF
 echo "contradictions demote, not erase, ok"
 
+# --- symbol precision round 3 + check gate (regression guard) --------------
+python3 - << 'PYEOF' || { echo "FAIL: symbol precision round 3"; exit 1; }
+import io, contextlib, pathlib, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, check, retrieval, structure
+
+# destructured exports bind several names in one statement
+names = []
+for m in structure.JS_SYMBOL_RE.finditer(
+        "export const { a, b } = obj;\nexport const [x, y] = arr;\n"):
+    g = m.groupdict()
+    if g["destr"]:
+        for part in g["destr"].strip("{}[]").split(","):
+            part = part.split("=")[0].split(":")[-1].strip()
+            if part.isidentifier():
+                names.append(part)
+assert names == ["a", "b", "x", "y"], f"destructured exports: {names}"
+
+# a page with no version at all means synthesis never ran; staleness_score is
+# 0 so fail_on_staleness cannot see it, and the gate used to exit 0
+d = pathlib.Path(tempfile.mkdtemp()); (d / ".irag").mkdir()
+dbp = d / ".irag" / "memory.db"; db.ensure_db(dbp)
+conn = db.connect(str(dbp)); cfg = config.load(d)
+conn.execute("INSERT INTO pages(page_type,title,subject_type,subject_id)"
+             " VALUES('module','a.py','module','a.py')")
+conn.commit()
+with contextlib.redirect_stdout(io.StringIO()):
+    rc = check.run(conn, cfg)
+assert rc == 1, "irag check passed with a never-synthesized page"
+cfg["check"]["fail_on_unsynthesized"] = False
+with contextlib.redirect_stdout(io.StringIO()):
+    assert check.run(conn, cfg) == 0, "the gate must stay opt-out"
+
+# search excerpts are read by agents: no markers injected into real text
+c = conn.execute("INSERT INTO pages(page_type,title,subject_type,subject_id)"
+                 " VALUES('module','s','module','src/store.ts')")
+r = conn.execute("INSERT INTO revisions(page_id,version_number,body_markdown,"
+                 "change_summary) VALUES(?,1,'state lives in src/store.ts','x')",
+                 (c.lastrowid,))
+conn.execute("UPDATE pages SET current_revision_id=? WHERE page_id=?",
+             (r.lastrowid, c.lastrowid))
+conn.commit()
+hits = retrieval.search(conn, "store")
+assert hits, "FTS search returned nothing"
+assert "[" not in hits[0]["snippet"], f"markers in excerpt: {hits[0]['snippet']!r}"
+PYEOF
+echo "symbol precision round 3 + check gate ok"
+
 echo "SMOKE TEST PASSED"

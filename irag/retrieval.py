@@ -287,7 +287,10 @@ def search(conn: sqlite3.Connection, query: str) -> list[dict]:
         rows = conn.execute(
             """SELECT p.subject_id, p.title, r.version_number, r.revision_id,
                       p.current_revision_id,
-                      snippet(revisions_fts, 0, '[', ']', '…', 12) snip
+                      -- no highlight markers: this excerpt is read by
+                      -- agents, and wrapping matches in brackets rewrote
+                      -- real text ('src/store.ts' -> 'src/[store].ts')
+                      snippet(revisions_fts, 0, '', '', '…', 12) snip
                FROM revisions_fts f
                JOIN revisions r ON r.revision_id = f.rowid
                JOIN pages p ON p.page_id = r.page_id

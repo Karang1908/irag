@@ -50,7 +50,10 @@ JS_SYMBOL_RE = re.compile(
     r"|(?:abstract\s+)?class\s+(?P<cls>\w+)"
     r"|(?:interface|enum)\s+(?P<iface>\w+)"
     r"|type\s+(?P<ty>\w+)\s*="
-    r"|(?:const|let|var)\s+(?P<var>\w+)(?:\s*:[^=\n]+?)?\s*=)",
+    r"|(?:const|let|var)\s+(?P<var>\w+)(?:\s*:[^=\n]+?)?\s*="
+    # destructured exports bind several names at once:
+    #   export const { a, b } = obj   /   export const [x, y] = arr
+    r"|(?:const|let|var)\s*(?P<destr>[{\[][^}\]\n]+[}\]])\s*=)",
     re.M,
 )
 JS_IMPORT_RE = re.compile(
@@ -223,10 +226,20 @@ def _regex_parse(text: str, rel: str, suffix: str):
     if suffix in JS_EXT:
         for m in JS_SYMBOL_RE.finditer(text):
             g = m.groupdict()
+            line_no = _line(text, m.start())
+            if g["destr"]:
+                # one statement, several bindings; keep the local alias when
+                # written `{ a: b }`, and drop defaults after `=`
+                for part in g["destr"].strip("{}[]").split(","):
+                    part = part.split("=")[0].split(":")[-1].strip()
+                    part = part.lstrip(". ").strip()
+                    if part.isidentifier():
+                        yield ("sym", part, "function", line_no)
+                continue
             name = g["fn"] or g["cls"] or g["iface"] or g["ty"] or g["var"]
             kind = ("class" if g["cls"] else
                     "type" if (g["iface"] or g["ty"]) else "function")
-            yield ("sym", name, kind, _line(text, m.start()))
+            yield ("sym", name, kind, line_no)
         for m in JS_IMPORT_RE.finditer(text):
             spec = m.group(1)
             if spec.startswith("."):  # relative → repo path

@@ -148,18 +148,38 @@ def subj_dir(repo: Path, subject_id: str) -> Path:
     return p if p.is_dir() else p.parent
 
 
-def _module_source(mod_dir: Path) -> str:
-    """Concatenated source of the module, for the definition grep."""
-    if not mod_dir.is_dir():
+def _read(f: Path) -> str:
+    try:
+        return f.read_text(encoding="utf-8", errors="replace")[:200_000]
+    except OSError:
+        return ""
+
+
+def _module_source(target: Path) -> str:
+    """Source backing a page: the file itself, or a folder page's tree.
+
+    A file page greps only its own file. Its siblings are already reachable
+    through the symbols table (via the page's imports), and this grep exists
+    only to find declarations the top-level index deliberately omits - nested
+    helpers and object-literal members - which are in the same file. Reading
+    the whole directory let "right symbol, wrong file" pass unflagged.
+    """
+    if target.is_file():
+        return _read(target)
+    if not target.is_dir():
         return ""
     out = ""
-    for f in mod_dir.rglob("*"):
+    for f in target.rglob("*"):
         if f.is_file() and f.suffix in SOURCE_EXT:
-            try:
-                out += f.read_text(encoding="utf-8", errors="replace")[:200_000]
-            except OSError:
-                continue
+            out += _read(f)
     return out
+
+
+# `render()` in prose may be createRoot(...).render(...) - a method on an
+# object returned at runtime. Nothing in a static index can confirm or deny
+# it, so a method call that isn't locally defined is unverifiable, not false.
+def _method_call_re(sym: str) -> re.Pattern:
+    return re.compile(rf"\.\s*{re.escape(sym)}\s*\(")
 
 
 def _basename_index(repo: Path, cfg: dict) -> dict[str, list[str]]:
@@ -322,9 +342,11 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
                     # against the source before calling anything a phantom.
                     if not src_cache:
                         src_cache.append(_module_source(
-                            subj_dir(repo, page["subject_id"])))
+                            repo / page["subject_id"]))
                     if src_cache[0] and _defines_pattern(sym).search(src_cache[0]):
                         continue
+                    if src_cache[0] and _method_call_re(sym).search(src_cache[0]):
+                        continue    # a method on some object; unverifiable
                 if not defined:
                     failing.add(f"references symbol `{sym}()`")
                     if _insert(conn, page["page_id"], page["rev_id"],
@@ -348,6 +370,8 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
                 sym = match.group(1)
                 if sym in external:
                     continue
+                if source and _method_call_re(sym).search(source):
+                    continue        # a method on some object; unverifiable
                 if source and not _defines_pattern(sym).search(source):
                     failing.add(f"references symbol `{sym}()`")
                     if _insert(conn, page["page_id"], page["rev_id"],

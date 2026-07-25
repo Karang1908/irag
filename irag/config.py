@@ -49,6 +49,7 @@ max_message_chars = 4000    # truncate any single message to this many chars
 max_staleness = 150
 fail_on_contradictions = true
 fail_on_staleness = true      # set false to let 'irag check' pass despite stale pages
+fail_on_unsynthesized = true  # a page with no version at all means synthesis never ran
 '''
 
 DEFAULTS: dict[str, Any] = {
@@ -82,6 +83,7 @@ DEFAULTS: dict[str, Any] = {
         "max_staleness": 150,
         "fail_on_contradictions": True,
         "fail_on_staleness": True,
+        "fail_on_unsynthesized": True,
     },
 }
 

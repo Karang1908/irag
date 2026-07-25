@@ -4,6 +4,49 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.30.0 — 2026-07-25
+
+Closes out the audit series: on a real Vite/React/zustand project the
+contradiction count went 38 → 36 → 2 → 0.
+
+### Fixed — the last two false positives were methods, not functions
+`SYMBOL_RE` matches `name()` in prose and cannot tell a function from a
+method. `_external_names` catches an imported binding (`createRoot`) but not
+a method invoked on what it returns — `createRoot(...).render(...)`,
+`gl.getExtension(...).loseContext()`. Nothing in a static index can confirm
+or deny a method on a runtime object, so a `.name(` call site that isn't
+locally defined is now treated as unverifiable rather than hallucinated, on
+both the symbols-table and grep paths.
+
+### Fixed — the definition grep read the whole directory
+4.29.0 confirmed a symbols-table miss against source before flagging, but
+read every file in the page's directory, so a symbol defined only in a
+sibling was accepted for a page that never mentions it — `complete()` passed
+for `Hud.tsx` while living in `Terminal.tsx`. A file page now greps only its
+own file: siblings are already reachable through the symbols table via the
+page's imports, and the grep exists solely to find declarations the
+top-level index deliberately omits, which are in the same file. This closes
+the precision limit 4.29.0 introduced rather than merely documenting it.
+
+### Fixed — `irag check` passed with no memory at all
+`never_synth` was computed and printed and gated nothing, and there was no
+`fail_on_unsynthesized` default. A never-synthesized page has
+`staleness_score` 0, so `fail_on_staleness` cannot see it — meaning a project
+whose LLM was misconfigured printed "pages never synthesized: 40" and exited
+**0**. For a gate whose stated job is to fail the build when memory disagrees
+with the code, no memory at all now fails. Opt out with
+`fail_on_unsynthesized = false`.
+
+### Fixed — search excerpts rewrote real text
+The FTS5 snippet was told to wrap matches in `[` `]`, which injected brackets
+inside identifiers and paths: `src/store.ts` came back as `src/[store].ts`.
+This output is read by agents, so the excerpt is now verbatim.
+
+### Fixed — destructured exports were not indexed
+`export const { a, b } = obj` and `export const [x, y] = arr` bind several
+names in one statement and were skipped entirely. Both are now indexed,
+keeping the local alias in `{ a: b }` and dropping defaults after `=`.
+
 ## 4.29.0 — 2026-07-25
 
 ### Fixed — a contradiction silently deleted the page from the agent's memory

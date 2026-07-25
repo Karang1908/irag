@@ -13,6 +13,7 @@ def run(conn: sqlite3.Connection, cfg: dict) -> int:
     max_staleness = int(cfg["check"]["max_staleness"])
     fail_on_contra = bool(cfg["check"]["fail_on_contradictions"])
     fail_on_stale = bool(cfg["check"].get("fail_on_staleness", True))
+    fail_on_unsynth = bool(cfg["check"].get("fail_on_unsynthesized", True))
 
     open_contras = conn.execute(
         "SELECT COUNT(*) c FROM contradictions WHERE resolved_at IS NULL"
@@ -37,6 +38,14 @@ def run(conn: sqlite3.Connection, cfg: dict) -> int:
         failed = True
     if fail_on_stale and over_stale:
         print("FAIL: stale pages present (run 'irag synthesize')")
+        failed = True
+    if fail_on_unsynth and never_synth:
+        # a never-synthesized page has staleness_score 0, so the staleness
+        # gate above cannot see it. Without this, a project whose LLM was
+        # misconfigured reports "pages never synthesized: 40" and exits 0 -
+        # a gate whose job is "fail when memory disagrees with code" passing
+        # with no memory at all.
+        print("FAIL: pages never synthesized (run 'irag update')")
         failed = True
     if not failed:
         print("OK")
