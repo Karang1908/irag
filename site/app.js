@@ -792,8 +792,8 @@
        "A list. Every new session, your agent opens them one by one to work out what they already do."],
       ["Become a graph.",
        "irag parses every import into an edge \u2014 deterministic, always current, and it costs no tokens."],
-      ["So your agent can look it up.",
-       "Structure, neighbours, blast radius: read straight from the graph, instantly and for almost no tokens."]
+      ["So your agent can look it up \u2014 for almost no tokens.",
+       "Structure, neighbours, blast radius: read straight from the graph, in one query, without opening a file."]
     ];
     var capT = document.getElementById("sc-cap-t");
     var capP = document.getElementById("sc-cap-p");

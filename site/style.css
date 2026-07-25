@@ -391,12 +391,13 @@ html.lenis,html.lenis body{height:auto}
 .sc-sticky{position:sticky;top:0;height:100vh;overflow:hidden;
   display:flex;flex-direction:column;align-items:center;justify-content:center;
   gap:30px;padding:0 22px}
-.sc-cap{text-align:center;max-width:48ch;z-index:3}
+.sc-cap{text-align:center;max-width:min(92vw,780px);z-index:3}
 .sc-cap-t{font-family:var(--display);font-weight:600;font-size:clamp(28px,4.2vw,48px);
   letter-spacing:-.02em;line-height:1.06;margin:14px 0 12px;text-wrap:balance}
-.sc-cap-p{color:var(--text-dim);font-size:16px;text-wrap:pretty;min-height:3.2em}
+.sc-cap-p{color:var(--text-dim);font-size:16px;text-wrap:pretty;min-height:3.2em;
+  max-width:58ch;margin-inline:auto}
 .js .sc-cap-t,.js .sc-cap-p{transition:opacity .18s ease}
-.sc-stage{position:relative;width:min(92vw,900px);aspect-ratio:2/1;max-height:44vh}
+.sc-stage{position:relative;width:min(92vw,1060px);aspect-ratio:2/1;max-height:50vh}
 .sc-edges{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:1;pointer-events:none}
 .sc-edge{stroke:var(--accent);stroke-width:1.3;fill:none;opacity:0;
   filter:drop-shadow(0 0 3px rgba(88,166,255,.55))}

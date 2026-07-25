@@ -588,7 +588,7 @@ versions), not opinions. <a href="docs/comparison/">Full comparison →</a></p>
 <section class="showcase" id="showcase" aria-label="irag turns your files into a graph">
 <div class="sc-sticky">
 <div class="sc-cap">
-<h2 class="sc-cap-t" id="sc-cap-t">So your agent can look it up.</h2>
+<h2 class="sc-cap-t" id="sc-cap-t">So your agent can look it up &mdash; for almost no tokens.</h2>
 <p class="sc-cap-p" id="sc-cap-p">A node for every file, an edge for every import: one map your
 agent queries instead of re-reading your tree, instantly and for zero tokens.</p>
 </div>
