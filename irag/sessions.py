@@ -18,13 +18,28 @@ import sqlite3
 from . import db
 
 
-def begin(conn: sqlite3.Connection, agent: str = "claude-code") -> int:
-    """Open a session. A previously-open session (crash, killed terminal)
-    is closed as 'interrupted' with a deterministic summary first."""
-    open_row = conn.execute(
-        "SELECT session_id FROM sessions WHERE status='open' "
-        "ORDER BY session_id DESC LIMIT 1").fetchone()
-    if open_row:
+def begin(conn: sqlite3.Connection, agent: str = "claude-code",
+          key: str | None = None) -> int:
+    """Open a session.
+
+    `key` identifies the conversation that owns it, so two agents working
+    the same repo do not trample each other. A previously-open session with
+    the SAME key (a crash, a killed terminal) is closed as 'interrupted'
+    first; sessions belonging to anyone else are left alone. Without a key
+    the old single-agent behaviour is kept, but only against other keyless
+    sessions - force-closing a keyed one would recreate the bug this
+    parameter exists to fix.
+    """
+    if key:
+        stale = conn.execute(
+            "SELECT session_id FROM sessions WHERE status='open' "
+            "AND session_key=? ORDER BY session_id DESC", (key,)).fetchall()
+    else:
+        stale = conn.execute(
+            "SELECT session_id FROM sessions WHERE status='open' "
+            "AND (session_key IS NULL OR session_key='') "
+            "ORDER BY session_id DESC").fetchall()
+    for open_row in stale:
         _close(conn, None, open_row["session_id"], narrate=False,
                status="interrupted")
     ev = conn.execute(
@@ -33,8 +48,8 @@ def begin(conn: sqlite3.Connection, agent: str = "claude-code") -> int:
         "SELECT COALESCE(MAX(revision_id),0) m FROM revisions"
     ).fetchone()["m"]
     conn.execute(
-        "INSERT INTO sessions(agent, start_event_id, start_revision_id) "
-        "VALUES(?,?,?)", (agent, ev, rv))
+        "INSERT INTO sessions(agent, start_event_id, start_revision_id, "
+        "session_key) VALUES(?,?,?,?)", (agent, ev, rv, key))
     sid = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
     conn.commit()
     return sid
@@ -143,11 +158,23 @@ def _close(conn, cfg, session_id: int, narrate: bool,
 
 
 def end(conn: sqlite3.Connection, cfg: dict | None,
-        narrate: bool = True) -> dict | None:
-    """Close the open session (if any). Returns its record or None."""
-    row = conn.execute(
-        "SELECT session_id FROM sessions WHERE status='open' "
-        "ORDER BY session_id DESC LIMIT 1").fetchone()
+        narrate: bool = True, key: str | None = None) -> dict | None:
+    """Close this conversation's session. Returns its record or None.
+
+    With a `key`, only that conversation's own session is closed - closing
+    "whichever is open" wrote one agent's work into another's diary entry
+    and left the other's unrecorded.
+    """
+    if key:
+        row = conn.execute(
+            "SELECT session_id FROM sessions WHERE status='open' "
+            "AND session_key=? ORDER BY session_id DESC LIMIT 1",
+            (key,)).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT session_id FROM sessions WHERE status='open' "
+            "AND (session_key IS NULL OR session_key='') "
+            "ORDER BY session_id DESC LIMIT 1").fetchone()
     if not row:
         return None
     return _close(conn, cfg, row["session_id"], narrate=narrate)

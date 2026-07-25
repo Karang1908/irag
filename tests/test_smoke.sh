@@ -472,4 +472,58 @@ assert "[" not in hits[0]["snippet"], f"markers in excerpt: {hits[0]['snippet']!
 PYEOF
 echo "symbol precision round 3 + check gate ok"
 
+# --- concurrent sessions + map kinds (regression guard) --------------------
+python3 - << 'PYEOF' || { echo "FAIL: concurrent sessions / map kinds"; exit 1; }
+import pathlib, sqlite3, subprocess, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, sessions, structure, retrieval
+
+# two agents on one repo: begin() force-closed the other's live session and
+# end() closed whichever row was open, so one agent's work was narrated into
+# the other's diary entry and the other's was never recorded at all
+sp = pathlib.Path(tempfile.mkdtemp()) / ".irag" / "memory.db"
+db.ensure_db(sp)
+conn = db.connect(str(sp)); cfg = config.load(sp.parent.parent)
+a = sessions.begin(conn, agent="claude-code", key="conv-A")
+b = sessions.begin(conn, agent="agy", key="conv-B")
+ra = sessions.end(conn, cfg, narrate=False, key="conv-A")
+rb = sessions.end(conn, cfg, narrate=False, key="conv-B")
+assert ra and ra["session_id"] == a, "agent A closed someone else's session"
+assert rb and rb["session_id"] == b, "agent B's session was never closed"
+rows = conn.execute("SELECT status FROM sessions ORDER BY session_id").fetchall()
+assert all(r["status"] == "closed" for r in rows), \
+    f"a live session was force-interrupted: {[r['status'] for r in rows]}"
+
+# irag map labelled every const/let/var "function", including numbers,
+# objects and arrays - and CLAUDE.md tells agents to trust that map
+root = pathlib.Path(tempfile.mkdtemp()) / "p"
+(root / "src").mkdir(parents=True)
+subprocess.run(["git", "init", "-q", "."], cwd=root, check=True)
+(root / "src" / "g.ts").write_text(
+    "export const RADIUS = 12.5;\nexport function draw(){}\n"
+    "export class Node {}\nexport interface P { a: 1 }\n")
+subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                "commit", "-qm", "i"], cwd=root, check=True)
+(root / ".irag").mkdir(exist_ok=True)
+mp = root / ".irag" / "memory.db"; db.ensure_db(mp)
+c2 = db.connect(str(mp)); cfg2 = config.load(root)
+structure.scan(c2, cfg2, root, force=True)
+kinds = dict(c2.execute("SELECT name, kind FROM symbols").fetchall())
+assert kinds.get("RADIUS") == "const", f"constant mislabelled: {kinds}"
+assert kinds.get("draw") == "function", kinds
+assert kinds.get("Node") == "class", kinds
+assert kinds.get("P") == "type", kinds
+
+# a locked or broken database must not be indistinguishable from "no matches"
+assert retrieval.search(c2, 'bad "quote AND (') == [], "FTS syntax error should be swallowed"
+c2.execute("DROP TABLE revisions_fts")
+try:
+    retrieval.search(c2, "anything")
+    raise AssertionError("a missing table still masqueraded as no matches")
+except sqlite3.OperationalError:
+    pass
+PYEOF
+echo "concurrent sessions + map kinds ok"
+
 echo "SMOKE TEST PASSED"

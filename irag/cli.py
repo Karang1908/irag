@@ -531,42 +531,73 @@ def cmd_ask(args) -> int:
 def cmd_session_begin(args) -> int:
     from . import sessions
     conn, _, _ = _open()
-    sid = sessions.begin(conn, agent=args.agent)
+    sid = sessions.begin(conn, agent=args.agent, key=_session_key(args))
     print(f"session {sid} opened")
     return 0
 
 
-def _stdin_transcript_path(cfg: dict) -> str | None:
-    """A Claude Code SessionEnd hook pipes its payload as JSON on stdin,
-    carrying `transcript_path`. Only look for it when transcript capture is
-    enabled, and never block: `select` with a short timeout means a manual,
-    input-less `session-end` returns immediately instead of hanging."""
-    if not cfg.get("sessions", {}).get("capture_transcript"):
-        return None
+_HOOK_PAYLOAD: dict | None = None
+_HOOK_READ = False
+
+
+def _hook_payload() -> dict:
+    """The JSON a Claude Code hook pipes on stdin, read at most once.
+
+    Carries both `session_id` (which conversation this is) and
+    `transcript_path`. stdin can only be consumed once, so every caller
+    shares this. Never blocks: `select` with a short timeout means a manual,
+    input-less invocation returns immediately instead of hanging.
+    """
+    global _HOOK_PAYLOAD, _HOOK_READ
+    if _HOOK_READ:
+        return _HOOK_PAYLOAD or {}
+    _HOOK_READ = True
+    _HOOK_PAYLOAD = {}
     import sys as _sys
     import select
     try:
         if _sys.stdin.isatty():
-            return None
+            return {}
         ready, _, _ = select.select([_sys.stdin], [], [], 0.25)
         if not ready:
-            return None
+            return {}
         raw = _sys.stdin.read()
     except (OSError, ValueError):
-        return None
+        return {}
     if not raw.strip():
-        return None
+        return {}
     try:
-        return json.loads(raw).get("transcript_path")
-    except (json.JSONDecodeError, AttributeError):
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    if isinstance(parsed, dict):
+        _HOOK_PAYLOAD = parsed
+    return _HOOK_PAYLOAD
+
+
+def _session_key(args) -> str | None:
+    """Which conversation owns this session: an explicit --id, else the
+    hook's own session_id. Without one, two agents sharing a repo close each
+    other's diary entries."""
+    explicit = getattr(args, "id", None)
+    if explicit:
+        return str(explicit)
+    sid = _hook_payload().get("session_id")
+    return str(sid) if sid else None
+
+
+def _stdin_transcript_path(cfg: dict) -> str | None:
+    if not cfg.get("sessions", {}).get("capture_transcript"):
         return None
+    return _hook_payload().get("transcript_path")
 
 
 def cmd_session_end(args) -> int:
     from . import sessions
     conn, cfg, _ = _open()
+    key = _session_key(args)      # before stdin is consumed for transcript
     tpath = getattr(args, "transcript", None) or _stdin_transcript_path(cfg)
-    rec = sessions.end(conn, cfg, narrate=not args.no_narrate)
+    rec = sessions.end(conn, cfg, narrate=not args.no_narrate, key=key)
     if rec is None:
         print("no open session")
         return 0
@@ -743,12 +774,18 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("session-begin", help="open a conversation log "
                         "entry (hooks call this)")
     sp.add_argument("--agent", default="claude-code")
+    sp.add_argument("--id", metavar="KEY",
+                    help="conversation id owning this session; agents sharing "
+                         "a repo must pass it (Claude Code hooks supply it "
+                         "automatically) so they don't close each other's")
     sp.set_defaults(func=cmd_session_begin)
 
     sp = sub.add_parser("session-end", help="close + summarize the open "
                         "conversation (hooks call this)")
     sp.add_argument("--no-narrate", action="store_true",
                     help="skip the LLM narrative; deterministic digest only")
+    sp.add_argument("--id", metavar="KEY",
+                    help="close the session opened with this id")
     sp.add_argument("--transcript", metavar="FILE",
                     help="ingest this JSONL conversation transcript "
                          "(Claude Code hooks pass it on stdin automatically; "

@@ -234,11 +234,16 @@ def _regex_parse(text: str, rel: str, suffix: str):
                     part = part.split("=")[0].split(":")[-1].strip()
                     part = part.lstrip(". ").strip()
                     if part.isidentifier():
-                        yield ("sym", part, "function", line_no)
+                        yield ("sym", part, "const", line_no)
                 continue
             name = g["fn"] or g["cls"] or g["iface"] or g["ty"] or g["var"]
+            # a const/let/var binding is not a function: it may be a number,
+            # an object, an array or a factory result. Calling all of them
+            # "function" made `irag map` actively misleading, and CLAUDE.md
+            # tells agents to trust that map as parsed from the code.
             kind = ("class" if g["cls"] else
-                    "type" if (g["iface"] or g["ty"]) else "function")
+                    "type" if (g["iface"] or g["ty"]) else
+                    "const" if g["var"] else "function")
             yield ("sym", name, kind, line_no)
         for m in JS_IMPORT_RE.finditer(text):
             spec = m.group(1)

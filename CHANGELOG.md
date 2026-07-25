@@ -4,6 +4,48 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.31.0 — 2026-07-25
+
+### Fixed — two agents on one repo corrupted the project diary
+`begin()` force-closed whatever session was open as `interrupted`, and
+`end()` closed whichever session happened to be open — neither checked whose
+it was, and the hooks call bare `session-begin` / `session-end` with no
+identity. Running Claude Code and agy against the same repo produced:
+
+```
+A opens        -> session 1
+B opens        -> session 1 marked 'interrupted' while A is still running
+A session-end  -> closes session 2   (A's work narrated into B's entry)
+B session-end  -> closes nothing     (B's work never recorded)
+```
+
+This is not theoretical on a machine running both tools, and `CLAUDE.md`
+leans on the diary for continuity — it is what makes `irag recap` work.
+
+Sessions now carry a `session_key` identifying the conversation that owns
+them (guarded additive column). `begin` only force-closes a stale session
+with the *same* key; `end` closes only its own. Claude Code hooks supply the
+key automatically — its payload already arrives on stdin and now yields both
+`session_id` and `transcript_path` through one shared read, since stdin can
+only be consumed once. Other agents pass `--id <key>`. Keyless behaviour is
+unchanged for the single-agent case.
+
+### Fixed — `irag map` called every constant a function
+`structure.py` fell through to `"function"` for the `const`/`let`/`var`
+group, so numbers, objects and arrays were all rendered as functions
+(`function CLUSTER_RADIUS` for the number `12.5`). Index-wide only two kinds
+existed. There is now a `const` kind. This never reached the model —
+`facts_block` emits names without kinds — so the damage was confined to
+`irag map`, which `CLAUDE.md` tells agents to trust as parsed from the code.
+(Introduced in 4.26.0, when the symbol regex was broadened.)
+
+### Fixed — a locked database looked like "no matches"
+`search()` caught every `sqlite3.OperationalError` and returned `[]`. The
+intended catch is a malformed FTS query — users type quotes, parens and bare
+operators — but it also swallowed lock timeouts and missing tables, so a real
+failure was indistinguishable from an empty result set. Only syntax errors are
+swallowed now; anything else propagates.
+
 ## 4.30.0 — 2026-07-25
 
 Closes out the audit series: on a real Vite/React/zustand project the

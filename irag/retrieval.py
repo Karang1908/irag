@@ -299,7 +299,13 @@ def search(conn: sqlite3.Connection, query: str) -> list[dict]:
                LIMIT 15""",
             (q,),
         ).fetchall()
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as exc:
+        # the intended catch is a malformed FTS query (users type quotes,
+        # parens and bare operators). Anything else - a locked database, a
+        # missing table - must not masquerade as "no matches found".
+        msg = str(exc).lower()
+        if "fts5" not in msg and "malformed" not in msg and "syntax" not in msg:
+            raise
         return []
     return [
         {"subject": row["subject_id"], "title": row["title"],

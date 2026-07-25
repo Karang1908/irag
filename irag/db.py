@@ -207,6 +207,11 @@ def ensure_db(db_path: Path) -> sqlite3.Connection:
     conn.executescript(SCHEMA)
     conn.commit()
     _add_column_if_missing(conn, "sessions", "changes_detail", "TEXT")
+    # who owns this session: two agents on one repo (Claude Code + agy) each
+    # ran bare `session-begin`/`session-end`, and without an identity the
+    # second begin force-closed the first as 'interrupted' while it was still
+    # running, then the first end closed the second's row.
+    _add_column_if_missing(conn, "sessions", "session_key", "TEXT")
     _ensure_unique_revisions_index(conn)
     return conn
 
