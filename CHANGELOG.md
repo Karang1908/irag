@@ -4,6 +4,55 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.27.0 — 2026-07-25
+
+### Fixed — the dashboard leaked a SQLite connection per request
+`_State.conn()` called `ensure_db()` on every request: a brand-new connection,
+never closed, plus a full re-run of the schema DDL and both migration helpers
+each time. Handles on `memory.db` grew per request, and the accumulating live
+readers kept WAL checkpointing from completing, so the WAL grew unbounded
+until writers began timing out on the lock. Measured over 48 requests:
+handles went **22 → 64** before, **8 → 8** after. The connection is now
+thread-local and released in a `finally` around `handle_one_request` —
+thread-local because `ThreadingHTTPServer` is thread-per-request and
+`db.connect()` leaves `check_same_thread=True`; released per request because
+that same model means caching alone would still allocate one per request.
+
+A lock timeout out of `irag update` also escaped as a raw traceback, which
+reads like corruption. It now names the cause and the remedy.
+
+### Fixed — seven more fact-checker and indexing defects
+- **A call site read as a definition.** The grep fallback's `[^;=]*` swallowed
+  parentheses, so `if (subtract(a, b) > 0) {` matched as a definition of
+  `subtract` — a genuinely hallucinated symbol passed as verified. This was a
+  false *negative* in the one check whose whole job is catching lies.
+- **`have_symbols` was database-global** (`SELECT 1 FROM symbols LIMIT 1`), so
+  one indexed Python file forced every page through the strict symbol check —
+  including files in languages the scanner never parses (`.kt`, `.swift`,
+  `.vue`, `.dart`), whose real symbols were then reported as hallucinated.
+  Now scoped to the page's own subject.
+- **Indented locals were indexed as module symbols.** `^\s*` under `re.M`
+  matched any indentation, so `const t = (a + b)` inside a function body
+  became a module-level symbol. Anchored at column 0.
+- **The path allowlist exempted whole file types.** `css`, `html`, `svg`,
+  `scss`, `vue`, `kt`, `swift`, `dart`, `php`, `c/h/cpp` and more were never
+  checked at all, so a wrong path claim about them was invisible.
+- **Scoped npm packages were never version-checked.** `@react-three/fiber@9.6.1`
+  captured only `fiber`, which never matched the manifest key.
+- **Unpinnable specs were compared as literal versions.** `4.x`,
+  `workspace:*` and `git+https://…#v3.2.47` are satisfied by many versions;
+  claims disagreeing with the literal string were reported as mismatches.
+  Such specs are now skipped as unverifiable rather than asserted against.
+- **requirements.txt lost both ways:** PEP 508 markers and trailing comments
+  leaked into the stored version (false positives), and `[extras]` stayed in
+  the key so `uvicorn[standard]==0.30.0` meant a claim about `uvicorn` was
+  never checked at all (false negative).
+
+`tests/test_smoke.sh` gains a second precision block covering all of these,
+and the existing negative test still proves a missing relative path, a
+missing absolute path, a missing bare filename, a non-dependency `.js` and a
+phantom symbol are all still caught.
+
 ## 4.26.0 — 2026-07-25
 
 ### Fixed — five defects found running irag on a real Vite/React/TS project

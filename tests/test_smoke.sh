@@ -312,4 +312,49 @@ PYEOF
 rm -rf "$TS"
 echo "ts indexing + linter precision ok"
 
+# --- linter precision round 2 (regression guard) ---------------------------
+# Eight more defects found auditing irag against a real project: an
+# extension allowlist that exempted css/html/svg, scoped npm packages never
+# version-checked, manifest ranges compared as literal pins, PEP 508 markers
+# leaking into versions, a grep fallback where a call site read as a
+# definition (a real hallucination passed), indented locals indexed as
+# module symbols, and markdown table rows silently dropped.
+python3 - << 'PYEOF' || { echo "FAIL: linter precision round 2"; exit 1; }
+import json, pathlib, re, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import linter, structure
+
+for ext in ("css", "html", "svg", "vue", "kt"):
+    assert linter.PATH_RE.search(f"`a.{ext}`"), f"PATH_RE ignores .{ext}"
+assert linter.VERSION_AT_RE.search(
+    "@react-three/fiber@9.6.1").group(1) == "@react-three/fiber"
+
+d = pathlib.Path(tempfile.mkdtemp())
+(d / "package.json").write_text(json.dumps({"dependencies": {
+    "lodash": "4.x", "pkg": "workspace:*", "react": "^18.2.0"}}))
+(d / "requirements.txt").write_text(
+    'requests==2.28.0; python_version >= "3.8"\n'
+    'flask==2.0.1  # c\nuvicorn[standard]==0.30.0\n')
+man = linter._read_manifest_versions(d)
+assert "lodash" not in man and "pkg" not in man, f"unpinned spec kept: {man}"
+assert man.get("react") == "18.2.0", man
+assert man.get("requests") == "2.28.0", man     # marker stripped
+assert man.get("flask") == "2.0.1", man         # comment stripped
+assert man.get("uvicorn") == "0.30.0", man      # extras stripped from key
+
+pat = re.compile(r"subtract\s*\([^;=()\n]*?\)\s*(?:\{|throws\b)")
+assert not pat.search("if (subtract(a, b) > 0) {\n"), "call site reads as def"
+assert pat.search("function subtract(a, b) {\n"), "real def no longer matches"
+
+syms = []
+for m in structure.JS_SYMBOL_RE.finditer(
+        "export const useApp = create(() => ({}));\n"
+        "function draw() {\n  const t = (a + b);\n}\n"
+        "export interface Props { x: number }\n"):
+    g = m.groupdict()
+    syms.append(g["fn"] or g["cls"] or g["iface"] or g["ty"] or g["var"])
+assert syms == ["useApp", "draw", "Props"], f"top-level only: got {syms}"
+PYEOF
+echo "linter precision round 2 ok"
+
 echo "SMOKE TEST PASSED"

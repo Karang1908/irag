@@ -15,15 +15,37 @@ from pathlib import Path
 from . import db
 
 PATH_RE = re.compile(
-    r"`([\w./-]+\.(?:py|ts|tsx|js|jsx|go|rs|java|rb|md|json|toml|ya?ml|sql|sh))`"
+    r"`([\w./-]+\.(?:py|pyi|ts|tsx|js|jsx|mjs|cjs|mts|vue|svelte|go|rs|java"
+    r"|kt|swift|dart|rb|php|cs|c|h|cc|cpp|hpp|md|json|toml|ya?ml|sql|sh|css"
+    r"|scss|sass|less|html|htm|svg|lock|cfg|ini|txt))`"
 )
-VERSION_AT_RE = re.compile(r"([A-Za-z0-9_.-]+)@(\d+\.\d+[\w.\-]*)")
+VERSION_AT_RE = re.compile(
+    r"(@?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)?)@(\d+\.\d+[\w.\-]*)")
 VERSION_WORD_RE = re.compile(r"`?([A-Za-z0-9_.-]+)`?\s+version\s+(\d+\.\d+[\w.\-]*)")
 SYMBOL_RE = re.compile(r"`(\w+)\(\)`")
 
 
+# A declared spec is only worth comparing against prose when it pins one
+# concrete version. "4.x", "workspace:*", "git+https://...#v3" and ">=1,<2"
+# are all satisfied by many versions, so a claim that disagrees with the
+# literal spec string is not thereby wrong - it is unverifiable, and
+# reporting it as a mismatch is a false positive.
+_UNPINNED = re.compile(r"[x*|\s,]|^(?:git|github|file|link|workspace|npm|https?)[:+]",
+                       re.I)
+
+
+def _pinned(spec: str) -> str | None:
+    """The concrete version a spec pins, or None if it pins no single one."""
+    spec = re.sub(r"^[\^~>=<\s]+", "", str(spec)).strip()
+    if not spec or _UNPINNED.search(spec):
+        return None
+    return spec if re.match(r"^\d+\.\d+", spec) else None
+
+
 def _read_manifest_versions(repo: Path) -> dict[str, str]:
-    """Collect declared dependency versions from package.json and requirements.txt."""
+    """Collect declared dependency versions from package.json and requirements.txt.
+    Only entries pinning a single concrete version are returned; anything a
+    range or URL could satisfy is left out so it is never asserted against."""
     versions: dict[str, str] = {}
     pkg = repo / "package.json"
     if pkg.is_file():
@@ -31,7 +53,9 @@ def _read_manifest_versions(repo: Path) -> dict[str, str]:
             data = json.loads(pkg.read_text(encoding="utf-8"))
             for section in ("dependencies", "devDependencies"):
                 for name, spec in (data.get(section) or {}).items():
-                    versions[name.lower()] = re.sub(r"^[\^~>=<]+", "", str(spec))
+                    pin = _pinned(spec)
+                    if pin:
+                        versions[name.lower()] = pin
         except (json.JSONDecodeError, OSError):
             pass
     req = repo / "requirements.txt"
@@ -39,9 +63,17 @@ def _read_manifest_versions(repo: Path) -> dict[str, str]:
         try:
             for line in req.read_text(encoding="utf-8").splitlines():
                 line = line.strip()
-                if "==" in line and not line.startswith("#"):
-                    name, ver = line.split("==", 1)
-                    versions[name.strip().lower()] = ver.strip()
+                if "==" not in line or line.startswith("#"):
+                    continue
+                name, ver = line.split("==", 1)
+                # strip PEP 508 environment markers and trailing comments,
+                # which otherwise land inside the "version"
+                ver = ver.split(";")[0].split("#")[0].strip()
+                # uvicorn[standard] must still answer to "uvicorn"
+                name = re.sub(r"\[.*?\]", "", name).strip().lower()
+                pin = _pinned(ver)
+                if name and pin:
+                    versions[name] = pin
         except OSError:
             pass
     return versions
@@ -185,8 +217,14 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
 
         # (c) backticked identifiers(): exact check against the symbols
         # table when the structural scan has data; grep fallback otherwise
+        # scoped to THIS page: a repo-wide "any symbols at all?" test meant
+        # one indexed Python file forced every page through the strict check,
+        # including files in languages structure.py does not parse (.kt,
+        # .swift, .vue, .dart) - whose real symbols were then reported as
+        # hallucinated. No structural data for this subject => grep fallback.
         have_symbols = conn.execute(
-            "SELECT 1 FROM symbols LIMIT 1").fetchone() is not None
+            "SELECT 1 FROM symbols WHERE subject_id=? LIMIT 1",
+            (page["subject_id"],)).fetchone() is not None
         if have_symbols:
             # a symbol claim is valid if it's defined in the page's OWN
             # module or in any module the page imports — not merely
@@ -239,7 +277,7 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
                     # NAME(...) {  /  NAME(...) throws  (Java/C/C++/C# method
                     # or constructor definitions — a decl, not a call)
                     rf"\b(?:def|function|const|fn|func)\s+{esc}\b"
-                    rf"|(?<![.\w]){esc}\s*\([^;=]*\)\s*(?:\{{|throws\b)"
+                    rf"|(?<![.\w]){esc}\s*\([^;=()\n]*?\)\s*(?:\{{|throws\b)"
                 )
                 if source and not pattern.search(source):
                     failing.add(f"references symbol `{sym}()`")
@@ -329,6 +367,10 @@ def lint_llm(conn: sqlite3.Connection, cfg: dict, repo: Path,
             for line in out.splitlines():
                 if "|" not in line:
                     continue
+                # tolerate markdown-table formatting: "| claim | why |"
+                line = line.strip().strip("|").strip()
+                if not line or set(line) <= set("-|: "):
+                    continue          # separator row
                 claim, why = (s.strip() for s in line.split("|", 1))
                 if not claim:
                     continue

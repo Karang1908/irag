@@ -41,8 +41,11 @@ CODE_EXT = (PY_EXT | JS_EXT | GO_EXT | RS_EXT | JAVA_EXT | CS_EXT | RB_EXT
 # `const X = factory(...)` (zustand stores, createContext, styled, forwardRef),
 # which left whole modules with zero indexed symbols. An optional type
 # annotation is allowed between the name and `=` for TS.
+# Anchored at column 0: `^\s*` under re.M matched any indentation, so
+# `const t = (a + b)` inside a function body was indexed as a module symbol.
+# Only top-level declarations belong in the structural index.
 JS_SYMBOL_RE = re.compile(
-    r"^\s*(?:export\s+)?(?:default\s+)?"
+    r"^(?:export\s+)?(?:default\s+)?"
     r"(?:async\s+)?(?:function\s+(?P<fn>\w+)"
     r"|class\s+(?P<cls>\w+)"
     r"|(?:interface|enum)\s+(?P<iface>\w+)"
