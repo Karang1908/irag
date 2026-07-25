@@ -162,11 +162,31 @@ def is_ignored(path: str, cfg: dict, repo: Path | None = None) -> bool:
 # ---------------------------------------------------------------------
 # subjects
 # ---------------------------------------------------------------------
+# Extensions are a hint, not evidence. A NUL byte in the first few KB is the
+# same test `git` and `grep` use, and it costs one small read.
+_SNIFF_BYTES = 4096
+
+
+def looks_binary(file: Path) -> bool:
+    """True if the file's leading bytes contain a NUL."""
+    try:
+        with open(file, "rb") as fh:
+            return b"\x00" in fh.read(_SNIFF_BYTES)
+    except OSError:
+        return False        # unreadable/vanished: let the caller decide
+
+
 def file_subject(path: str, cfg: dict, repo: Path | None = None) -> str | None:
     """A tracked file's subject is its own path. None if ignored/binary."""
     if is_ignored(path, cfg, repo):
         return None
     if Path(path).suffix.lower() in BINARY_EXTS:
+        return None
+    # Content, not just the name. A .py holding a pickle, a misnamed artifact,
+    # or a UTF-16 source all previously earned a page - and their raw bytes
+    # went into the synthesis prompt verbatim, costing an LLM call and leaving
+    # a junk page that agents then read as if it were the file's summary.
+    if repo is not None and looks_binary(repo / path):
         return None
     return str(Path(path).as_posix())
 

@@ -4,6 +4,31 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.40.0 — 2026-07-25
+
+### Fixed — binary files with a source extension were synthesized as source
+`file_subject` documented "None if ignored/binary" but only ever checked the
+extension. A `.py` holding NUL bytes got a page, and its raw bytes went into
+the synthesis prompt verbatim:
+
+```
+CONTENT of `src/binary.py` (first 8000 chars):
+\x00\x01\x02binary…
+```
+
+That is an LLM call spent on noise plus a junk page in memory that agents then
+read as the file's summary. Reachable in practice through misnamed build
+artifacts, pickles saved as `.py`, and UTF-16-encoded sources — the last being
+real source in an encoding irag reads as mojibake, so excluding it is right
+too.
+
+Detection now sniffs the first 4 KB for a NUL byte, the same test `git` and
+`grep` use, in addition to the extension list. Verified in both directions:
+`binary.py`, a UTF-16 source and a `.png` are all excluded, while ordinary,
+unicode-heavy and empty source files are still tracked. The extension check
+stays as the cheap first pass, and when no repo root is available the
+behaviour is unchanged.
+
 ## 4.39.1 — 2026-07-25
 
 ### Fixed — the dashboard's address was unknowable when backgrounded

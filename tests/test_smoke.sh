@@ -853,4 +853,32 @@ assert not dangling, f"dangling wikilinks after disambiguation: {dangling}"
 PYEOF
 echo "vault note uniqueness ok"
 
+# --- binary content must not be synthesized as source (regression guard) ---
+# Detection was extension-only, so a .py holding a pickle, a misnamed
+# artifact, or a UTF-16 source earned a page and had its raw bytes pasted into
+# the synthesis prompt: one LLM call spent, and a junk page agents then read.
+python3 - << 'PYEOF' || { echo "FAIL: binary content detection"; exit 1; }
+import pathlib, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import ingest, config
+
+d = pathlib.Path(tempfile.mkdtemp())
+(d / ".irag").mkdir(); (d / "src").mkdir()
+cfg = config.load(d)
+(d / "src" / "binary.py").write_bytes(b"\x00\x01\x02binary\xff garbage")
+(d / "src" / "utf16.py").write_bytes("def beta(): pass\n".encode("utf-16"))
+(d / "src" / "image.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+(d / "src" / "real.py").write_text("def alpha(): return 1\n")
+(d / "src" / "unicode.py").write_text("# cafe 日本語 🚀\ndef g(): pass\n")
+(d / "src" / "empty.py").write_text("")
+
+for name in ("src/binary.py", "src/utf16.py", "src/image.png"):
+    assert ingest.file_subject(name, cfg, d) is None, \
+        f"{name} was accepted as source and would be sent to the LLM"
+for name in ("src/real.py", "src/unicode.py", "src/empty.py"):
+    assert ingest.file_subject(name, cfg, d) == name, \
+        f"{name} is real source but was rejected as binary"
+PYEOF
+echo "binary content detection ok"
+
 echo "SMOKE TEST PASSED"
