@@ -372,7 +372,10 @@
         pts.push({
           x: cx + (dot(v, right) / z) * focal,
           y: cy - (dot(v, up) / z) * focal,
-          z: z, r: NODES[i].r / z * 5.2, hub: NODES[i].hub
+          z: z, hub: NODES[i].hub,
+          // nodes swell as they merge, so the point they gather into
+          // reads as one big body rather than a speck
+          r: NODES[i].r / z * 5.2 * (1 + gather * 3.4)
         });
       }
 
@@ -517,8 +520,13 @@
       }
     };
 
+    var settled = 0;
     var tickS = function () {
-      spin += AMBIENT ? 0.0012 : 0.00055;
+      // A docs page is for reading: let the camera settle, paint once
+      // more, then stop entirely. No loop, no drift, no battery burn —
+      // the only thing that moves on a docs page is the fade-in.
+      if (AMBIENT && ++settled > 90) { drawS(); rafS = null; liveS = false; return; }
+      spin += AMBIENT ? 0 : 0.00055;
       weigh();
       for (var d = 0; d < 3; d++) {                 // ease toward the target
         cam.p[d] += (camT.p[d] - cam.p[d]) * 0.062;

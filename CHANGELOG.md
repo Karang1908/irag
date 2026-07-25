@@ -4,6 +4,24 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.21.0 — 2026-07-25
+
+### Fixed — the docs sidebar was sitting on nothing
+It had **no background at all**, so the node field showed straight through
+the links. It is a panel now (same treatment as the dashboard's sidebar),
+and its links were lifted off `--text-dim` because a panel on a busier
+surface needs more contrast: **11.8:1** for links, **7.7:1** for the active
+one, both well past WCAG AA.
+
+### Changed
+- **Docs hold completely still.** The backdrop settles and then the render
+  loop stops outright — no drift, no battery burn. Verified: identical
+  painted-pixel counts two seconds apart. The only motion on a docs page is
+  the fade.
+- **The node merge is bigger.** Nodes now swell as they gather, so what
+  they collapse into reads as one large body rather than a speck, and the
+  bloom that follows starts larger and opens wider.
+
 ## 4.20.0 — 2026-07-25
 
 ### Changed — the launch transition zooms into the node, and docs just fade
