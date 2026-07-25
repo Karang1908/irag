@@ -379,4 +379,49 @@ for p in ("src/main.tsx", "src/Node.tsx"):
 PYEOF
 echo "token estimate + ignore casing ok"
 
+# --- flags must demote, never erase (regression guard) ---------------------
+# P_CONTRADICTED (40) once pushed a page under min_score (20), which dropped
+# it out of the briefing AND suppressed the very warning meant to say
+# "verify this" - so flagging a page silently deleted the agent's memory of
+# that file. Eligibility is now judged on relevance; warnings are ungated.
+python3 - << 'PYEOF' || { echo "FAIL: contradiction must not erase context"; exit 1; }
+import pathlib, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, retrieval
+cd = pathlib.Path(tempfile.mkdtemp()); (cd / ".irag").mkdir()
+cfg = config.load(cd)
+BODY = "Summary of this module. " * 40
+
+def build(flag):
+    p = pathlib.Path(tempfile.mkdtemp()) / ".irag" / "memory.db"
+    db.ensure_db(p); conn = db.connect(str(p))
+    for i in range(24):
+        c = conn.execute("INSERT INTO pages(page_type,title,subject_type,"
+                         "subject_id) VALUES('module',?,'module',?)",
+                         (f"src/m{i}.py", f"src/m{i}.py"))
+        r = conn.execute("INSERT INTO revisions(page_id,version_number,"
+                         "body_markdown,change_summary) VALUES(?,1,?,'x')",
+                         (c.lastrowid, BODY))
+        conn.execute("UPDATE pages SET current_revision_id=? WHERE page_id=?",
+                     (r.lastrowid, c.lastrowid))
+        if flag:
+            conn.execute("INSERT INTO contradictions(page_id,revision_id,claim,"
+                         "truth,ctype,severity,detected_by) VALUES(?,?,'c','t',"
+                         "'missing_path','high','static:t')",
+                         (c.lastrowid, r.lastrowid))
+    conn.commit(); return conn
+
+opens = [f"src/m{i}.py" for i in range(24)]
+_, clean = retrieval.serve(build(False), cfg, opens, "module", budget_tokens=3000)
+md, flagged = retrieval.serve(build(True), cfg, opens, "module", budget_tokens=3000)
+assert len(flagged["full"]) == len(clean["full"]), \
+    f"flagging changed the full tier: {len(clean['full'])} -> {len(flagged['full'])}"
+assert len(flagged["digest"]) == len(clean["digest"]), \
+    f"flagging collapsed the digest tier: {len(clean['digest'])} -> {len(flagged['digest'])}"
+warn = [l for l in md.splitlines() if l.startswith("\u26a0")]
+assert warn, "flagged pages produced no warning at all"
+assert len(warn) <= 13, f"warning section unbounded: {len(warn)} lines"
+PYEOF
+echo "contradictions demote, not erase, ok"
+
 echo "SMOKE TEST PASSED"

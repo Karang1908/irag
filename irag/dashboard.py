@@ -59,6 +59,7 @@ class _State:
         self.root = root
         self.cfg = config_mod.load(root)
         self._local = threading.local()
+        self._schema_ready = False
         self.lock = threading.Lock()          # serialize LLM-heavy operations
         self.update_lock = threading.Lock()   # atomic guard for update_running
         self.update_log: list[str] = []
@@ -66,7 +67,7 @@ class _State:
         self.last_live = 0.0
 
     def conn(self):
-        """One connection per thread, opened once and reused.
+        """This request's connection.
 
         This used to call ensure_db() on every request, which opened a
         brand-new connection - never closed - and re-ran the entire schema
@@ -77,12 +78,18 @@ class _State:
 
         It must be thread-local rather than a single shared connection:
         ThreadingHTTPServer serves each request on its own thread, and
-        db.connect() leaves sqlite3's check_same_thread=True.
+        db.connect() leaves sqlite3's check_same_thread=True. Because that
+        model means a new thread - and so a new thread-local - per request,
+        the schema is ensured ONCE at server start and this path only
+        connects; re-running the DDL and both migration helpers on every
+        request was pure waste.
         """
         existing = getattr(self._local, "conn", None)
         if existing is not None:
             return existing
-        fresh = db.ensure_db(self.root / ".irag" / "memory.db")
+        path = self.root / ".irag" / "memory.db"
+        fresh = db.connect(path) if self._schema_ready else db.ensure_db(path)
+        self._schema_ready = True
         self._local.conn = fresh
         return fresh
 

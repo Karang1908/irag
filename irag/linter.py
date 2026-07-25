@@ -23,6 +23,9 @@ VERSION_AT_RE = re.compile(
     r"(@?[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)?)@(\d+\.\d+[\w.\-]*)")
 VERSION_WORD_RE = re.compile(r"`?([A-Za-z0-9_.-]+)`?\s+version\s+(\d+\.\d+[\w.\-]*)")
 SYMBOL_RE = re.compile(r"`(\w+)\(\)`")
+SOURCE_EXT = {".py", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".go",
+              ".rs", ".java", ".rb", ".php", ".cs", ".kt", ".swift", ".dart",
+              ".vue", ".svelte", ".c", ".h", ".cc", ".cpp", ".hpp"}
 
 
 # A declared spec is only worth comparing against prose when it pins one
@@ -120,12 +123,63 @@ def _external_names(repo: Path, subject_id: str) -> set[str]:
     return out
 
 
+def _defines_pattern(sym: str) -> re.Pattern:
+    """Matches a *definition* of ``sym`` (not a call to it)."""
+    esc = re.escape(sym)
+    return re.compile(
+        # def/function/const/fn/func NAME (Py/JS/Go/Rust), or a bare
+        # NAME(...) { / NAME(...) throws (Java/C/C++/C# method or ctor).
+        # Parens are excluded from the argument class so a call site inside
+        # a larger expression cannot masquerade as a signature.
+        rf"\b(?:def|function|const|let|var|class|interface|type|enum"
+        rf"|fn|func)\s+{esc}\b"
+        rf"|(?<![.\w]){esc}\s*\([^;=()\n]*?\)\s*(?:\{{|throws\b)"
+        # object-literal / class members: `name(...) {`, `name: (...) =>`,
+        # `name: function`, which is how zustand actions and methods appear
+        rf"|(?<![.\w]){esc}\s*:\s*(?:async\s*)?(?:\(|function\b)"
+    )
+
+
+def subj_dir(repo: Path, subject_id: str) -> Path:
+    """The directory whose source backs this page."""
+    if subject_id == ".":
+        return repo
+    p = repo / subject_id
+    return p if p.is_dir() else p.parent
+
+
+def _module_source(mod_dir: Path) -> str:
+    """Concatenated source of the module, for the definition grep."""
+    if not mod_dir.is_dir():
+        return ""
+    out = ""
+    for f in mod_dir.rglob("*"):
+        if f.is_file() and f.suffix in SOURCE_EXT:
+            try:
+                out += f.read_text(encoding="utf-8", errors="replace")[:200_000]
+            except OSError:
+                continue
+    return out
+
+
 def _basename_index(repo: Path, cfg: dict) -> dict[str, list[str]]:
     """basename -> repo-relative paths, for resolving a bare filename claim."""
-    from . import structure
+    from .ingest import is_ignored
     idx: dict[str, list[str]] = {}
-    for path, rel in structure._iter_code_files(repo, cfg):
-        idx.setdefault(path.name, []).append(rel)
+    count = 0
+    for f in repo.rglob("*"):
+        if count > 20000:
+            break
+        if not f.is_file():
+            continue
+        try:
+            rel = f.relative_to(repo).as_posix()
+        except ValueError:
+            continue
+        if is_ignored(rel, cfg, repo):
+            continue
+        count += 1
+        idx.setdefault(f.name, []).append(rel)
     return idx
 
 
@@ -184,14 +238,26 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
             probe = rel.lstrip("/")
             if (repo / probe).exists():
                 continue
+            # a claim may be written relative to the page's own directory:
+            # `./styles/app.css` on a page for src/main.tsx means
+            # src/styles/app.css
+            if probe.startswith("./") or probe.startswith("../"):
+                here = subj_dir(repo, page["subject_id"])
+                try:
+                    if (here / probe).resolve().is_relative_to(repo.resolve()) \
+                            and (here / probe).exists():
+                        continue
+                except (OSError, ValueError):
+                    pass
             # A bare token with no separator may be a package, not a file:
             # `three.js`, `Next.js`, `Vue.js` all satisfy PATH_RE.
             if "/" not in probe and probe.rsplit(".", 1)[0].lower() in manifest:
                 continue
             # ...or a real file referred to by name only, e.g. `store.ts`
             # living at src/store.ts. Say where it is instead of denying it.
-            hits = basenames.get(probe) if "/" not in probe else None
-            if hits:
+            # fall back on the filename alone: `store.ts` may live at
+            # src/store.ts, and `./styles/app.css` at src/styles/app.css
+            if basenames.get(probe.rsplit("/", 1)[-1]):
                 continue
             failing.add(f"references path `{rel}`")
             if _insert(conn, page["page_id"], page["rev_id"],
@@ -237,6 +303,7 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
                        | set(mf.get("imports") or []))
             marks = ",".join("?" * len(allowed))
             external = _external_names(repo, page["subject_id"])
+            src_cache: list[str] = []       # module source, read at most once
             for match in SYMBOL_RE.finditer(body):
                 sym = match.group(1)
                 if sym in external:
@@ -245,6 +312,19 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
                     f"SELECT 1 FROM symbols WHERE (name=? OR name LIKE ? "
                     f"ESCAPE '\\') AND subject_id IN ({marks}) LIMIT 1",
                     (sym, f"%.{db.like_escape(sym)}", *allowed)).fetchone()
+                if not defined:
+                    # The index holds TOP-LEVEL declarations only - that is
+                    # deliberate, so `irag map` isn't polluted with locals.
+                    # It therefore is not an exhaustive list of what exists,
+                    # and absence from it does not mean the symbol is not
+                    # there: nested helpers and object-literal members
+                    # (zustand actions, class methods) are all real. Confirm
+                    # against the source before calling anything a phantom.
+                    if not src_cache:
+                        src_cache.append(_module_source(
+                            subj_dir(repo, page["subject_id"])))
+                    if src_cache[0] and _defines_pattern(sym).search(src_cache[0]):
+                        continue
                 if not defined:
                     failing.add(f"references symbol `{sym}()`")
                     if _insert(conn, page["page_id"], page["rev_id"],
@@ -259,27 +339,16 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
         mod_dir = (subj_path if subj_path.is_dir()
                    else subj_path.parent) if page["subject_id"] != "." else repo
         if not have_symbols and mod_dir.is_dir():
-            source = ""
-            for f in mod_dir.rglob("*"):
-                if f.is_file() and f.suffix in {".py", ".ts", ".tsx", ".js",
-                                                ".jsx", ".go", ".rs", ".java",
-                                                ".rb"}:
-                    try:
-                        source += f.read_text(
-                            encoding="utf-8", errors="replace")[:200_000]
-                    except OSError:
-                        continue
+            source = _module_source(mod_dir)
+            # the package-import guard belongs on this path too: it used to
+            # apply only when the symbols table had data, so every file
+            # falling back to the grep still had its imported names flagged
+            external = _external_names(repo, page["subject_id"])
             for match in SYMBOL_RE.finditer(body):
                 sym = match.group(1)
-                esc = re.escape(sym)
-                pattern = re.compile(
-                    # def/function/const/fn/func NAME  (Py/JS/Go/Rust), OR
-                    # NAME(...) {  /  NAME(...) throws  (Java/C/C++/C# method
-                    # or constructor definitions — a decl, not a call)
-                    rf"\b(?:def|function|const|fn|func)\s+{esc}\b"
-                    rf"|(?<![.\w]){esc}\s*\([^;=()\n]*?\)\s*(?:\{{|throws\b)"
-                )
-                if source and not pattern.search(source):
+                if sym in external:
+                    continue
+                if source and not _defines_pattern(sym).search(source):
                     failing.add(f"references symbol `{sym}()`")
                     if _insert(conn, page["page_id"], page["rev_id"],
                                claim=f"references symbol `{sym}()`",

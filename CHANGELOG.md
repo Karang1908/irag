@@ -4,6 +4,59 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.29.0 — 2026-07-25
+
+### Fixed — a contradiction silently deleted the page from the agent's memory
+`P_CONTRADICTED` is 40 and the default `min_score` is 20, so flagging a page
+pushed it under the eligibility threshold: it fell out of the FULL and DIGEST
+tiers into a bare one-line INDEX entry. The warning loop was gated on that
+*same* threshold, so the page most in need of "verify this before trusting
+it" was exactly the one whose warning got suppressed. A false positive
+therefore didn't just add noise — it removed the agent's memory of that file
+and sent it back to exploring from scratch, which is the whole cost irag
+exists to remove.
+
+Relevance and health are now separate: relevance decides eligibility, the
+penalty still orders results, so a flag **demotes** a page instead of erasing
+it. The warning section is no longer gated (capped at 12 plus an overflow
+line, so it stays bounded). Measured over 24 pages, all flagged:
+
+| | full | digest | warnings |
+|---|---|---|---|
+| before | 2 | 0 | 2 |
+| after | 4 | 20 | 13 |
+
+This also explains why the previously-noted "warnings block is uncapped"
+concern never reproduced in synthetic tests — the penalty had already pushed
+every flagged page below the gate.
+
+### Fixed — two regressions introduced by 4.27.0
+- **Anchoring the symbol regex at column 0 fixed `irag map` but broke the
+  linter.** The index deliberately holds top-level declarations only, and the
+  linter was treating absence from it as proof of non-existence — so every
+  nested helper and every object-literal member (zustand actions, class
+  methods) became a phantom-symbol flag. A table miss is now confirmed
+  against the module's source before anything is called hallucinated.
+- **`PATH_RE` was widened to check `css`/`html`/`svg` without widening what
+  the basename index could see.** It was built from `_iter_code_files`, whose
+  `CODE_EXT` contains none of those, so a real `favicon.svg` could never be
+  resolved and was reported missing. The index now covers every tracked file.
+
+### Fixed — three more
+- The package-import guard applied only on the symbols-table path, so any
+  file falling back to the source grep still had its imported names flagged
+  (`createRoot()`, `render()`).
+- `./`-relative and `../`-relative path claims were never resolved; they now
+  resolve against the page's own directory, staying inside the repo.
+- `export function* gen()` and `export abstract class` were not indexed.
+
+### Changed
+`irag dashboard` no longer re-runs the schema DDL and both migration helpers
+on every request. `ThreadingHTTPServer` is thread-per-request, so the
+thread-local connection cache always missed; the schema is now ensured once
+at server start and requests only connect. (The 4.27.0 note that the leak fix
+removed the repeated DDL was wrong — it removed the leak, not the DDL.)
+
 ## 4.28.0 — 2026-07-25
 
 ### Fixed — the token estimator was the least accurate option available

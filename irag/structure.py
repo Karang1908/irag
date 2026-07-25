@@ -46,8 +46,8 @@ CODE_EXT = (PY_EXT | JS_EXT | GO_EXT | RS_EXT | JAVA_EXT | CS_EXT | RB_EXT
 # Only top-level declarations belong in the structural index.
 JS_SYMBOL_RE = re.compile(
     r"^(?:export\s+)?(?:default\s+)?"
-    r"(?:async\s+)?(?:function\s+(?P<fn>\w+)"
-    r"|class\s+(?P<cls>\w+)"
+    r"(?:async\s+)?(?:function\s*\*?\s*(?P<fn>\w+)"
+    r"|(?:abstract\s+)?class\s+(?P<cls>\w+)"
     r"|(?:interface|enum)\s+(?P<iface>\w+)"
     r"|type\s+(?P<ty>\w+)\s*="
     r"|(?:const|let|var)\s+(?P<var>\w+)(?:\s*:[^=\n]+?)?\s*=)",

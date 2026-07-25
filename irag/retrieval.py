@@ -108,6 +108,14 @@ def score(conn: sqlite3.Connection, cfg: dict,
                 s += W_RECENT
         except (TypeError, ValueError):
             pass
+        # `relevance` is how much this page matters to the query; `score`
+        # additionally carries the health penalties, and orders the results.
+        # They are kept apart on purpose: a contradiction should DEMOTE a
+        # page, never erase it. Penalising below min_score used to drop the
+        # page out of the briefing entirely - so flagging a page deleted the
+        # agent's memory of that file and left it to re-explore from scratch,
+        # which is the exact cost irag exists to remove.
+        relevance = s
         stale = page["staleness_score"] > threshold
         if stale:
             s -= P_STALE
@@ -115,8 +123,8 @@ def score(conn: sqlite3.Connection, cfg: dict,
         if open_c:
             s -= P_CONTRADICTED
         results.append({
-            "page": page, "score": s, "reasons": reasons,
-            "stale": stale, "contradictions": open_c,
+            "page": page, "score": s, "relevance": relevance,
+            "reasons": reasons, "stale": stale, "contradictions": open_c,
         })
 
     # one link hop from the current top seeds
@@ -158,10 +166,14 @@ def serve(conn: sqlite3.Connection, cfg: dict,
     lines = ["# Project Context (irag)", ""]
     machine: dict = {"full": [], "digest": [], "index": [], "warnings": []}
 
+    # NOT gated on min_score: the health penalties above are what push a
+    # flagged page's score down, so gating here meant the page most in need
+    # of "verify this before trusting it" was the one whose warning got
+    # suppressed. Capped instead, so the section stays bounded.
+    WARN_MAX = 12
     warnings = []
-    for r in ranked:
-        if r["score"] < min_score:
-            continue
+    flagged = [r for r in ranked if r["contradictions"] or r["stale"]]
+    for r in flagged[:WARN_MAX]:
         if r["contradictions"]:
             warnings.append(
                 f"⚠ `{r['page']['subject_id']}` has {r['contradictions']} open "
@@ -173,13 +185,17 @@ def serve(conn: sqlite3.Connection, cfg: dict,
                 f"⚠ `{r['page']['subject_id']}` is stale "
                 f"(score {r['page']['staleness_score']}) — may lag the code."
             )
+    if len(flagged) > WARN_MAX:
+        warnings.append(f"⚠ …and {len(flagged) - WARN_MAX} more flagged "
+                        "page(s) — `irag contradictions` / `irag stale`.")
     if warnings:
         lines.append("## Warnings")
         lines.extend(warnings)
         lines.append("")
         machine["warnings"] = warnings
 
-    eligible = [r for r in ranked if r["score"] >= min_score]
+    eligible = [r for r in ranked
+                if r.get("relevance", r["score"]) >= min_score]
     full, digest, index = [], [], []
     used = 0
     for r in eligible:
@@ -242,7 +258,8 @@ def serve(conn: sqlite3.Connection, cfg: dict,
                  "score": r["score"]})
         lines.append("")
 
-    remaining = [r for r in ranked if r["score"] < min_score] + index
+    remaining = [r for r in ranked
+                 if r.get("relevance", r["score"]) < min_score] + index
     if remaining:
         lines.append("## INDEX")
         for r in remaining[:INDEX_MAX]:
