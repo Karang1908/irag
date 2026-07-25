@@ -251,4 +251,65 @@ fi
 rm -rf "$TR"
 echo "transcript capture ok"
 
+# --- TS/JS indexing + linter false positives (regression guard) -------------
+# Five defects found on a real Vite/React/zustand project: the symbol regex
+# only matched a 2015 subset of JS, and the path/symbol checks flagged four
+# things that were never wrong. Each fix added a skip path, so this also
+# re-proves the checker still catches genuine lies.
+TS=$(mktemp -d)
+mkdir -p "$TS/src"
+( cd "$TS" && git init -q . )
+echo '{"dependencies":{"three":"^0.160.0","zustand":"^4.5.0"}}' > "$TS/package.json"
+cat > "$TS/src/store.ts" << 'TSEOF'
+import { create } from 'zustand';
+export const useApp = create((set) => ({ launch: () => set({}) }));
+export const API_URL: string = 'https://x';
+export interface AppState { ready: boolean }
+export type Handler = (e: Event) => void;
+export enum Mode { Idle, Busy }
+TSEOF
+cat > "$TS/src/main.tsx" << 'TSEOF'
+import { useFrame } from '@react-three/fiber';
+export function App() { return null }
+TSEOF
+( cd "$TS" && git add -A && git -c user.email=t@t -c user.name=t commit -qm i   && python3 -m irag init >/dev/null && python3 -m irag scan >/dev/null )
+SYMS=$( cd "$TS" && python3 - << 'PYEOF'
+import sqlite3
+q = "SELECT name FROM symbols WHERE file LIKE '%store.ts'"
+print(",".join(r[0] for r in sqlite3.connect(".irag/memory.db").execute(q)))
+PYEOF
+)
+for want in useApp API_URL AppState Handler Mode; do
+  case ",$SYMS," in *",$want,"*) ;; *)
+    echo "FAIL: store.ts symbol '$want' not indexed (got: $SYMS)"; exit 1;; esac
+done
+# true statements must NOT be flagged; false ones MUST be
+( cd "$TS" && python3 - << 'PYEOF'
+import sqlite3, pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, linter
+conn = db.connect(".irag/memory.db"); cfg = config.load(pathlib.Path.cwd())
+def page(subject, body):
+    c = conn.execute("INSERT INTO pages(page_type,title,subject_type,subject_id)"
+                     " VALUES('module',?,'module',?)", (subject, subject))
+    r = conn.execute("INSERT INTO revisions(page_id,version_number,body_markdown,"
+                     "change_summary) VALUES(?,1,?,'x')", (c.lastrowid, body))
+    conn.execute("UPDATE pages SET current_revision_id=? WHERE page_id=?",
+                 (r.lastrowid, c.lastrowid))
+page("src/main.tsx", "True: `/src/main.tsx` `three.js` `store.ts` `useFrame()`.")
+conn.commit(); linter.lint(conn, cfg, pathlib.Path.cwd())
+bogus = conn.execute("SELECT COUNT(*) FROM contradictions "
+                     "WHERE resolved_at IS NULL").fetchone()[0]
+assert bogus == 0, f"false positives on true claims: {bogus}"
+page("src/store.ts", "False: `src/nope.tsx` `/src/ghost.tsx` `ghost.ts` "
+                     "`fake.js` `totallyFake()`.")
+conn.commit(); linter.lint(conn, cfg, pathlib.Path.cwd())
+real = conn.execute("SELECT COUNT(*) FROM contradictions "
+                    "WHERE resolved_at IS NULL").fetchone()[0]
+assert real == 5, f"fact-checker went blind: caught {real}/5 real problems"
+PYEOF
+) || { echo "FAIL: linter regression on TS project"; exit 1; }
+rm -rf "$TS"
+echo "ts indexing + linter precision ok"
+
 echo "SMOKE TEST PASSED"

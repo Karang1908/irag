@@ -4,6 +4,40 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.26.0 — 2026-07-25
+
+### Fixed — five defects found running irag on a real Vite/React/TS project
+
+**`structure.py` — the symbol regex only matched a 2015 subset of JS.** The
+`const` branch required `(`, `function` or `=>` straight after `=`, so every
+`const X = factory(...)` was invisible: zustand stores, `createContext`,
+`styled`, `forwardRef`. A TS type annotation between the name and `=` also
+broke it, and `interface` / `type` / `enum` were never matched at all. One
+real `src/store.ts` indexed **zero** symbols. It now accepts any initializer,
+an optional type annotation, and TS type declarations. This was the deepest
+of the five — it degraded `map`, `impact`, retrieval and context quality, not
+just the linter.
+
+**`linter.py` — four checks flagged things that were never wrong:**
+- Absolute paths inverted the check. `repo / "/src/main.tsx"` discards `repo`
+  (pathlib) and tested the filesystem root, so every Vite-style URL in a page
+  was reported missing.
+- A bare filename was denied rather than located: `store.ts` living at
+  `src/store.ts` was reported as "does not exist in the repository".
+- Package names satisfy the path regex. `three.js` — and `Next.js`, `Vue.js`,
+  `Node.js` — were flagged as missing files. Tokens with no separator whose
+  stem is a declared dependency are now skipped.
+- Symbols imported from packages were treated as phantom. `useFrame`,
+  `Suspense`, `createRoot` live in `node_modules`, which is never indexed, so
+  they could not possibly be found. Absence of evidence was being recorded as
+  evidence of absence; bindings from non-relative specifiers are now skipped
+  as unverifiable.
+
+Each fix adds a skip path to a fact-checker, so the suite now also proves the
+checker still catches genuine lies: a missing relative path, a missing
+absolute path, a missing bare filename, a non-dependency `.js`, and a phantom
+symbol are all still caught.
+
 ## 4.25.0 — 2026-07-25
 
 ### Fixed — the agent guide let an agent opt out of keeping the memory alive

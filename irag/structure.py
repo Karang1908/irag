@@ -35,11 +35,19 @@ C_EXT = {".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx"}
 CODE_EXT = (PY_EXT | JS_EXT | GO_EXT | RS_EXT | JAVA_EXT | CS_EXT | RB_EXT
             | PHP_EXT | C_EXT)
 
+# Named groups: the alternation has grown past the point where positional
+# indexes are safe to read. The `const` branch deliberately accepts ANY
+# initializer - requiring `(`/`function`/`=>` after `=` missed every
+# `const X = factory(...)` (zustand stores, createContext, styled, forwardRef),
+# which left whole modules with zero indexed symbols. An optional type
+# annotation is allowed between the name and `=` for TS.
 JS_SYMBOL_RE = re.compile(
     r"^\s*(?:export\s+)?(?:default\s+)?"
-    r"(?:async\s+)?(?:function\s+(\w+)"
-    r"|class\s+(\w+)"
-    r"|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\(|function\b|\w+\s*=>))",
+    r"(?:async\s+)?(?:function\s+(?P<fn>\w+)"
+    r"|class\s+(?P<cls>\w+)"
+    r"|(?:interface|enum)\s+(?P<iface>\w+)"
+    r"|type\s+(?P<ty>\w+)\s*="
+    r"|(?:const|let|var)\s+(?P<var>\w+)(?:\s*:[^=\n]+?)?\s*=)",
     re.M,
 )
 JS_IMPORT_RE = re.compile(
@@ -211,8 +219,10 @@ def _py_parse(text: str, rel: str):
 def _regex_parse(text: str, rel: str, suffix: str):
     if suffix in JS_EXT:
         for m in JS_SYMBOL_RE.finditer(text):
-            name = m.group(1) or m.group(2) or m.group(3)
-            kind = "class" if m.group(2) else "function"
+            g = m.groupdict()
+            name = g["fn"] or g["cls"] or g["iface"] or g["ty"] or g["var"]
+            kind = ("class" if g["cls"] else
+                    "type" if (g["iface"] or g["ty"]) else "function")
             yield ("sym", name, kind, _line(text, m.start()))
         for m in JS_IMPORT_RE.finditer(text):
             spec = m.group(1)

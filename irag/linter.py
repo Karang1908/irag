@@ -47,6 +47,56 @@ def _read_manifest_versions(repo: Path) -> dict[str, str]:
     return versions
 
 
+# Bindings pulled in from a package rather than from this repo. A symbol
+# that arrives this way lives in node_modules / site-packages, which the
+# scanner never indexes - so "not in the symbol table" says nothing about
+# whether it exists. Absence of evidence is not evidence of absence.
+_JS_IMPORT_BINDINGS_RE = re.compile(
+    r"import\s+(?:type\s+)?([^;'\"]+?)\s+from\s+['\"]([^'\"]+)['\"]")
+_PY_IMPORT_FROM_RE = re.compile(r"^\s*from\s+([.\w]+)\s+import\s+(.+)$", re.M)
+
+
+def _external_names(repo: Path, subject_id: str) -> set[str]:
+    """Names the file imports from a non-relative (package) specifier."""
+    out: set[str] = set()
+    f = repo / subject_id
+    if not f.is_file():
+        return out
+    try:
+        text = f.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return out
+    for binds, spec in _JS_IMPORT_BINDINGS_RE.findall(text):
+        if spec.startswith((".", "/")):
+            continue                      # repo-local: the index should know it
+        for part in binds.replace("{", " ").replace("}", " ").split(","):
+            part = part.strip()
+            if not part:
+                continue
+            if " as " in part:
+                part = part.split(" as ")[-1].strip()
+            part = part.lstrip("* ").strip()
+            if part.isidentifier():
+                out.add(part)
+    for mod, binds in _PY_IMPORT_FROM_RE.findall(text):
+        if mod.startswith("."):
+            continue
+        for part in binds.split(","):
+            part = part.strip().strip("()").split(" as ")[-1].strip()
+            if part.isidentifier():
+                out.add(part)
+    return out
+
+
+def _basename_index(repo: Path, cfg: dict) -> dict[str, list[str]]:
+    """basename -> repo-relative paths, for resolving a bare filename claim."""
+    from . import structure
+    idx: dict[str, list[str]] = {}
+    for path, rel in structure._iter_code_files(repo, cfg):
+        idx.setdefault(path.name, []).append(rel)
+    return idx
+
+
 def _existing_open_claim(conn, page_id: int, claim: str) -> bool:
     return conn.execute(
         "SELECT 1 FROM contradictions "
@@ -86,6 +136,7 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
     ).fetchall()
 
     manifest = _read_manifest_versions(repo)
+    basenames = _basename_index(repo, cfg)
     added = 0
 
     for page in pages:
@@ -95,13 +146,27 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
         # (a) backticked path-like tokens must exist on disk
         for match in PATH_RE.finditer(body):
             rel = match.group(1)
-            if not (repo / rel).exists():
-                failing.add(f"references path `{rel}`")
-                if _insert(conn, page["page_id"], page["rev_id"],
-                           claim=f"references path `{rel}`",
-                           truth=f"{rel} does not exist in the repository",
-                           ctype="missing_path", severity="high", check="missing_path"):
-                    added += 1
+            # Path("/src/main.tsx") is absolute, so `repo / rel` silently
+            # discards repo and tests the filesystem root. Bundler URLs
+            # (Vite's /src/...) are written exactly this way.
+            probe = rel.lstrip("/")
+            if (repo / probe).exists():
+                continue
+            # A bare token with no separator may be a package, not a file:
+            # `three.js`, `Next.js`, `Vue.js` all satisfy PATH_RE.
+            if "/" not in probe and probe.rsplit(".", 1)[0].lower() in manifest:
+                continue
+            # ...or a real file referred to by name only, e.g. `store.ts`
+            # living at src/store.ts. Say where it is instead of denying it.
+            hits = basenames.get(probe) if "/" not in probe else None
+            if hits:
+                continue
+            failing.add(f"references path `{rel}`")
+            if _insert(conn, page["page_id"], page["rev_id"],
+                       claim=f"references path `{rel}`",
+                       truth=f"{rel} does not exist in the repository",
+                       ctype="missing_path", severity="high", check="missing_path"):
+                added += 1
 
         # (b) version claims vs manifests
         version_claims = list(VERSION_AT_RE.finditer(body)) + \
@@ -133,8 +198,11 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
             allowed = ({page["subject_id"]} | set(mf.get("files") or [])
                        | set(mf.get("imports") or []))
             marks = ",".join("?" * len(allowed))
+            external = _external_names(repo, page["subject_id"])
             for match in SYMBOL_RE.finditer(body):
                 sym = match.group(1)
+                if sym in external:
+                    continue          # lives in a package; unverifiable, not false
                 defined = conn.execute(
                     f"SELECT 1 FROM symbols WHERE (name=? OR name LIKE ? "
                     f"ESCAPE '\\') AND subject_id IN ({marks}) LIMIT 1",
