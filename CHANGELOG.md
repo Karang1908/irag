@@ -4,6 +4,29 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.22.0 — 2026-07-25
+
+### Fixed — the docs sidebar was being painted over, and the page was slow
+Two real defects, both mine, both introduced with the docs backdrop:
+
+- **A full-viewport scrim was covering the sidebar.** It hung off
+  `.doc-shell::before`, and `.doc-shell` comes after `.side` in the DOM and
+  creates its own stacking context (it has an opacity animation), so its
+  fixed pseudo-element painted straight over the left column. The links
+  computed to the right colour and rendered dark — which is why raising
+  their contrast last release didn't help. Moved to `.wrap::before`, where
+  it sits behind both columns.
+- **`backdrop-filter` on the sidebar and the TOC was the "slow" feeling.**
+  Blurring a sticky `100vh` backdrop re-composites every frame. Both are
+  gone; the panel is opaque, which needs no blur. Scrolling now measures
+  avg 16.7ms/frame with 0 frames over 32ms.
+
+### Changed
+- Transitions shortened: the launch warp 1150ms → 780ms, the docs fade
+  420ms → 220ms.
+- Sidebar colours raised unconditionally rather than only when the 3D scene
+  is running, so the nav is legible in every case.
+
 ## 4.21.0 — 2026-07-25
 
 ### Fixed — the docs sidebar was sitting on nothing

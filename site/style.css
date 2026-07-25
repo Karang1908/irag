@@ -492,29 +492,33 @@ html.lenis,html.lenis body{height:auto}
 
 /* ---- launch transition ---- */
 /* The sidebar sat on nothing, so the node field showed straight through
-   the links. It is a panel now — same treatment as the dashboard's. */
-.has-scene .side{background:linear-gradient(180deg,rgba(11,13,17,.97),rgba(11,13,17,.93));
-  backdrop-filter:blur(10px);border-right:1px solid var(--border);
-  border-radius:0 var(--r-md) var(--r-md) 0;padding:22px 18px 30px;margin-left:-18px}
-.has-scene .toc{background:rgba(11,13,17,.9);backdrop-filter:blur(8px);
-  border-radius:var(--r-md);padding:16px 14px}
-/* the panel sits on a busier surface than plain page background, so the
-   links need more contrast than the old floating-on-nothing treatment */
-.has-scene .side a{color:#c3cad6}
-.has-scene .side a:hover{color:var(--text)}
-.has-scene .side a.on,.has-scene .side a[aria-current]{color:var(--accent)}
-.has-scene .side h4,.has-scene .side .side-h{color:#8f98a8}
+   the links. It is a solid panel now.
+   No backdrop-filter: blurring a sticky 100vh backdrop (and the TOC's)
+   re-composites on every frame — it washed the panel out AND was the
+   reason the page felt slow. An opaque panel needs no blur anyway. */
+.has-scene .side{background:#0b0d11;border-right:1px solid var(--border);
+  padding:22px 18px 30px}
+.has-scene .toc{background:#0b0d11;border-radius:var(--r-md);padding:14px 12px}
+/* legible regardless of whether the scene ever starts */
+.side-link{color:#c6cdd9}
+.side-link:hover{color:var(--text)}
+.side-sec{color:#9aa3b2}
+.side-docs{color:#9aa3b2}
 /* a texture behind the docs, never a competitor to the prose */
 .scene.ambient{opacity:.28}
 .has-scene .wrap{position:relative;z-index:1}
-.has-scene .doc-shell::before{content:"";position:fixed;inset:0;z-index:-1;
+/* The scrim MUST hang off .wrap, not .doc-shell. .doc-shell comes after
+   .side in the DOM and creates its own stacking context (it has an opacity
+   animation), so a fixed full-viewport pseudo inside it painted straight
+   over the sidebar and dimmed it. On .wrap it sits behind both columns. */
+.has-scene .wrap::before{content:"";position:fixed;inset:0;z-index:-1;
   pointer-events:none;background:radial-gradient(105% 70% at 50% 40%,
   rgba(8,9,12,.93) 0%,rgba(8,9,12,.86) 55%,rgba(8,9,12,.72) 100%)}
 .warp-veil{position:fixed;inset:0;z-index:60;pointer-events:none;opacity:0;
   background:#08090c}
 /* docs arrive out of the same white-out the landing page left on */
 @media (prefers-reduced-motion: no-preference){
-  .doc-shell{animation:doc-in .42s ease-out both}
+  .doc-shell{animation:doc-in .22s ease-out both}
 }
 /* docs are for reading: a plain fade, no movement or blur */
 @keyframes doc-in{ from{opacity:0} to{opacity:1} }

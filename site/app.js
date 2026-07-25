@@ -588,7 +588,7 @@
     window.__warp = function (href) {
       if (warping) return;
       warping = true;
-      var t0 = performance.now(), DUR = 1150;
+      var t0 = performance.now(), DUR = 780;
       var veil = document.createElement("div");
       veil.className = "warp-veil";
       document.body.appendChild(veil);
