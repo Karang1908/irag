@@ -36,12 +36,22 @@ def _resolve_key(conn) -> str:
 
     With exactly one session open, it is unambiguously that one - this is how
     an agent with no hook payload (agy, Cursor) still gets its own work
-    attributed. With none or several open we cannot tell, so mint a
-    process-unique key: the work then belongs to nobody rather than being
-    credited to whoever else happened to be open.
+    attributed - but ONLY when that session is itself unidentified.
+
+    A session opened with a real id (Claude Code, whose hooks supply
+    `session_id` on every invocation) has an owner that always passes its key.
+    So a write arriving with NO key, while such a session is open, provably
+    did not come from that owner - adopting it would file one agent's work
+    under another's name. That is an inference, not a guess, and it is what
+    stops agy's commits appearing in Claude Code's diary.
+
+    Otherwise - none open, several open, or the only one is keyed - mint a
+    process-unique key so the work belongs to nobody rather than to whoever
+    happened to be open.
     """
     import os
     import uuid
+    from .sessions import STALE_AFTER
     try:
         rows = conn.execute(
             "SELECT session_key FROM sessions WHERE status='open' "
@@ -50,11 +60,13 @@ def _resolve_key(conn) -> str:
             # without it, two agents that both failed to close left the repo
             # permanently unable to see "exactly one open", so every later
             # agent silently lost attribution - one refusal poisoned the repo.
-            "AND started_at > datetime('now', '-12 hours')").fetchall()
+            "AND started_at > datetime('now', ?)", (STALE_AFTER,)).fetchall()
     except sqlite3.OperationalError:
         rows = []
-    if len(rows) == 1 and rows[0]["session_key"]:
-        return rows[0]["session_key"]
+    if len(rows) == 1:
+        only = rows[0]["session_key"]
+        if only and str(only).startswith("auto-"):
+            return only
     return f"proc-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
 
@@ -672,10 +684,12 @@ def cmd_session_end(args) -> int:
     key = _session_key(args)      # before stdin is consumed for transcript
     db.set_active_key(key)
     tpath = getattr(args, "transcript", None) or _stdin_transcript_path(cfg)
-    if getattr(args, "stale", False):
-        closed = sessions.end_stale(conn, cfg)
-        print(f"closed {len(closed)} dangling session(s): "
-              f"{closed or 'none were open'}")
+    if getattr(args, "stale", False) or getattr(args, "all", False):
+        everything = bool(getattr(args, "all", False))
+        closed = sessions.end_stale(conn, cfg, everything=everything)
+        scope = "open" if everything else "stale"
+        print(f"closed {len(closed)} {scope} session(s): "
+              f"{closed or 'none matched'}")
         return 0
     rec = sessions.end(conn, cfg, narrate=not args.no_narrate, key=key)
     if rec is None:
@@ -882,8 +896,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--id", metavar="KEY",
                     help="close the session with this key (or session id)")
     sp.add_argument("--stale", action="store_true",
-                    help="close EVERY open session as interrupted; the escape "
-                         "hatch when dangling rows block attribution")
+                    help="close sessions left open longer than 12h (presumed "
+                         "crashed) — the escape hatch when dangling rows "
+                         "block attribution")
+    sp.add_argument("--all", action="store_true",
+                    help="close EVERY open session, including ones started "
+                         "seconds ago — this can end another agent's live "
+                         "conversation")
     sp.add_argument("--transcript", metavar="FILE",
                     help="ingest this JSONL conversation transcript "
                          "(Claude Code hooks pass it on stdin automatically; "

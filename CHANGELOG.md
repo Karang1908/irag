@@ -4,6 +4,44 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.37.0 — 2026-07-25
+
+### Fixed — one agent's work was filed under another's name
+The "exactly one session open means the write is that session's" rule made
+keyless attribution work at all, but failed whenever the writer wasn't the
+session's owner: with a Claude Code session open, an agy commit was recorded
+in **Claude Code's** diary. Still false history in the record `irag recap`
+feeds forward.
+
+There is a sound inference available rather than a better guess. A session
+opened with a real id belongs to an agent whose every call carries that id —
+Claude Code's hooks supply `session_id` on each invocation. So a write
+arriving with **no** key, while such a session is open, provably did not come
+from that owner. Adoption is now limited to sessions that are themselves
+unidentified (`auto-` keys), which is exactly the case where an unkeyed write
+plausibly is the session's own.
+
+A lone keyless agent is still credited with its work; a keyed session no
+longer absorbs a stranger's.
+
+### Fixed — `--stale` closed sessions that weren't stale
+`begin()` and `_resolve_key` both treat "older than 12 hours" as the crash
+threshold, but `session-end --stale` closed **every** open session regardless
+of age — and the refusal message framed it as an age filter ("if none is
+yours, they are stale"). A user following that advice could end a colleague
+agent's live conversation seconds after it started.
+
+`--stale` now applies the same 12-hour rule as everything else. `--all` is the
+blunt instrument, named for what it does, with help text saying it can end a
+live conversation. The threshold is a single `sessions.STALE_AFTER` constant
+instead of being duplicated across two modules.
+
+### Fixed — crashed keyed sessions were never reaped
+`begin()` only closed rows carrying the same key, and a hook `session_id`
+never recurs, so a crashed Claude Code session stayed open forever. Harmless
+— nothing depended on those rows — but they accumulated in `irag sessions`.
+Any session past the staleness threshold is now reaped regardless of key.
+
 ## 4.36.0 — 2026-07-25
 
 4.35.0 made `session-end` refuse to guess between unidentified sessions, which

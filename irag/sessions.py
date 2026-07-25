@@ -18,6 +18,12 @@ import sqlite3
 from . import db
 
 
+# How long an open session may sit untouched before it is presumed crashed
+# rather than live. Used for reaping on `begin`, for deciding whether an open
+# row still counts when resolving a writer, and by `session-end --stale`.
+STALE_AFTER = "-12 hours"
+
+
 def begin(conn: sqlite3.Connection, agent: str = "claude-code",
           key: str | None = None) -> int:
     """Open a session.
@@ -45,9 +51,16 @@ def begin(conn: sqlite3.Connection, agent: str = "claude-code",
             "SELECT session_id FROM sessions WHERE status='open' "
             "AND (session_key IS NULL OR session_key='' "
             "OR session_key LIKE 'auto-%') "
-            "AND started_at < datetime('now', '-12 hours') "
-            "ORDER BY session_id DESC").fetchall()
-    for open_row in stale:
+            "AND started_at < datetime('now', ?) "
+            "ORDER BY session_id DESC", (STALE_AFTER,)).fetchall()
+    ancient = conn.execute(
+        "SELECT session_id FROM sessions WHERE status='open' "
+        "AND started_at < datetime('now', ?)", (STALE_AFTER,)).fetchall()
+    seen = set()
+    for open_row in list(stale) + list(ancient):
+        if open_row["session_id"] in seen:
+            continue
+        seen.add(open_row["session_id"])
         _close(conn, None, open_row["session_id"], narrate=False,
                status="interrupted")
     ev = conn.execute(
@@ -248,22 +261,36 @@ def end(conn: sqlite3.Connection, cfg: dict | None,
                     "cannot tell which is yours — closing one would end "
                     "another agent's conversation. Close yours explicitly:\n"
                     f"{listing}\n"
-                    "  ('irag sessions' lists these too. If none is yours, "
-                    "they are stale: 'irag session-end --stale' closes every "
-                    "open session.)")
+                    "  ('irag sessions' lists these too. If none is yours "
+                    "they were left behind: 'irag session-end --stale' closes "
+                    "ones older than 12h; '--all' closes every open session, "
+                    "including another agent's live one.)")
             row = anon[0] if anon else None
     if not row:
         return None
     return _close(conn, cfg, row["session_id"], narrate=narrate)
 
 
-def end_stale(conn, cfg) -> list[int]:
-    """Close every open session as interrupted. The escape hatch for a repo
-    left with dangling rows - two agents open, neither closing, after which
-    `_resolve_key` can never again see "exactly one open" and every later
-    agent silently loses attribution."""
-    rows = conn.execute("SELECT session_id FROM sessions WHERE status='open' "
-                        "ORDER BY session_id").fetchall()
+def end_stale(conn, cfg, everything: bool = False) -> list[int]:
+    """Close dangling sessions as interrupted.
+
+    The escape hatch for a repo left with open rows - two agents open, neither
+    closing, after which `_resolve_key` can never again see "exactly one open"
+    and every later agent silently loses attribution.
+
+    By default only sessions older than STALE_AFTER are closed, matching what
+    "stale" means everywhere else in this module. `everything=True` closes
+    live sessions too, which can end another agent's running conversation -
+    hence the separate, explicitly-named flag.
+    """
+    if everything:
+        rows = conn.execute("SELECT session_id FROM sessions "
+                            "WHERE status='open' ORDER BY session_id").fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT session_id FROM sessions WHERE status='open' "
+            "AND started_at < datetime('now', ?) ORDER BY session_id",
+            (STALE_AFTER,)).fetchall()
     closed = []
     for row in rows:
         _close(conn, cfg, row["session_id"], narrate=False,

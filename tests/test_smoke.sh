@@ -716,12 +716,52 @@ except SystemExit as exc:
 rec = sessions.end(conn, cfg, narrate=False, key=str(a))
 assert rec and rec["session_id"] == a, "--id did not accept a session id"
 
-# and --stale clears whatever is left
-left = sessions.end_stale(conn, cfg)
-assert left == [b], f"--stale should have closed {b}, closed {left}"
+# and --all clears whatever is left. (--stale is age-filtered now, so it
+# deliberately spares a session that started seconds ago; see the
+# cross-attribution block below.)
+left = sessions.end_stale(conn, cfg, everything=True)
+assert left == [b], f"--all should have closed {b}, closed {left}"
 assert not conn.execute("SELECT 1 FROM sessions WHERE status='open'").fetchone(), \
     "sessions still open after --stale"
 PYEOF
 echo "stranded session recovery ok"
+
+# --- no cross-attribution to a foreign session (regression guard) ----------
+python3 - << 'PYEOF' || { echo "FAIL: cross-attribution"; exit 1; }
+import pathlib, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, sessions
+from irag.cli import _resolve_key
+
+dbp = pathlib.Path(tempfile.mkdtemp()) / ".irag" / "memory.db"
+db.ensure_db(dbp)
+conn = db.connect(str(dbp)); cfg = config.load(dbp.parent.parent)
+
+# A session opened with a REAL id belongs to an agent whose every call carries
+# that id (Claude Code hooks). So an unkeyed write cannot be theirs, and
+# adopting their key would file one agent's commits in another's diary.
+sessions.begin(conn, agent="claude-code", key="CC-live")
+assert _resolve_key(conn) != "CC-live", \
+    "an unkeyed write adopted a keyed session - cross-attribution"
+sessions.end(conn, cfg, narrate=False, key="CC-live")
+
+# but a lone UNIDENTIFIED session is plausibly the writer's own, and must
+# still be adopted or a keyless agent loses its own work
+solo = sessions.begin(conn, agent="agy")
+solo_key = conn.execute("SELECT session_key FROM sessions WHERE session_id=?",
+                        (solo,)).fetchone()["session_key"]
+assert _resolve_key(conn) == solo_key, "a lone keyless agent lost attribution"
+
+# --stale means stale: it must not end a conversation that started seconds ago
+assert sessions.end_stale(conn, cfg) == [], "--stale closed a live session"
+conn.execute("UPDATE sessions SET started_at=datetime('now','-30 hours') "
+             "WHERE session_id=?", (solo,))
+conn.commit()
+assert sessions.end_stale(conn, cfg) == [solo], "--stale skipped an aged session"
+# --all is the blunt one, and says so
+live = sessions.begin(conn, agent="cursor")
+assert sessions.end_stale(conn, cfg, everything=True) == [live]
+PYEOF
+echo "cross-attribution + stale semantics ok"
 
 echo "SMOKE TEST PASSED"
