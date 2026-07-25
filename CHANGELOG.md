@@ -4,6 +4,55 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.35.0 — 2026-07-25
+
+Ends the session-attribution thread by removing the guesswork instead of
+improving it. No rule over "which sessions are open" can identify the caller
+when two agents are genuinely open at once — so irag now tells each agent its
+id, and refuses to guess when it doesn't have one.
+
+### Fixed — a second unidentified agent killed the first one's live session
+`begin()` force-closed the whole keyless lineage as `interrupted`, on the
+assumption that an open session must be a crashed predecessor. It isn't:
+starting agy and then Cursor marked agy's *running* session `interrupted`,
+and a later bare `session-end` then closed the survivor — the caller's own
+session never closed properly and a stranger's was ended out from under it.
+This was the original cross-close bug surviving in the two-keyless case.
+
+Only sessions older than 12 hours are now reaped, which still cleans up after
+a crash. A lingering stale row is a much smaller harm than ending a live
+conversation.
+
+### Fixed — `session-end` guessed between unidentified sessions
+The fallback took the newest `auto-` session, which is not necessarily the
+caller's. With more than one unidentified session open it now refuses,
+naming the fix, rather than closing someone else's:
+
+```
+irag: several unidentified sessions are open (2, 1) and irag cannot tell
+which is yours — closing one would end another agent's. Re-run with
+'irag session-end --id <key>' using the id printed by 'irag session-begin'.
+```
+
+A single open session still closes with no id, so the ordinary solo case is
+unaffected.
+
+### Fixed — an agent was never told the key minted for it
+`session-begin` printed only `session N opened`, so a caller that passed no
+`--id` had no way to learn the key it was given and could never identify
+itself afterwards. That is why the concurrent case stayed broken even after
+`--id` was added to the write commands: the mechanism existed but the
+information didn't. It now prints `session N opened (id: <key>)`, plus a hint
+to pass it on. Verified end to end: with two sessions open, an agy that adopts
+its printed id is credited with its own file while Claude Code correctly
+reports none.
+
+### Changed
+The agent guide now instructs non-Claude-Code agents to generate one id per
+conversation and pass it to `session-begin`, every `update`, and
+`session-end`, with a worked example — and says plainly what breaks if they
+don't.
+
 ## 4.34.0 — 2026-07-25
 
 ### Fixed — `cmd_update` threw away the key it had just resolved (regression)

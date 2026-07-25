@@ -35,13 +35,18 @@ def begin(conn: sqlite3.Connection, agent: str = "claude-code",
             "SELECT session_id FROM sessions WHERE status='open' "
             "AND session_key=? ORDER BY session_id DESC", (key,)).fetchall()
     else:
-        # a caller with no key still owns the keyless lineage: minted keys
-        # carry an "auto-" prefix, plus genuinely NULL rows from before keys
-        # existed. Without this a crashed keyless session would never close.
+        # A caller with no key cannot prove another open session is dead, and
+        # "open" is not "crashed": force-closing the keyless lineage outright
+        # meant a second unidentified agent starting up killed the first one's
+        # LIVE session, which then reported 'interrupted' despite running to
+        # completion. Only reap ones old enough to be a crash - a lingering
+        # stale row is a far smaller harm than ending an active conversation.
         stale = conn.execute(
             "SELECT session_id FROM sessions WHERE status='open' "
             "AND (session_key IS NULL OR session_key='' "
-            "OR session_key LIKE 'auto-%') ORDER BY session_id DESC").fetchall()
+            "OR session_key LIKE 'auto-%') "
+            "AND started_at < datetime('now', '-12 hours') "
+            "ORDER BY session_id DESC").fetchall()
     for open_row in stale:
         _close(conn, None, open_row["session_id"], narrate=False,
                status="interrupted")
@@ -222,9 +227,23 @@ def end(conn: sqlite3.Connection, cfg: dict | None,
         if len(openes) == 1:
             row = openes[0]
         else:
-            row = next((r for r in openes
-                        if not r["session_key"]
-                        or str(r["session_key"]).startswith("auto-")), None)
+            anon = [r for r in openes
+                    if not r["session_key"]
+                    or str(r["session_key"]).startswith("auto-")]
+            if len(anon) > 1:
+                # Two agents that both declined to identify themselves. The
+                # old heuristic took the newest, which closed a stranger's
+                # session and left the caller's dangling as 'interrupted' -
+                # the very cross-close this key was introduced to stop. No
+                # rule over shared state can decide this, so refuse instead
+                # of guessing wrong.
+                raise SystemExit(
+                    "irag: several unidentified sessions are open "
+                    f"({', '.join(str(r['session_id']) for r in anon)}) and "
+                    "irag cannot tell which is yours — closing one would end "
+                    "another agent's. Re-run with 'irag session-end --id "
+                    "<key>' using the id printed by 'irag session-begin'.")
+            row = anon[0] if anon else None
     if not row:
         return None
     return _close(conn, cfg, row["session_id"], narrate=narrate)

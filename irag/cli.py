@@ -591,7 +591,16 @@ def cmd_session_begin(args) -> int:
     key = _session_key(args)
     db.set_active_key(key)
     sid = sessions.begin(conn, agent=args.agent, key=key)
-    print(f"session {sid} opened")
+    # Print the key, always. A caller that passed no --id had one minted for
+    # it and otherwise had no way to learn it - so it could never identify
+    # itself on later calls, which is what left concurrent agents unable to
+    # attribute their own work or close their own session.
+    actual = conn.execute("SELECT session_key FROM sessions WHERE session_id=?",
+                          (sid,)).fetchone()["session_key"]
+    print(f"session {sid} opened (id: {actual})")
+    if not key:
+        print(f"  pass --id {actual} to 'irag update' and 'irag session-end' "
+              "if anything else may be working this repo")
     return 0
 
 

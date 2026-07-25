@@ -118,11 +118,25 @@ whole conversation into the project diary with everything it changed. Your oblig
    agent (agy, Cursor, ...) must do it manually: run `irag session-begin`
    as your first action in a conversation, and `irag session-end` as your
    last action before the conversation closes (also when the user says
-   they're done). **If anything else might be working this repo at the same
-   time, pass a `--id`** — `irag session-begin --id <something-unique>` and
-   `irag session-end --id <same>`. Without it, two conversations running at
-   once can only be told apart when exactly one is open, so concurrent work
-   ends up credited to nobody. Claude Code supplies this automatically.
+   they're done).
+
+   **Generate one id at the start of the conversation and pass it to every
+   irag command that writes.** Claude Code supplies this automatically; you
+   must do it yourself:
+
+   ```
+   irag session-begin --id <your-unique-id> --agent <you>
+   irag update --id <same-id>          # every time, see rule 2
+   irag session-end --id <same-id>
+   ```
+
+   Any stable unique string works — a uuid, a timestamp plus your name. This
+   is not optional hygiene: without it irag has to guess which session a
+   write belongs to from what happens to be open, and when two agents are
+   open at once no guess can be right. Concurrent work then gets credited to
+   nobody, and `irag session-end` will refuse to close anything rather than
+   end someone else's session. If you forget, `irag session-begin` prints the
+   id it minted for you — use that one.
 
    The diary is what makes `irag recap` work for the next session — do not
    skip it. Every session is logged redundantly with

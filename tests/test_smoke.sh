@@ -645,4 +645,46 @@ for c in update sync synthesize ingest-commit session-begin session-end; do
 done
 echo "active key + --id coverage ok"
 
+# --- unidentified concurrent agents (regression guard) ---------------------
+python3 - << 'PYEOF' || { echo "FAIL: unidentified concurrent agents"; exit 1; }
+import pathlib, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, sessions
+
+dbp = pathlib.Path(tempfile.mkdtemp()) / ".irag" / "memory.db"
+db.ensure_db(dbp)
+conn = db.connect(str(dbp)); cfg = config.load(dbp.parent.parent)
+
+# begin() must not reap a LIVE session it cannot prove is dead: force-closing
+# the keyless lineage meant a second unidentified agent killed the first one's
+# running session, which then reported 'interrupted' despite completing
+one = sessions.begin(conn, agent="agy")
+two = sessions.begin(conn, agent="cursor")
+states = dict(conn.execute("SELECT session_id, status FROM sessions").fetchall())
+assert states[one] == "open", f"a live keyless session was reaped: {states}"
+assert states[two] == "open", states
+
+# and end() must refuse rather than close a stranger's
+try:
+    sessions.end(conn, cfg, narrate=False)
+    raise AssertionError("end() guessed between two unidentified sessions")
+except SystemExit:
+    pass
+
+# each closes cleanly by its own key - the key session-begin now prints
+k1 = conn.execute("SELECT session_key FROM sessions WHERE session_id=?",
+                  (one,)).fetchone()["session_key"]
+k2 = conn.execute("SELECT session_key FROM sessions WHERE session_id=?",
+                  (two,)).fetchone()["session_key"]
+assert k1 and k2 and k1 != k2, "sessions must get distinct keys"
+assert sessions.end(conn, cfg, narrate=False, key=k1)["session_id"] == one
+assert sessions.end(conn, cfg, narrate=False, key=k2)["session_id"] == two
+
+# a lone keyless agent still needs no id at all
+solo = sessions.begin(conn, agent="agy")
+rec = sessions.end(conn, cfg, narrate=False)
+assert rec and rec["session_id"] == solo, "the sole open session must still close"
+PYEOF
+echo "unidentified concurrent agents ok"
+
 echo "SMOKE TEST PASSED"
