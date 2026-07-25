@@ -477,12 +477,23 @@ def cmd_update(args) -> int:
     the memory database only; the CLAUDE.md/AGENTS.md agent guide is static
     (installed by 'irag init', re-installed by 'irag export')."""
     conn, cfg, root = _open()
-    n = ingest.sync(conn, cfg, root)
-    from . import structure
-    structure.scan(conn, cfg, root)
-    print(f"sync       : {n} new event(s)")
-    done = synthesis.sweep(conn, cfg, root, limit=args.limit)
-    new_contras = linter.lint(conn, cfg, root)
+    try:
+        n = ingest.sync(conn, cfg, root)
+        from . import structure
+        structure.scan(conn, cfg, root)
+        print(f"sync       : {n} new event(s)")
+        done = synthesis.sweep(conn, cfg, root, limit=args.limit)
+        new_contras = linter.lint(conn, cfg, root)
+    except sqlite3.OperationalError as exc:
+        # busy_timeout expired: another writer (a dashboard, a Stop hook,
+        # a second update) held the WAL write lock the whole time. A raw
+        # traceback here reads like corruption; it isn't.
+        if "locked" not in str(exc).lower():
+            raise
+        raise SystemExit(
+            f"irag: {exc} - another irag process is writing to "
+            ".irag/memory.db. Close 'irag dashboard' (or wait for the "
+            "running update to finish) and try again.")
     open_contras = conn.execute(
         "SELECT COUNT(*) c FROM contradictions WHERE resolved_at IS NULL"
     ).fetchone()["c"]

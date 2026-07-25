@@ -54,10 +54,11 @@ def route_query(q: str) -> str:
 
 
 class _State:
-    """Per-server context: repo root + config; fresh conn per request."""
+    """Per-server context: repo root + config; one conn per thread."""
     def __init__(self, root: Path):
         self.root = root
         self.cfg = config_mod.load(root)
+        self._local = threading.local()
         self.lock = threading.Lock()          # serialize LLM-heavy operations
         self.update_lock = threading.Lock()   # atomic guard for update_running
         self.update_log: list[str] = []
@@ -65,7 +66,36 @@ class _State:
         self.last_live = 0.0
 
     def conn(self):
-        return db.ensure_db(self.root / ".irag" / "memory.db")
+        """One connection per thread, opened once and reused.
+
+        This used to call ensure_db() on every request, which opened a
+        brand-new connection - never closed - and re-ran the entire schema
+        DDL plus both migration helpers each time. File handles on
+        memory.db grew without bound, and the pile of live readers meant
+        WAL checkpointing could never complete, so the WAL grew unbounded
+        too until writers started timing out on the lock.
+
+        It must be thread-local rather than a single shared connection:
+        ThreadingHTTPServer serves each request on its own thread, and
+        db.connect() leaves sqlite3's check_same_thread=True.
+        """
+        existing = getattr(self._local, "conn", None)
+        if existing is not None:
+            return existing
+        fresh = db.ensure_db(self.root / ".irag" / "memory.db")
+        self._local.conn = fresh
+        return fresh
+
+    def release(self):
+        """Close and forget this thread's connection (end of request)."""
+        existing = getattr(self._local, "conn", None)
+        if existing is None:
+            return
+        self._local.conn = None
+        try:
+            existing.close()
+        except sqlite3.Error:
+            pass
 
 
 def _docs_index() -> list[dict]:
@@ -169,6 +199,18 @@ def make_handler(state: _State):
                 return json.loads(self.rfile.read(length))
             except json.JSONDecodeError:
                 return {}
+
+        def handle_one_request(self):
+            # ThreadingHTTPServer runs one thread per request, so the
+            # thread-local connection must be handed back when the request
+            # ends. Without this the connection is only reclaimed whenever
+            # the GC gets to the dead thread, and every live reader holds
+            # WAL checkpointing open - which is how the WAL reached 4 MB
+            # and writers started timing out on the lock.
+            try:
+                super().handle_one_request()
+            finally:
+                state.release()
 
         # ---------- GET ----------
         def do_GET(self):
