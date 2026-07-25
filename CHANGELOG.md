@@ -4,6 +4,47 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.25.0 — 2026-07-25
+
+### Fixed — the agent guide let an agent opt out of keeping the memory alive
+A real session ended with the agent reporting *"I did not run `irag update`;
+it costs roughly one LLM call per file across ~21 new files, so that's your
+call"* — in a project where no Stop hook had ever been installed. Both halves
+were faithful readings of the guide, so the guide was the bug:
+
+- Phase 0 treated "`irag status` prints a dashboard" as proof the loop was
+  running. Initialized and automated are different things. It now requires
+  reading the Claude Code hook line out of `irag doctor` first — an
+  initialized project with no hooks is the most common broken setup and is
+  otherwise invisible.
+- Phase 2 stated as fact that "a Stop hook runs `irag update` when you finish
+  a turn". Now explicitly conditional on having verified it.
+- Rule 2 said to update only "if you are not sure the Stop hook ran (or
+  you're not Claude Code)" — which an agent under Claude Code resolves to
+  "covered, skip it". Now unconditional, and it names the observed failure
+  sentence verbatim so a model can match its own output against it.
+- Phase 1's "the first `irag update` costs one LLM call per file" was being
+  generalized to every update. Scoped to the initial build, with an explicit
+  ban on quoting per-file cost as a reason to skip a routine update.
+- `irag claude-setup` must now be verified by a follow-up `irag doctor`.
+
+The guide ships as both `CLAUDE.md` and `AGENTS.md`; `irag export` reinstalls
+it into an existing project.
+
+### Known issue
+A missing Claude Code hook is only a `WARN`, so `irag doctor` still exits 0
+and still prints "all checks passed" underneath it. The guide now says to
+read the hook line rather than trust the summary. Promoting it to `FAIL` is
+the better fix and is not done here.
+
+### Changed
+- Showcase headline now carries the token claim directly — **"So your agent
+  can look it up — for almost no tokens."** — rather than leaving it to the
+  subcaption, superseding the wording recorded under 4.24.0 below.
+- The scene's flying label is placed against the copy's block boxes and will
+  drop itself rather than print over a card or paragraph; the hero lede is
+  cut to two sentences and the closing CTA carries the install command.
+
 ## 4.24.0 — 2026-07-25
 
 ### Changed — the showcase lands on the actual selling point

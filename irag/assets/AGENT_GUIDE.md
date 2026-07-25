@@ -10,9 +10,23 @@ is everything you need. Follow it without being asked.
 
 ## Phase 0 — Is irag set up here?
 
-Run `irag status`. Three outcomes:
+Run `irag status`, then `irag doctor`. Three outcomes:
 
-1. **It prints a dashboard** → irag is live. Skip to Phase 2.
+1. **It prints a dashboard** → irag is initialized. That is NOT the same
+   as automated. Before you go anywhere, find the Claude Code hook line
+   in `irag doctor`'s output:
+   - `✓ PASS  Claude Code hook wired` → good, skip to Phase 2.
+   - `! WARN  Claude Code hook   not set up` → **run `irag claude-setup`
+     right now, then re-run `irag doctor` and confirm the line flipped to
+     PASS.** Until it does, nothing is automatic: no context is injected
+     at session start, no session is logged, and `irag update` never runs
+     on its own. An initialized project with no hooks is the single most
+     common broken setup, and it is invisible unless you look.
+
+   Read that specific line. A missing hook is only a WARN, so `irag
+   doctor` still exits 0 and still prints **"all checks passed"** at the
+   bottom. Neither the exit code nor the summary line will tell you the
+   memory loop is dead.
 2. **"not initialized here — run 'irag init'"** → do Phase 1.
 3. **"command not found"** → irag isn't installed. Install it from the
    source folder: `pip install -e <path-to-irag>` (Python 3.11+, zero
@@ -42,14 +56,26 @@ Verify, then build the initial memory and wire the hooks:
 irag doctor --probe-llm     # must pass before spending real tokens
 irag update                 # first full synthesis: every file + folder
 irag claude-setup           # SessionStart (memory in) + Stop (memory out) + SessionEnd (diary)
+irag doctor                 # REQUIRED: confirm "Claude Code hook wired"
 ```
 
-If the user is present, tell them the first `irag update` costs one LLM
-call per file and folder, and let them confirm on large repos.
+`claude-setup` is not optional and its result must be verified. If that
+last `doctor` does not say the hook is wired, the memory loop is dead and
+every later phase of this document silently does nothing. Fix it before
+continuing, and tell the user.
+
+If the user is present, tell them **this first** `irag update` costs one
+LLM call per file and folder, and let them confirm on large repos.
+
+That confirmation applies to the initial build and nothing else. Routine
+updates after a few edits are ordinary running cost, not a decision to
+escalate — see Phase 2 rule 2. Never quote the per-file cost as a reason
+to skip a normal update.
 
 ## Phase 2 — The loop (every session, mostly automatic)
 
-After claude-setup, the loop runs itself: SessionStart opens a
+After claude-setup — **and only if `irag doctor` confirms the hook is
+wired; check, never assume** — the loop runs itself: SessionStart opens a
 conversation-log entry and injects ranked context (including a recap of
 the previous sessions — read it, that is your continuity), a Stop hook
 runs `irag update` when you finish a turn, and SessionEnd summarizes the
@@ -72,10 +98,21 @@ whole conversation into the project diary with everything it changed. Your oblig
      radius, parsed from the code, always current
    - `irag why "<claim>"` — trace any memory claim to the change that
      created it
-2. **Update after editing.** If you created, modified, or deleted files
-   and you are not sure the Stop hook ran (or you're not Claude Code):
-   run `irag update`. It is a no-op when nothing changed, so when in
-   doubt, run it.
+2. **Update after editing — unconditionally.** If you created, modified
+   or deleted files, run `irag update` before you finish your turn. Do
+   not reason about whether the Stop hook will cover it; run it anyway.
+   It is a no-op when nothing has changed, so a redundant run is free,
+   and a skipped run leaves the memory silently wrong for every later
+   session.
+
+   **Do not ask the user for permission to run it, and do not decline it
+   on cost grounds.** Synthesizing changed files is what this tool is
+   for; that cost is the product working, not an incident to escalate.
+   If you want the user to know the size first, run `irag status`, state
+   the number of pages due, then run the update and report what it did.
+   "I did not run irag update, it costs N calls, your call" is a failure
+   to do your job — the memory is now stale and the user has to notice
+   and fix it by hand.
 3. **Keep the diary if hooks can't.** If you are Claude Code with
    claude-setup done, sessions log themselves — skip this. Any other
    agent (agy, Cursor, ...) must do it manually: run `irag session-begin`
