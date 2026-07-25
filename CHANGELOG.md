@@ -4,6 +4,20 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.20.0 — 2026-07-25
+
+### Changed — the launch transition zooms into the node, and docs just fade
+- The transition ended on a white radial flash. Now the compressed node
+  **opens up and swallows the screen**: the scattered nodes gather to a
+  single point, that point is pulled to the centre of the frame, and then
+  it expands past the viewport, so you fly *into* it and come out in the
+  docs. The veil is a plain dark cover over the final 10%, purely to hide
+  the navigation swap.
+- **Docs arrive on a plain fade.** They were sliding, scaling and
+  un-blurring, which is movement on a page you are trying to read.
+- The docs node field is quieter (opacity .5 → .28): a texture behind the
+  prose, never a competitor to it.
+
 ## 4.19.0 — 2026-07-25
 
 ### Added — the launch transition

@@ -352,7 +352,8 @@
       var right = norm(cross(fwd, [0, 1, 0]));
       var up = cross(right, fwd);
       var focal = Math.min(W, H) * 0.86;
-      var cx = W / 2 + W * cam.o, cy = H / 2 + H * (cam.oy || 0);
+      var cx = W / 2 + W * cam.o * (1 - collapse),
+          cy = H / 2 + H * (cam.oy || 0) * (1 - collapse);
 
       var pts = [];
       // during the warp every node eases toward the origin, then the
@@ -457,6 +458,22 @@
         }
       });
 
+      // ---- the zoom: the compressed node opens into the next page ----
+      if (rush > 0) {
+        var o0 = sub([0, 0, 0], eye);
+        var oz = dot(o0, fwd);
+        var px = oz > 0.05 ? cx + (dot(o0, right) / oz) * focal : cx;
+        var py = oz > 0.05 ? cy - (dot(o0, up) / oz) * focal : cy;
+        var maxR = Math.hypot(Math.max(px, W - px), Math.max(py, H - py));
+        var rr = 4 + Math.pow(rush, 1.9) * maxR * 1.08;
+        var gg = sx.createRadialGradient(px, py, 0, px, py, Math.max(rr, 1));
+        gg.addColorStop(0, "rgba(240,248,255,.99)");
+        gg.addColorStop(0.35, "rgba(150,200,255,.97)");
+        gg.addColorStop(0.72, "rgba(46,110,205,.94)");
+        gg.addColorStop(1, "rgba(8,9,12,.97)");
+        sx.beginPath(); sx.arc(px, py, Math.max(rr, 1), 0, 6.2832);
+        sx.fillStyle = gg; sx.fill();
+      }
       if (AMBIENT) return;   // no rail on a docs page
       // ---- rail markers: docked when away, flown out when arrived ----
       var mid = (STOPS.length - 1) / 2;
@@ -569,12 +586,13 @@
       document.body.appendChild(veil);
       var step = function (t) {
         var k = Math.min(1, (t - t0) / DUR);
-        // 0-0.45 gather, 0.45-1 rush through
-        collapse = k < 0.45 ? Math.pow(k / 0.45, 1.7)
-                            : 1;
-        rush = k < 0.45 ? 0 : Math.pow((k - 0.45) / 0.55, 2.2);
-        veil.style.opacity = k < 0.62 ? "0"
-          : ((k - 0.62) / 0.38).toFixed(3);
+        // 0-0.55 the scattered nodes compress into one point;
+        // 0.55-1 that point opens up and swallows the screen — the zoom
+        collapse = k < 0.55 ? Math.pow(k / 0.55, 1.6) : 1;
+        rush = k < 0.55 ? 0 : Math.pow((k - 0.55) / 0.45, 2.0);
+        // the veil only covers the last moment, so the navigation swap is
+        // invisible; the zoom itself is drawn in the canvas
+        veil.style.opacity = k < 0.9 ? "0" : ((k - 0.9) / 0.1).toFixed(3);
         if (k < 1) requestAnimationFrame(step);
         else window.location.href = href;
       };
