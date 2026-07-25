@@ -357,4 +357,26 @@ assert syms == ["useApp", "draw", "Props"], f"top-level only: got {syms}"
 PYEOF
 echo "linter precision round 2 ok"
 
+# --- token estimate + ignore casing (regression guard) ---------------------
+python3 - << 'PYEOF' || { echo "FAIL: tokens/ignore regression"; exit 1; }
+import pathlib, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import tokens, ingest, config
+# \w includes '_', so "my_var".isalnum() is False; snake_case identifiers
+# must not collapse to a single token
+assert tokens._estimate("some_very_long_identifier_name") >= 4, \
+    "snake_case identifier counted as ~1 token again"
+assert tokens._estimate("") == 0
+# ignore matching is case-insensitive: macOS/Windows filesystems are, and a
+# scanned node_modules costs one LLM call per dependency file
+d = pathlib.Path(tempfile.mkdtemp())
+(d / ".irag").mkdir()
+cfg = config.load(d)
+for p in ("node_modules/react/i.js", "Node_Modules/react/i.js", "NODE_MODULES/x.js"):
+    assert ingest.is_ignored(p, cfg, d), f"{p} must be ignored"
+for p in ("src/main.tsx", "src/Node.tsx"):
+    assert not ingest.is_ignored(p, cfg, d), f"{p} must NOT be ignored"
+PYEOF
+echo "token estimate + ignore casing ok"
+
 echo "SMOKE TEST PASSED"

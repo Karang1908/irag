@@ -113,7 +113,7 @@ def _ignore_patterns(cfg: dict, repo: Path | None) -> tuple[set, list]:
     cache = cfg.get("_ignore_cache")
     if cache is not None:
         return cache
-    segments = set(cfg["modules"]["ignore"])
+    segments = {str(x).lower() for x in cfg["modules"]["ignore"]}
     globs: list[str] = []
     if repo is not None:
         ig = repo / ".iragignore"
@@ -146,7 +146,10 @@ def is_ignored(path: str, cfg: dict, repo: Path | None = None) -> bool:
     if any(p.startswith(".") for p in parts):
         return True
     segments, globs = _ignore_patterns(cfg, repo)
-    if any(p in segments for p in parts):
+    # case-insensitive: macOS and Windows filesystems are, so a checked-in
+    # `Node_Modules/` would otherwise be scanned - one LLM call per
+    # dependency file. Over-ignoring a `Build/` costs nothing by comparison.
+    if any(p.lower() in segments for p in parts):
         return True
     for pattern in globs:
         if (fnmatch.fnmatch(path, pattern)

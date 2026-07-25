@@ -4,6 +4,43 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.28.0 — 2026-07-25
+
+### Fixed — the token estimator was the least accurate option available
+`_PIECE` matches `\w+`, and `\w` includes `_` — but the branch test was
+`piece.isalnum()`, and `"my_var".isalnum()` is `False`. Every snake_case
+identifier, the most common shape in source, fell through to the punctuation
+branch and counted as **one token** regardless of length
+(`some_very_long_identifier_name`: real 6, estimated 1).
+
+Measured against `cl100k_base` over ~135k tokens of real Python, JS, HTML,
+markdown and CSS, worst-case error across the five corpora:
+
+| estimator | worst-case error |
+|---|---|
+| previous `_estimate` | 53% |
+| plain `chars // 4` | 19% |
+| **this release** | **9%** |
+
+So the old docstring had it backwards: it justified the heuristic by claiming
+`chars // 4` undercounts code, when `chars // 4` was in fact the more
+accurate of the two. Fixing the identifier bug alone made things *worse*
+(53% → 37% worst-case is still bad, and Python went +28% → +37%), because the
+sub-word rule was already overcounting and the bug had been masking it. Both
+constants are now calibrated: word runs cost one token per 6 characters, and
+punctuation 0.6 each rather than 1, since BPE merges runs like `);` and `=>`.
+
+This module is the only source of token accounting for `irag status`'s "est.
+LLM tokens spent" and the dashboard burn chart. Anyone without the optional
+`tiktoken` installed — the zero-dependency default — was seeing figures
+inflated by a quarter to a half.
+
+### Fixed — ignore patterns were case-sensitive on case-insensitive filesystems
+macOS and Windows filesystems fold case, so a checked-in `Node_Modules/` was
+scanned rather than ignored: one LLM call per dependency file. Segment
+matching now folds case. `src/Node.tsx` is still tracked — only whole path
+segments are compared, never substrings.
+
 ## 4.27.0 — 2026-07-25
 
 ### Fixed — the dashboard leaked a SQLite connection per request
