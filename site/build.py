@@ -54,26 +54,42 @@ SECTIONS = [
     ("Understanding it", ["architecture", "comparison", "story"]),
     ("Contributing", ["development", "changelog"]),
 ]
-# The published changelog shows only the most recent releases. CHANGELOG.md
-# itself stays complete - it is the historical record, and the file is what
-# `irag` ships and what the repo shows. This trims the rendered page only.
+# How many releases the changelog page shows before folding the rest away.
+# Every entry stays on the page - the older ones are one click behind a
+# disclosure rather than absent, so a long history costs a scroll, not
+# information. CHANGELOG.md itself is never touched.
 CHANGELOG_KEEP = 8
 
 
-def _trim_changelog(text: str, keep: int = CHANGELOG_KEEP) -> str:
-    """Keep the intro plus the newest `keep` release sections."""
-    parts = re.split(r"^(?=## )", text, flags=re.M)
-    head, releases = parts[0], parts[1:]
-    if len(releases) <= keep:
-        return text
-    older = len(releases) - keep
-    return (
-        head
-        + "".join(releases[:keep])
-        + "## Earlier releases\n\n"
-        + f"{older} earlier entries are omitted here. The complete history "
-        + f"lives in [CHANGELOG.md]({GITHUB}/blob/main/CHANGELOG.md).\n"
+def _collapse_changelog(html: str, toc: list, keep: int = CHANGELOG_KEEP):
+    """Fold every release past the newest `keep` into a <details> block.
+
+    Applied to the RENDERED html: the markdown renderer escapes raw HTML, so
+    the disclosure cannot be injected into the source text. Returns the
+    rewritten html and a table of contents covering only what is visible -
+    an anchor pointing inside a collapsed <details> does not reliably scroll
+    to its target.
+    """
+    starts = [m.start() for m in re.finditer(r'<h2 id="', html)]
+    if len(starts) <= keep:
+        return html, toc
+    cut = starts[keep]
+    older = len(starts) - keep
+    folded = (
+        html[:cut]
+        + '<details class="older-releases">'
+        + f"<summary>Earlier releases ({older})</summary>"
+        + html[cut:]
+        + "</details>"
     )
+    visible, seen = [], 0
+    for entry in toc:
+        if entry[0] == 2:
+            seen += 1
+            if seen > keep:
+                break
+        visible.append(entry)
+    return folded, visible
 
 
 # markdown links to these sources get rewritten to site URLs
@@ -763,9 +779,9 @@ def build(out: Path) -> int:
     order = [s for s, _t, _p in PAGES]
     for idx, (slug, title, src) in enumerate(PAGES):
         source = (ROOT / src).read_text(encoding="utf-8")
-        if slug == "changelog":
-            source = _trim_changelog(source)
         html, toc, plain = md_to_html(source, "../../")
+        if slug == "changelog":
+            html, toc = _collapse_changelog(html, toc)
         prev_slug = order[idx - 1] if idx > 0 else None
         next_slug = order[idx + 1] if idx + 1 < len(order) else None
         page = doc_page(

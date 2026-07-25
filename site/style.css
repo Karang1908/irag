@@ -523,3 +523,18 @@ html.lenis,html.lenis body{height:auto}
 }
 /* docs are for reading: a plain fade, no movement or blur */
 @keyframes doc-in{ from{opacity:0} to{opacity:1} }
+
+/* changelog: everything older than the newest few is one click away */
+.older-releases{margin-top:36px;border-top:1px solid var(--border);padding-top:8px}
+.older-releases>summary{cursor:pointer;list-style:none;user-select:none;
+  display:inline-flex;align-items:center;gap:9px;padding:10px 16px;margin:8px 0 4px;
+  border:1px solid var(--border);border-radius:999px;background:var(--card,#0f1218);
+  color:var(--text-dim);font:600 13.5px/1 var(--mono);letter-spacing:.02em;
+  transition:color .15s ease,border-color .15s ease}
+.older-releases>summary::-webkit-details-marker{display:none}
+.older-releases>summary::before{content:"+";font-size:15px;line-height:1;
+  color:var(--accent)}
+.older-releases[open]>summary::before{content:"–"}
+.older-releases>summary:hover{color:var(--text);border-color:var(--accent)}
+.older-releases>summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.older-releases[open]>summary{margin-bottom:18px}
