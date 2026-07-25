@@ -201,6 +201,22 @@ def connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+# Which conversation this PROCESS is acting for. `irag update` is spawned by
+# the Stop hook, which supplies the session id, so everything one process
+# writes belongs to one session - that is what makes stamping cheap and
+# correct without threading a key through every sync() call site.
+_ACTIVE_KEY: str | None = None
+
+
+def set_active_key(key: str | None) -> None:
+    global _ACTIVE_KEY
+    _ACTIVE_KEY = key or None
+
+
+def active_key() -> str | None:
+    return _ACTIVE_KEY
+
+
 def ensure_db(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = connect(db_path)
@@ -212,6 +228,12 @@ def ensure_db(db_path: Path) -> sqlite3.Connection:
     # second begin force-closed the first as 'interrupted' while it was still
     # running, then the first end closed the second's row.
     _add_column_if_missing(conn, "sessions", "session_key", "TEXT")
+    # per-event / per-revision attribution. Session ownership alone was not
+    # enough: two concurrent sessions each claimed the other's work, because
+    # the diary window was "every event since I started" with no upper bound
+    # and no owner. Stamping the writer lets a session report only its own.
+    _add_column_if_missing(conn, "events", "session_key", "TEXT")
+    _add_column_if_missing(conn, "revisions", "session_key", "TEXT")
     _ensure_unique_revisions_index(conn)
     return conn
 

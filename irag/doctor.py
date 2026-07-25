@@ -158,11 +158,22 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
 
     # Claude Code integration
     cc = repo / ".claude" / "settings.json"
-    if cc.exists() and "irag context" in cc.read_text(
-            encoding="utf-8", errors="replace"):
-        ok("Claude Code hook wired")
+    text = cc.read_text(encoding="utf-8", errors="replace") if cc.exists() else ""
+    # check each hook, not just SessionStart: grepping for "irag context"
+    # alone reported PASS while SessionEnd was missing, so the diary silently
+    # never closed - and the agent guide tells agents to trust this line.
+    wanted = {"SessionStart (context in)": "irag context",
+              "Stop (synthesis)": "irag update",
+              "SessionEnd (diary)": "irag session-end"}
+    missing = [label for label, needle in wanted.items() if needle not in text]
+    if not text:
+        warn("Claude Code hooks", "not set up — run 'irag claude-setup'")
+    elif missing:
+        warn("Claude Code hooks",
+             "incomplete — missing " + ", ".join(missing)
+             + " — re-run 'irag claude-setup'")
     else:
-        warn("Claude Code hook", "not set up — run 'irag claude-setup'")
+        ok("Claude Code hook wired")
 
     return results
 

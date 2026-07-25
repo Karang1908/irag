@@ -194,9 +194,9 @@ def _queue_file_event(conn, cfg, subject: str, ref: str, payload: dict,
     db.get_or_create_page(conn, subject, subject_type="file",
                           page_type="file")
     conn.execute(
-        "INSERT INTO events(event_type, source_ref, subject_id, payload) "
-        "VALUES(?, ?, ?, ?)",
-        (event_type, ref, subject, json.dumps(payload)))
+        "INSERT INTO events(event_type, source_ref, subject_id, payload, "
+        "session_key) VALUES(?, ?, ?, ?, ?)",
+        (event_type, ref, subject, json.dumps(payload), db.active_key()))
     bump = int(cfg["staleness"]["commit"])
     if Path(subject).name in MANIFEST_FILES:
         bump += int(cfg["staleness"]["dependency"])

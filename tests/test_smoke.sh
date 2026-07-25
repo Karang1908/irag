@@ -526,4 +526,52 @@ except sqlite3.OperationalError:
 PYEOF
 echo "concurrent sessions + map kinds ok"
 
+# --- asof validation + per-event attribution (regression guard) ------------
+python3 - << 'PYEOF' || { echo "FAIL: asof / attribution"; exit 1; }
+import json, pathlib, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, sessions
+from irag.cli import _iso_date
+
+# the date is compared lexically in SQL, so an unvalidated string returned the
+# PRESENT state under a historical banner instead of failing
+assert _iso_date("2026-06-01") == "2026-06-01"
+assert _iso_date("2026-6-1") == "2026-06-01", "unpadded date must normalise"
+for bad in ("June 1 2026", "yesterday", "src/store.ts", ""):
+    try:
+        _iso_date(bad)
+        raise AssertionError(f"{bad!r} accepted as a date")
+    except SystemExit:
+        pass
+
+# ownership fixed WHO owns a session; this covers WHICH events were theirs.
+# The window was "everything since I started" - unbounded and unowned - so
+# each session claimed the other's files and wrote false history into the
+# diary that irag recap feeds forward.
+dbp = pathlib.Path(tempfile.mkdtemp()) / ".irag" / "memory.db"
+db.ensure_db(dbp)
+conn = db.connect(str(dbp)); cfg = config.load(dbp.parent.parent)
+a = sessions.begin(conn, agent="claude-code", key="conv-A")
+b = sessions.begin(conn, agent="agy", key="conv-B")
+c = conn.execute("INSERT INTO pages(page_type,title,subject_type,subject_id)"
+                 " VALUES('module','b_only.py','module','b_only.py')")
+conn.execute("INSERT INTO events(event_type,source_ref,subject_id,payload,"
+             "session_key) VALUES('snapshot','r','b_only.py','{}','conv-B')")
+conn.execute("INSERT INTO revisions(page_id,version_number,body_markdown,"
+             "change_summary,session_key) VALUES(?,1,'b','changed','conv-B')",
+             (c.lastrowid,))
+conn.commit()
+ra = sessions.end(conn, cfg, narrate=False, key="conv-A")
+rb = sessions.end(conn, cfg, narrate=False, key="conv-B")
+a_files = json.loads(conn.execute(
+    "SELECT files_changed FROM sessions WHERE session_id=?",
+    (ra["session_id"],)).fetchone()[0] or "[]")
+b_files = json.loads(conn.execute(
+    "SELECT files_changed FROM sessions WHERE session_id=?",
+    (rb["session_id"],)).fetchone()[0] or "[]")
+assert "b_only.py" not in a_files, f"A claimed B's work: {a_files}"
+assert "b_only.py" in b_files, f"B lost its own work: {b_files}"
+PYEOF
+echo "asof validation + attribution ok"
+
 echo "SMOKE TEST PASSED"

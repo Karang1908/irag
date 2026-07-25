@@ -431,15 +431,17 @@ def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False) -> bool:
     tokens = tokens_mod.count(prompt) + tokens_mod.count(body)
     conn.execute(
         "INSERT INTO revisions(page_id, version_number, body_markdown, "
-        "change_summary, triggered_by_event_id, llm_model_used, tokens_used) "
+        "change_summary, triggered_by_event_id, llm_model_used, tokens_used, "
+        "session_key) "
         "VALUES(?, (SELECT COALESCE(MAX(version_number), 0) + 1 FROM "
-        "revisions WHERE page_id=?), ?,?,?,?,?)",
+        "revisions WHERE page_id=?), ?,?,?,?,?,?)",
         (page["page_id"], page["page_id"], body,
          # a real description of the change when the model gave one; the
          # old generic line only as a fallback
          llm_summary or (f"{page['page_type']} synthesis from "
                          f"{len(events)} event(s)"),
-         newest_event, cfg["llm"]["model_label"], tokens))
+         newest_event, cfg["llm"]["model_label"], tokens,
+         db.active_key()))
     if event_ids:
         conn.execute(
             f"UPDATE events SET status='completed', "

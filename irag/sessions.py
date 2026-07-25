@@ -56,23 +56,44 @@ def begin(conn: sqlite3.Connection, agent: str = "claude-code",
 
 
 def _window_facts(conn, row) -> dict:
+    """What this session actually did.
+
+    "Everything since I started" is wrong the moment two conversations
+    overlap: the window has no upper bound and no owner, so each session
+    claimed the other's files and wrote false history into the very diary
+    `irag recap` feeds to the next session. When the session has a key we
+    count only rows stamped with it - plus unstamped rows in its window, so a
+    manual `irag update` with no id is still credited rather than lost.
+    """
     ev0 = row["start_event_id"] or 0
     rv0 = row["start_revision_id"] or 0
+    try:
+        key = row["session_key"]
+    except (IndexError, KeyError):
+        key = None
+    if key:
+        ev_where, ev_args = ("event_id > ? AND (session_key = ? OR "
+                             "session_key IS NULL)"), (ev0, key)
+        rv_where, rv_args = ("r.revision_id > ? AND (r.session_key = ? OR "
+                             "r.session_key IS NULL)"), (rv0, key)
+    else:
+        ev_where, ev_args = "event_id > ?", (ev0,)
+        rv_where, rv_args = "r.revision_id > ?", (rv0,)
     files = [r["subject_id"] for r in conn.execute(
-        """SELECT DISTINCT subject_id FROM events
-           WHERE event_id > ? AND event_type IN ('commit','snapshot')
-           ORDER BY subject_id""", (ev0,)).fetchall()]
+        f"""SELECT DISTINCT subject_id FROM events
+            WHERE {ev_where} AND event_type IN ('commit','snapshot')
+            ORDER BY subject_id""", ev_args).fetchall()]
     versions = conn.execute(
-        "SELECT COUNT(*) c FROM revisions WHERE revision_id > ?",
-        (rv0,)).fetchone()["c"]
+        f"SELECT COUNT(*) c FROM revisions r WHERE {rv_where}",
+        rv_args).fetchone()["c"]
     changes_detail = [
         {"subject_id": r["subject_id"], "version_number": r["version_number"],
          "change_summary": r["change_summary"]}
         for r in conn.execute(
-            """SELECT p.subject_id, r.version_number, r.change_summary
-               FROM revisions r JOIN pages p ON p.page_id = r.page_id
-               WHERE r.revision_id > ? ORDER BY r.revision_id""",
-            (rv0,)).fetchall()]
+            f"""SELECT p.subject_id, r.version_number, r.change_summary
+                FROM revisions r JOIN pages p ON p.page_id = r.page_id
+                WHERE {rv_where} ORDER BY r.revision_id""",
+            rv_args).fetchall()]
     decisions = [json.loads(r["payload"]).get("text", "") for r in
                  conn.execute("SELECT payload FROM events WHERE "
                               "event_id > ? AND event_type='decision'",

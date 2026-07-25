@@ -4,6 +4,49 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.32.0 — 2026-07-25
+
+### Fixed — `irag asof` returned the present as history
+The date went straight into a lexical SQL comparison with no validation, so
+anything sorting above an ISO date returned the *current* wiki state under a
+historical banner:
+
+```
+2026-06-01     -> no pages had revisions on or before 2026-06-01   (correct)
+2026-6-1       -> v2 (2026-07-25 10:10:00)   <- today, labelled June 1
+June 1 2026    -> v2 (2026-07-25 10:10:00)
+yesterday      -> v2 (2026-07-25 10:10:00)
+src/store.ts   -> v2 (2026-07-25 10:10:00)   ('s' > '2')
+```
+
+`2026-6-1` was the dangerous one: unpadded but entirely plausible, and its
+output indistinguishable from a real snapshot. For a command whose whole job
+is auditing what memory said at a point in time, a confidently wrong answer
+is worse than an error. Dates are now parsed and normalised (`2026-6-1` →
+`2026-06-01`, `YYYY/MM/DD` and `YYYYMMDD` accepted, optional `HH:MM:SS`), and
+anything unparseable exits with the expected format.
+
+### Fixed — concurrent sessions claimed each other's changes
+4.31.0 fixed *who owns* a session; this fixes *which work was theirs*.
+`_window_facts` selected `event_id > start_event_id` with no upper bound and
+no owner, so a session that changed nothing still reported another's files —
+false history written into the diary `irag recap` feeds to the next session.
+
+Events and revisions now carry a `session_key` (guarded additive columns),
+stamped from a process-level active key: `irag update` is spawned by the Stop
+hook, which supplies the conversation id, so everything one process writes
+belongs to one session — no key threading through eleven `sync()` call sites.
+A keyed session counts rows stamped with its key plus unstamped rows in its
+window, so a manual `irag update` without an id is still credited rather than
+lost. Keyless sessions keep the old behaviour.
+
+### Fixed — `irag doctor` passed with the diary hook missing
+The check grepped only for `irag context`, so `Claude Code hook wired` was
+reported while `Stop` and `SessionEnd` were absent and the diary silently
+never closed. All three hooks are now checked and the missing ones named. The
+agent guide tells agents to trust this exact line, so it had to mean what it
+says.
+
 ## 4.31.0 — 2026-07-25
 
 ### Fixed — two agents on one repo corrupted the project diary

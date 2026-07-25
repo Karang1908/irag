@@ -417,9 +417,36 @@ def cmd_why(args) -> int:
     return 0
 
 
+def _iso_date(raw: str) -> str:
+    """Normalise a date for `asof`, or exit.
+
+    The value is compared lexically in SQL, so an unvalidated string quietly
+    returns the WRONG answer instead of failing: "2026-6-1" (unpadded but
+    perfectly plausible), "June 1 2026", "yesterday" and even a file path all
+    sort above a real ISO date and yield the present state labelled as
+    history. Confidently wrong is the worst outcome for a time-travel audit.
+    """
+    from datetime import datetime
+    text = (raw or "").strip()
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S",
+                "%Y/%m/%d", "%Y%m%d"):
+        try:
+            parsed = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        return (parsed.strftime("%Y-%m-%d") if fmt in ("%Y-%m-%d", "%Y/%m/%d",
+                                                       "%Y%m%d")
+                else parsed.strftime("%Y-%m-%d %H:%M:%S"))
+    raise SystemExit(
+        f"irag: {raw!r} is not a date irag can compare against. Use "
+        "YYYY-MM-DD (e.g. 2026-06-01), optionally with HH:MM:SS. Unpadded "
+        "months/days and phrases like 'yesterday' are rejected because they "
+        "would silently return the present state as if it were history.")
+
+
 def cmd_asof(args) -> int:
     conn, _, _ = _open()
-    provenance.asof(conn, args.date, show=args.show)
+    provenance.asof(conn, _iso_date(args.date), show=args.show)
     return 0
 
 
@@ -477,6 +504,9 @@ def cmd_update(args) -> int:
     the memory database only; the CLAUDE.md/AGENTS.md agent guide is static
     (installed by 'irag init', re-installed by 'irag export')."""
     conn, cfg, root = _open()
+    # stamp everything this run writes with the conversation that asked for
+    # it, so two agents on one repo don't claim each other's work in the diary
+    db.set_active_key(_session_key(args))
     try:
         n = ingest.sync(conn, cfg, root)
         from . import structure
@@ -531,7 +561,9 @@ def cmd_ask(args) -> int:
 def cmd_session_begin(args) -> int:
     from . import sessions
     conn, _, _ = _open()
-    sid = sessions.begin(conn, agent=args.agent, key=_session_key(args))
+    key = _session_key(args)
+    db.set_active_key(key)
+    sid = sessions.begin(conn, agent=args.agent, key=key)
     print(f"session {sid} opened")
     return 0
 
@@ -596,6 +628,7 @@ def cmd_session_end(args) -> int:
     from . import sessions
     conn, cfg, _ = _open()
     key = _session_key(args)      # before stdin is consumed for transcript
+    db.set_active_key(key)
     tpath = getattr(args, "transcript", None) or _stdin_transcript_path(cfg)
     rec = sessions.end(conn, cfg, narrate=not args.no_narrate, key=key)
     if rec is None:
