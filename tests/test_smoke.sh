@@ -802,4 +802,55 @@ assert kept and kept["still_holds"] is True, \
 PYEOF
 echo "why current/historical ok"
 
+# --- vault note names must be unique (regression guard) --------------------
+# _slug collapsed every run of non-[\w.-] to "-", so src/a.py and src-a.py
+# both became src-a.py: one page overwrote the other in the vault, silently,
+# leaving the survivor's content under a name matching the file it is NOT.
+python3 - << 'PYEOF' || { echo "FAIL: vault slug collision"; exit 1; }
+import pathlib, re, subprocess, sys, tempfile
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, obsidian
+
+root = pathlib.Path(tempfile.mkdtemp()) / "p"
+(root / "src").mkdir(parents=True)
+subprocess.run(["git", "init", "-q", "."], cwd=root, check=True)
+(root / ".irag").mkdir()
+dbp = root / ".irag" / "memory.db"; db.ensure_db(dbp)
+conn = db.connect(str(dbp)); cfg = config.load(root)
+cases = ["src/a.py", "src-a.py", "a/b/c.py", "a-b/c.py", "a/b-c.py",
+         "src/clean.py"]
+for sid in cases:
+    c = conn.execute("INSERT INTO pages(page_type,title,subject_type,"
+                     "subject_id) VALUES('module',?,'module',?)", (sid, sid))
+    r = conn.execute("INSERT INTO revisions(page_id,version_number,"
+                     "body_markdown,change_summary) VALUES(?,1,?,'x')",
+                     (c.lastrowid, f"body of {sid}"))
+    conn.execute("UPDATE pages SET current_revision_id=? WHERE page_id=?",
+                 (r.lastrowid, c.lastrowid))
+conn.commit()
+vault = obsidian.export_vault(conn, cfg, root)
+
+mods = sorted((vault / "Modules").glob("*.md"))
+assert len(mods) == len(cases), \
+    f"vault lost pages to name collisions: {len(mods)} notes for {len(cases)} pages"
+# each note must carry ITS OWN subject's body, not a colliding page's
+for m in mods:
+    text = m.read_text()
+    subject = [l.split(": ", 1)[1] for l in text.splitlines()
+               if l.startswith("subject: ")][0]
+    assert f"body of {subject}" in text, \
+        f"{m.name} holds the wrong page's content (subject {subject})"
+# a subject that collides with nothing keeps a clean, unsuffixed name
+assert (vault / "Modules" / "src-clean.py.md").exists(), \
+    "a non-colliding subject was needlessly suffixed"
+# and every wikilink still resolves
+notes = {f.stem for f in vault.rglob("*.md")}
+links = set()
+for f in vault.rglob("*.md"):
+    links |= set(re.findall(r"\[\[([^\]]+)\]\]", f.read_text()))
+dangling = sorted(l for l in links if l not in notes)
+assert not dangling, f"dangling wikilinks after disambiguation: {dangling}"
+PYEOF
+echo "vault note uniqueness ok"
+
 echo "SMOKE TEST PASSED"

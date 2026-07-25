@@ -19,6 +19,7 @@ Graph anatomy:
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import shutil
 import sqlite3
@@ -29,11 +30,44 @@ from . import db
 MARKER = ".irag-vault"
 
 
-def _slug(subject_id: str) -> str:
-    """Filesystem/wikilink-safe note name for a subject."""
+# Distinct subjects can flatten to the same note name: this collapses every
+# run of non-[\w.-] to "-", so `src/a.py` and `src-a.py` both become
+# `src-a.py`, as do `a/b/c.py`, `a-b/c.py` and `a/b-c.py`. One page then
+# overwrote the other in the vault - silently, and leaving the survivor's
+# content filed under a name matching the file it is NOT. `_SLUG_MAP` is built
+# once per export from the full subject set and disambiguates only the groups
+# that actually collide, so ordinary names stay clean.
+_SLUG_MAP: dict[str, str] = {}
+
+
+def _base_slug(subject_id: str) -> str:
     if subject_id == ".":
         return "root"
     return re.sub(r"[^\w.-]+", "-", subject_id).strip("-")
+
+
+def _build_slug_map(subjects) -> dict[str, str]:
+    """subject -> unique note name. Every member of a colliding group is
+    suffixed, not just the later ones, so the result does not depend on which
+    page happened to be seen first."""
+    grouped: dict[str, list[str]] = {}
+    for sid in subjects:
+        grouped.setdefault(_base_slug(sid), []).append(sid)
+    out: dict[str, str] = {}
+    for base, members in grouped.items():
+        if len(members) == 1:
+            out[members[0]] = base
+            continue
+        for sid in members:
+            digest = hashlib.sha1(sid.encode("utf-8")).hexdigest()[:6]
+            out[sid] = f"{base}-{digest}"
+    return out
+
+
+def _slug(subject_id: str) -> str:
+    """Filesystem/wikilink-safe note name for a subject."""
+    mapped = _SLUG_MAP.get(subject_id)
+    return mapped if mapped else _base_slug(subject_id)
 
 
 def _fm(pairs: dict) -> str:
@@ -76,6 +110,10 @@ def export_vault(conn: sqlite3.Connection, cfg: dict, repo: Path,
     threshold = int(cfg["staleness"]["threshold"])
     pages = conn.execute("SELECT * FROM pages ORDER BY subject_id").fetchall()
     subjects = {p["subject_id"] for p in pages}
+    # resolve note names before anything is written, so notes and the
+    # wikilinks pointing at them agree
+    global _SLUG_MAP
+    _SLUG_MAP = _build_slug_map(subjects)
     by_id = {p["page_id"]: p for p in pages}
 
     # explicit links from the links table

@@ -4,6 +4,27 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.39.0 — 2026-07-25
+
+### Fixed — `irag obsidian` silently dropped pages to note-name collisions
+`_slug` collapsed every run of non-`[\w.-]` characters to `-`, so distinct
+subjects flattened to the same note name: `src/a.py` and `src-a.py` both
+became `src-a.py`, as did `a/b/c.py`, `a-b/c.py` and `a/b-c.py`. Exporting a
+repo with two such files produced **one** note — and the survivor carried one
+file's content under a name matching the *other* file. Wikilinks compounded
+it: references to either subject resolved to the same note, so the vault's
+graph quietly merged two unrelated files.
+
+Note names are now resolved once per export from the full subject set. Only
+groups that actually collide are disambiguated, with a short digest of the
+full subject appended to **every** member of the group — so the result does
+not depend on which page happened to be written first, and a subject that
+collides with nothing keeps its clean, unsuffixed name.
+
+Verified on six subjects covering both collision families: 6 pages → 6 notes,
+each carrying its own body, `src/clean.py` still exported as
+`src-clean.py.md`, and every wikilink in the vault resolving.
+
 ## 4.38.0 — 2026-07-25
 
 ### Fixed — `irag why` presented superseded claims as current
