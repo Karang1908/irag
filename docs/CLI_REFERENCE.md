@@ -284,6 +284,12 @@ logs knowledge (`irag learn` / `irag record-decision`) and traces a claim
 back to the revision and commit that created it (`irag why`).
 **Health** — open contradictions with one-click
 resolve, staleness table, click any page to read its current body.
+**Visualize** — the codebase as a 3D force-directed graph built from the
+same symbol and dependency tables `map` queries: nodes are files (sized by
+symbol count, coloured by top-level folder), edges are real imports. Drag
+to orbit, scroll to zoom, click a file to inspect what it defines, what it
+imports, what depends on it, and everything irag has written about it; the
+map is re-read every few seconds so new files appear without a refresh.
 **Tools** — everything else the CLI does: *What your agent sees* renders
 the exact `irag context` briefing with its token count and tier
 breakdown; *Time travel* runs `asof` for any date; *Operations* runs

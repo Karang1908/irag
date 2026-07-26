@@ -166,6 +166,8 @@ your summaries. Instant, zero tokens.
   (clickable, so you walk the graph from where you are).
 - **Overview** — what needs attention, each with the button that fixes it.
 - **Health** — contradictions with one-click resolve, staleness.
+- **Visualize** — your codebase in 3D: orbit it, zoom it, click a file to
+  see what irag knows about it.
 - **Map** — an Obsidian-style dependency graph: pan, zoom, trace imports.
 - **Sessions** — every conversation with its per-file changes, and the
   verbatim transcript when capture is on.
@@ -176,6 +178,16 @@ your summaries. Instant, zero tokens.
 <p align="center">
   <img src="docs/assets/dependency-graph.jpg" alt="Interactive dependency graph" width="49%">
   <img src="docs/assets/sessions.jpg" alt="Session diary with per-file changes and transcript" width="49%">
+</p>
+
+**Or see the whole thing in three dimensions.** Every node is a file, sized
+by how many symbols it defines and coloured by top-level folder; every edge
+is a real import. It's built from the same symbol and dependency tables the
+CLI queries — your codebase, not a diagram of one — and it re-reads the map
+every few seconds, so new files show up without a refresh.
+
+<p align="center">
+  <img src="docs/assets/visualize-3d.jpg" alt="Visualize: the codebase as a 3D force-directed graph, orbitable and clickable" width="100%">
 </p>
 
 ---
