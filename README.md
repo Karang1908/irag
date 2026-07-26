@@ -2,10 +2,10 @@
   <img src="docs/assets/irag-banner.svg" alt="irag" width="100%">
 </p>
 
-<h3 align="center">Your AI agent re-reads your codebase every session.<br>irag makes it read a database instead.</h3>
+<h3 align="center">Your agent can search your codebase for <i>zero</i> tokens.<br>Not fewer. Zero — there is no model on the read path.</h3>
 
 <p align="center">
-  <sub><b>reads cost zero tokens</b> &nbsp;·&nbsp; writes run on any cheap model &nbsp;·&nbsp; every claim fact-checked against your real code</sub>
+  <sub>No embeddings. No vector database. No model call when your agent asks what something does.<br>And <b>every claim is mechanically fact-checked against your real code</b> — so memory can't quietly lie to you.</sub>
 </p>
 
 <p align="center">
@@ -29,6 +29,10 @@ pip install -e ./irag && irag init      # that's the whole setup
 
 <p align="center">
   <img src="docs/assets/pages-memory.jpg" alt="irag dashboard: one page showing a file's summary, structure, and history" width="100%">
+</p>
+
+<p align="center">
+  <sub><b>0 tokens</b> to search, map, or trace blast radius &nbsp;·&nbsp; <b>0</b> runtime dependencies &nbsp;·&nbsp; <b>0</b> cloud services<br>one SQLite file in your repo &nbsp;·&nbsp; writes run on whatever cheap model you point at it</sub>
 </p>
 
 ---
@@ -64,9 +68,19 @@ version pins and phantom symbols become queryable rows; contradicted pages
 are never served without a warning; `irag check` fails CI while memory and
 code disagree. *No other memory tool does this.*
 
+<p align="center">
+  <img src="docs/assets/health-contradiction.jpg" alt="Health view: memory claimed argon2-cffi 21.1.0, the manifest declares 23.1.0 — caught mechanically, with a one-click resolve" width="100%">
+</p>
+
+<p align="center">
+  <sub>A real catch: the summary claimed <code>argon2-cffi 21.1.0</code>, the manifest says <code>23.1.0</code>.<br>Nobody read the page to notice — a query did.</sub>
+</p>
+
 **⚡ Reads are free — structurally, not "cheaply".**
 `search`, `map`, `impact`, `context`, `recap`, `why` are SQL and parsing.
-No embeddings, no vector database, no model call on that path at all.
+Point irag at a model that bills per call, run all six, and its own meter
+still reads `est. LLM tokens spent : 0` — because nothing on that path
+can reach a model.
 
 **🧭 It knows what breaks.**
 `irag impact src/db/store.py` → every module that transitively depends on
@@ -217,11 +231,18 @@ Two rules drive every design decision:
 
 ## How it compares
 
+Graphify tells you how the code is shaped. claude-mem tells you what
+happened. **Neither can tell you whether what the agent believes is still
+true.**
+
 | | Graphify | claude-mem | irag |
 |---|---|---|---|
 | Kind of memory | structural | episodic | structural + semantic + episodic |
+| Cost to read memory | free (graph query) | embedding call per query | **0 tokens — SQL, no model** |
 | Can it be wrong? | rarely (a parse) | yes, silently, forever | yes — **and it detects, records and gates CI on it** |
+| Verified against your code | n/a — no claims to verify | ❌ | ✅ **linter → contradictions → CI gate** |
 | Storage | — | vector DB | **one SQLite file, zero deps** |
+| History (`why` / `asof` / rollback) | ❌ | ❌ | ✅ |
 | Cost scales with | commits (free) | conversation volume | repo churn, on whatever model you choose |
 
 Honest full comparison, including where the others win:
