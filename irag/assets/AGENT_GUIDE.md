@@ -163,6 +163,25 @@ whole conversation into the project diary with everything it changed. Your oblig
      architectural/tooling decisions
    - `irag learn "<gotcha, pitfall, constraint>" --module <path>` for
      anything that surprised you
+   - `irag tried "<approach>" --because "<why it failed>" --module <path>`
+     for a **dead end**. What you ruled out is worth as much as what
+     worked — without it the next session pays full price to rediscover
+     the same failure.
+   - `irag verify "<what is true>" --cmd "<command>" --expect "<text>"
+     --module <path>` for anything you learned by **running** something.
+     A page can only be checked against the code's text; this is the one
+     kind of memory that carries its own proof, and `irag check` re-runs
+     it, so it fails the build if the behaviour ever changes. Use it for
+     the facts that cost you the most to discover.
+   - `irag candidates` lists drafts written automatically when a command
+     failed. Confirm the useful ones with `irag learn`.
+5. **When knowledge is feature-shaped, not file-shaped.** If what matters
+   spans several files that share no folder ("how does auth affect
+   uploads?"), make it a page:
+   `irag topic "<concept>" --files a.py,b.py,c.py`, then `irag update`.
+   Folder pages cannot express this — they are directory-shaped.
+6. **`irag suggest`** prints what needs doing right now with the exact
+   command for it. Run it when you are unsure what state the memory is in.
 
 ## Phase 3 — When memory and code disagree
 
@@ -208,11 +227,16 @@ against the code first.
 
 Read: `context` · `recap` · `sessions` · `transcript` · `search` · `ask` ·
 `map` · `impact` · `why` · `asof` · `diff` · `status` · `stale` ·
-`contradictions`
-Write: `update` · `learn` · `record-decision` · `resolve`
+`contradictions` · `brief` · `suggest` · `facts` · `candidates`
+Write: `update` · `learn` · `record-decision` · `tried` · `verify` ·
+`topic` · `resolve`
 Setup (Phase 1 only): `init` · `doctor` · `claude-setup`
 Human-only: `rollback` · `pin` · `backup` · `dashboard` · `obsidian` ·
 `export`
+
+`irag brief <file>` is the fast one: everything known about a single file
+— disputed claims, verified behaviour, dead ends, who imports it — in a
+few lines. After `claude-setup` it fires automatically before every edit.
 
 Full reference: docs/CLI_REFERENCE.md · Setup details: docs/SETUP.md ·
 How it works: docs/ARCHITECTURE.md

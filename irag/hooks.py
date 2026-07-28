@@ -25,6 +25,18 @@ CLAUDE_HOOKS = {
     "SessionEnd": ("irag session-end >/dev/null 2>&1 || true",
                    600, "diary: the conversation is summarized and logged "
                    "with everything it changed"),
+    # Just-in-time, not just-in-case: session-start context has long since
+    # scrolled away by the time a file is actually edited, so the gotchas
+    # and dead ends for THAT file are injected at the moment they apply.
+    "PreToolUse": ("irag brief - --quiet 2>/dev/null || true",
+                   20, "just-in-time: what is known about a file is injected "
+                   "right before it is edited", "Edit|Write|NotebookEdit"),
+    # Anything that depends on an agent volunteering knowledge gets skipped
+    # under load, so the draft is written from the strongest available
+    # signal that something surprising happened: a command that failed.
+    "PostToolUse": ("irag capture --quiet 2>/dev/null || true",
+                    20, "drafts a candidate lesson when a command fails "
+                    "(confirm with 'irag learn')", "Bash"),
 }
 
 
@@ -45,15 +57,20 @@ def claude_setup(repo_root: Path) -> list[str]:
     installed = settings.setdefault("hooks", {})
     out: list[str] = []
     changed = False
-    for event, (command, timeout, why) in CLAUDE_HOOKS.items():
+    for event, spec in CLAUDE_HOOKS.items():
+        command, timeout, why = spec[0], spec[1], spec[2]
+        matcher = spec[3] if len(spec) > 3 else None
         entries = installed.setdefault(event, [])
         already = any("irag " in h.get("command", "")
                       for e in entries for h in e.get("hooks", []))
         if already:
             out.append(f"{event} hook already installed")
             continue
-        entries.append({"hooks": [{"type": "command", "command": command,
-                                   "timeout": timeout}]})
+        entry = {"hooks": [{"type": "command", "command": command,
+                            "timeout": timeout}]}
+        if matcher:
+            entry["matcher"] = matcher
+        entries.append(entry)
         changed = True
         out.append(f"installed {event} hook ({why})")
     if changed:

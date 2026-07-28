@@ -362,6 +362,23 @@ def cmd_learn(args) -> int:
     return 0
 
 
+def cmd_tried(args) -> int:
+    """Anti-facts: an approach that was attempted and did NOT work.
+
+    "We tried X, it failed, because Y" is worth as much as the success and
+    had nowhere to live — so the next session re-derives the same dead end
+    at full price. Stored alongside lessons, but kept a distinct event type
+    so a briefing can say "already ruled out" rather than "known good".
+    """
+    conn, cfg, _ = _open()
+    text = f"TRIED (did not work): {args.approach} — because {args.because}"
+    _append_log(conn, page_subject="antifacts", page_type="antifacts",
+                title="Approaches already ruled out", event_type="antifact",
+                text=text, module=args.module)
+    print(f"recorded dead end: {args.approach}")
+    return 0
+
+
 def cmd_claude_setup(args) -> int:
     from . import hooks as hooks_mod
     _, _, root = _open()
@@ -551,8 +568,9 @@ def cmd_export(args) -> int:
 
 
 def cmd_check(args) -> int:
-    conn, cfg, _ = _open()
-    return check.run(conn, cfg)
+    conn, cfg, root = _open()
+    return check.run(conn, cfg, root,
+                     run_facts=not getattr(args, "skip_facts", False))
 
 
 def cmd_obsidian(args) -> int:
@@ -660,6 +678,325 @@ def cmd_ask(args) -> int:
                 tag = "current" if h["current"] else f"v{h['version']}"
                 snippet = (h["snippet"] or "").strip().replace("\n", " ")
                 print(f"  {h['subject']} ({tag}): {snippet[:150]}")
+    return 0
+
+
+def cmd_suggest(args) -> int:
+    """What irag would tell you to do next, given the current state.
+
+    A flat command index is not discovery: an agent that has never needed
+    `why` will not think to run it at the moment three contradictions land
+    on the file it is editing. This surfaces the command at the moment it
+    applies, which is the only time it is worth knowing.
+    """
+    from . import facts
+    conn, cfg, root = _open()
+    out: list[str] = []
+
+    drifted = ingest.drifted_files(conn, cfg, root)
+    if drifted:
+        out.append(f"{len(drifted)} file(s) edited since their page was "
+                   f"written → irag update")
+    stuck = synthesis.stalled_subjects(conn)
+    if stuck:
+        out.append(f"{len(stuck)} page(s) stuck with a queued change → "
+                   f"irag synthesize --subject {stuck[0]}")
+    contras = conn.execute(
+        "SELECT p.subject_id, COUNT(*) n FROM contradictions c "
+        "JOIN pages p ON p.page_id=c.page_id WHERE c.resolved_at IS NULL "
+        "GROUP BY p.subject_id ORDER BY n DESC LIMIT 3").fetchall()
+    for c in contras:
+        out.append(f"{c['n']} contradiction(s) on {c['subject_id']} → "
+                   f"irag contradictions, then irag why \"<the claim>\"")
+    try:
+        broken = facts.failing(conn)
+    except sqlite3.OperationalError:
+        broken = []
+    if broken:
+        out.append(f"{len(broken)} behavioural claim(s) no longer hold → "
+                   "irag verify")
+    never = conn.execute(
+        "SELECT COUNT(*) c FROM pages WHERE current_revision_id IS NULL"
+    ).fetchone()["c"]
+    if never:
+        out.append(f"{never} page(s) never synthesized → irag update")
+    sessions_n = conn.execute(
+        "SELECT COUNT(*) c FROM sessions WHERE status='closed'").fetchone()["c"]
+    if sessions_n and not args.quiet:
+        out.append("resuming after a break? → irag recap")
+    if not out:
+        print("nothing needs attention — memory is in sync with the code")
+        return 0
+    print("irag suggests:")
+    for line in out[:args.limit]:
+        print(f"  • {line}")
+    return 0
+
+
+def cmd_capture(args) -> int:
+    """Draft a candidate lesson from a command that failed.
+
+    Anything relying on an agent remembering to volunteer knowledge gets
+    skipped under load — `learn` and `record-decision` were never called
+    once in a two-hour session that hit six recordable facts. A failing
+    command is the strongest available signal that something surprising
+    just happened, so the draft is written for you and only needs
+    confirming.
+    """
+    conn, cfg, _ = _open()
+    payload = _hook_payload()
+    tool = payload.get("tool_input") or {}
+    command = args.command or tool.get("command") or ""
+    response = payload.get("tool_response") or {}
+    exit_code = args.exit_code
+    if exit_code is None:
+        raw = response.get("exit_code", response.get("exitCode"))
+        try:
+            exit_code = int(raw)
+        except (TypeError, ValueError):
+            exit_code = None
+    if not command or not exit_code:
+        return 0                      # nothing surprising happened
+    output = (args.output or str(response.get("stderr") or "")
+              or str(response.get("stdout") or ""))[:400].strip()
+    text = (f"CANDIDATE (unconfirmed): `{command}` exited {exit_code}"
+            + (f" — {output}" if output else ""))
+    conn.execute(
+        "INSERT INTO events(event_type, subject_id, payload, status, "
+        "processed_at, session_key) "
+        "VALUES('candidate', ?, ?, 'completed', datetime('now'), ?)",
+        (args.module or "", json.dumps({"text": text}), db.active_key()))
+    conn.commit()
+    if not args.quiet:
+        print(f"irag: drafted a candidate lesson from a failed command. "
+              f"Confirm it with:\n  irag learn \"<what this taught you>\""
+              + (f" --module {args.module}" if args.module else ""))
+    return 0
+
+
+def cmd_candidates(args) -> int:
+    """Unconfirmed drafts waiting to become lessons."""
+    conn, _, _ = _open()
+    rows = conn.execute(
+        "SELECT event_id, subject_id, payload, created_at FROM events "
+        "WHERE event_type='candidate' ORDER BY event_id DESC LIMIT ?",
+        (args.limit,)).fetchall()
+    if not rows:
+        print("no candidate lessons — they are drafted when a command fails")
+        return 0
+    for r in rows:
+        try:
+            text = json.loads(r["payload"]).get("text", "")
+        except (ValueError, TypeError):
+            continue
+        scope = f" [{r['subject_id']}]" if r["subject_id"] else ""
+        print(f"[{r['event_id']}]{scope} {text}")
+    print("\nturn one into memory with: irag learn \"<the lesson>\" "
+          "--module <path>")
+    return 0
+
+
+def cmd_topic(args) -> int:
+    """Create or update a concept page spanning several files."""
+    conn, cfg, root = _open()
+    db.set_active_key(_session_key(args))
+    if args.list or not args.files:
+        rows = conn.execute(
+            "SELECT topic, COUNT(*) n FROM topic_members "
+            "GROUP BY topic ORDER BY topic").fetchall()
+        if args.name:
+            members = [r["subject_id"] for r in conn.execute(
+                "SELECT subject_id FROM topic_members WHERE topic=? "
+                "ORDER BY subject_id", (args.name,)).fetchall()]
+            if not members:
+                raise SystemExit(
+                    f"irag: no topic {args.name!r}. Create it with "
+                    f"'irag topic {args.name} --files a.py,b.py'")
+            print(f"{args.name} ({len(members)} files)")
+            for m in members:
+                print(f"  {m}")
+            body = db.current_body(conn, conn.execute(
+                "SELECT page_id FROM pages WHERE subject_type='topic' "
+                "AND subject_id=?", (args.name,)).fetchone()["page_id"])
+            if body:
+                print()
+                print(body)
+            return 0
+        if not rows:
+            print("no topics yet — create one with:\n"
+                  "  irag topic \"root privilege\" --files "
+                  "src/scanner.py,src/net.py")
+            return 0
+        for r in rows:
+            print(f"{r['topic']}  ({r['n']} files)")
+        return 0
+
+    files = [f.strip() for f in args.files.split(",") if f.strip()]
+    missing = [f for f in files if not (root / f).exists()]
+    if missing:
+        raise SystemExit("irag: these files do not exist: "
+                         + ", ".join(missing))
+    db.get_or_create_page(conn, args.name, subject_type="topic",
+                          page_type="topic", title=args.name)
+    if args.replace:
+        conn.execute("DELETE FROM topic_members WHERE topic=?", (args.name,))
+    for f in files:
+        conn.execute("INSERT OR IGNORE INTO topic_members(topic, subject_id) "
+                     "VALUES(?,?)", (args.name, f))
+    # make it due, so the next update writes it without a special path
+    conn.execute("UPDATE pages SET staleness_score = staleness_score + ? "
+                 "WHERE subject_type='topic' AND subject_id=?",
+                 (int(cfg["staleness"]["threshold"]), args.name))
+    conn.execute(
+        "INSERT INTO events(event_type, subject_id, payload, session_key) "
+        "VALUES('topic', ?, ?, ?)",
+        (args.name, json.dumps({"files": files}), db.active_key()))
+    conn.commit()
+    total = conn.execute("SELECT COUNT(*) c FROM topic_members WHERE topic=?",
+                         (args.name,)).fetchone()["c"]
+    print(f"topic {args.name!r}: {total} file(s)")
+    print("run 'irag update' to write the page")
+    return 0
+
+
+def cmd_brief(args) -> int:
+    """A few lines about ONE file, for injection right before it is edited.
+
+    Session-start context is just-in-case: by turn 40, nothing reminds an
+    agent that this file's fixed elements sit inside a backdrop-filter
+    ancestor. This is just-in-time — the gotchas, dead ends, verified
+    behaviour and open contradictions for a single path, small enough to
+    inject on every edit without competing with the task for attention.
+    """
+    from . import facts
+    subject = args.path
+    if subject == "-":
+        # PreToolUse pipes the tool call as JSON; the path lives in
+        # tool_input.file_path. Exit 0 silently on anything unexpected —
+        # a hook that errors must never block the edit it precedes.
+        payload = _hook_payload()
+        subject = ((payload.get("tool_input") or {}).get("file_path") or "")
+        if not subject:
+            return 0
+    conn, cfg, root = _open()
+    try:
+        subject = str(Path(subject).resolve().relative_to(root.resolve()))
+    except (ValueError, OSError):
+        subject = str(subject)
+    out: list[str] = []
+
+    contras = conn.execute(
+        "SELECT c.claim, c.truth, c.severity FROM contradictions c "
+        "JOIN pages p ON p.page_id = c.page_id "
+        "WHERE p.subject_id=? AND c.resolved_at IS NULL "
+        "ORDER BY c.severity DESC LIMIT 5", (subject,)).fetchall()
+    for c in contras:
+        out.append(f"⚠ memory here is DISPUTED: {c['claim']} — but "
+                   f"{c['truth']}")
+
+    for f in facts.for_subject(conn, subject, limit=4):
+        out.append(f"✓ verified behaviour: {f['claim']}")
+    # a behavioural claim that stopped holding is the most urgent thing to
+    # know before touching this file, so it outranks the passing ones
+    try:
+        broken = conn.execute(
+            "SELECT claim, last_status FROM facts WHERE subject_id=? "
+            "AND last_status IS NOT NULL AND last_status != 'pass' LIMIT 4",
+            (subject,)).fetchall()
+    except sqlite3.OperationalError:
+        broken = []
+    for f in broken:
+        out.insert(0, f"⚠ behaviour claim NO LONGER holds "
+                      f"({f['last_status']}): {f['claim']}")
+
+    for ev_type, label in (("antifact", "already ruled out"),
+                           ("session", "gotcha"),
+                           ("decision", "decision")):
+        rows = conn.execute(
+            "SELECT payload FROM events WHERE event_type=? AND subject_id=? "
+            "ORDER BY event_id DESC LIMIT 3", (ev_type, subject)).fetchall()
+        for r in rows:
+            try:
+                text = json.loads(r["payload"]).get("text", "").strip()
+            except (ValueError, TypeError):
+                continue
+            if text:
+                out.append(f"• {label}: {text}")
+
+    deps = conn.execute(
+        "SELECT source_subject FROM deps WHERE target_subject=? LIMIT 6",
+        (subject,)).fetchall()
+    if deps:
+        names = ", ".join(d["source_subject"] for d in deps)
+        out.append(f"• {len(deps)} file(s) import this: {names}")
+
+    if not out:
+        if not args.quiet:
+            print(f"irag: nothing recorded about {subject} yet")
+        return 0
+    print(f"irag — what is known about {subject}:")
+    for line in out[:args.limit]:
+        print(f"  {line}")
+    return 0
+
+
+def cmd_verify(args) -> int:
+    """Executable memory: record a behavioural claim with its proof, or
+    re-run the ones already recorded."""
+    from . import facts
+    conn, _, root = _open()
+    db.set_active_key(_session_key(args))
+    if args.claim:
+        fid = facts.record(conn, args.claim, args.cmd, expect=args.expect,
+                           expect_exit=args.expect_exit,
+                           subject_id=args.module or "",
+                           session_key=db.active_key())
+        row = conn.execute("SELECT * FROM facts WHERE fact_id=?",
+                           (fid,)).fetchone()
+        status, reason = facts.run_one(conn, row, root, timeout=args.timeout)
+        mark = {"pass": "✓", "fail": "✗", "error": "!"}[status]
+        print(f"{mark} fact {fid}: {args.claim}")
+        print(f"    $ {args.cmd}")
+        if status != "pass":
+            print(f"    {status}: {reason}")
+            print("    recorded anyway — fix the command or the claim, then "
+                  "re-run 'irag verify --run'")
+            return 1
+        return 0
+    results = facts.run_all(conn, root, subject_id=args.module,
+                            timeout=args.timeout)
+    if not results:
+        print("no facts recorded — add one with:\n"
+              "  irag verify \"<what is true>\" --cmd \"<command>\" "
+              "--expect \"<text in its output>\"")
+        return 0
+    bad = 0
+    for row, status, reason in results:
+        mark = {"pass": "✓", "fail": "✗", "error": "!"}[status]
+        scope = f" [{row['subject_id']}]" if row["subject_id"] else ""
+        print(f"{mark} {row['fact_id']}{scope} {row['claim']}")
+        if status != "pass":
+            bad += 1
+            print(f"    $ {row['cmd']}")
+            print(f"    {status}: {reason}")
+    print(f"\n{len(results) - bad}/{len(results)} verified")
+    return 1 if bad else 0
+
+
+def cmd_facts(args) -> int:
+    """List executable facts without running them."""
+    conn, _, _ = _open()
+    rows = conn.execute(
+        "SELECT * FROM facts ORDER BY subject_id, fact_id").fetchall()
+    if not rows:
+        print("no facts recorded")
+        return 0
+    for r in rows:
+        state = r["last_status"] or "never run"
+        mark = {"pass": "✓", "fail": "✗", "error": "!"}.get(state, "?")
+        scope = f" [{r['subject_id']}]" if r["subject_id"] else ""
+        print(f"{mark} [{r['fact_id']}]{scope} {r['claim']}  ({state})")
+        print(f"      $ {r['cmd']}")
     return 0
 
 
@@ -927,6 +1264,14 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--module")
     sp.set_defaults(func=cmd_learn)
 
+    sp = sub.add_parser("tried", help="log an approach that did NOT work, so "
+                                      "the next session doesn't retry it")
+    sp.add_argument("approach", help="what was attempted")
+    sp.add_argument("--because", required=True,
+                    help="why it failed — the mechanism, not just 'it broke'")
+    sp.add_argument("--module")
+    sp.set_defaults(func=cmd_tried)
+
     sp = sub.add_parser("update", help="sync + synthesize + lint + export "
                                        "in one shot (the agent trigger)")
     sp.add_argument("--id", metavar="KEY", help=ID_HELP)
@@ -936,6 +1281,64 @@ def build_parser() -> argparse.ArgumentParser:
                          "roughly what it would cost, without calling the "
                          "model or writing anything")
     sp.set_defaults(func=cmd_update)
+
+    sp = sub.add_parser("suggest", help="what needs doing right now, with "
+                                        "the command that does it")
+    sp.add_argument("--limit", type=int, default=6)
+    sp.add_argument("--quiet", action="store_true")
+    sp.set_defaults(func=cmd_suggest)
+
+    sp = sub.add_parser("capture", help="draft a candidate lesson from a "
+                                        "failed command (for hooks)")
+    sp.add_argument("--command")
+    sp.add_argument("--exit-code", type=int)
+    sp.add_argument("--output")
+    sp.add_argument("--module")
+    sp.add_argument("--quiet", action="store_true")
+    sp.set_defaults(func=cmd_capture)
+
+    sp = sub.add_parser("candidates", help="unconfirmed lesson drafts")
+    sp.add_argument("--limit", type=int, default=20)
+    sp.set_defaults(func=cmd_candidates)
+
+    sp = sub.add_parser("topic", help="a concept page spanning several files "
+                                      "(knowledge is feature-shaped)")
+    sp.add_argument("name", nargs="?", help="the concept, e.g. 'root privilege'")
+    sp.add_argument("--files", help="comma-separated paths that implement it")
+    sp.add_argument("--replace", action="store_true",
+                    help="replace the member list instead of adding to it")
+    sp.add_argument("--list", action="store_true", help="list topics")
+    sp.add_argument("--id", metavar="KEY", help=ID_HELP)
+    sp.set_defaults(func=cmd_topic)
+
+    sp = sub.add_parser("brief", help="a few lines about ONE file, for "
+                                      "injection just before editing it")
+    sp.add_argument("path")
+    sp.add_argument("--limit", type=int, default=10)
+    sp.add_argument("--quiet", action="store_true",
+                    help="print nothing when there is nothing to say "
+                         "(for hooks)")
+    sp.set_defaults(func=cmd_brief)
+
+    sp = sub.add_parser("verify", help="executable memory: record a claim "
+                                       "with the command that proves it, or "
+                                       "re-run every recorded proof")
+    sp.add_argument("claim", nargs="?",
+                    help="what is true; omit to re-run recorded facts")
+    sp.add_argument("--cmd", help="shell command that demonstrates the claim")
+    sp.add_argument("--expect", help="substring that must appear in the "
+                                     "command's output")
+    sp.add_argument("--expect-exit", type=int,
+                    help="exit code the command must return (default 0 when "
+                         "--expect is not given)")
+    sp.add_argument("--module", help="module this fact is about")
+    sp.add_argument("--timeout", type=int, default=120)
+    sp.add_argument("--id", metavar="KEY", help=ID_HELP)
+    sp.set_defaults(func=cmd_verify)
+
+    sp = sub.add_parser("facts", help="list executable facts and their last "
+                                      "verification status")
+    sp.set_defaults(func=cmd_facts)
 
     sp = sub.add_parser("ask", help="AI search: answer a question from the "
                                     "knowledge base via the configured LLM")
@@ -1057,8 +1460,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--no-versions", action="store_true",
                     help="omit revision-history nodes")
     sp.set_defaults(func=cmd_obsidian)
-    sub.add_parser("check", help="CI gate (exit 1 on failure)").set_defaults(
-        func=cmd_check)
+    sp = sub.add_parser("check", help="CI gate (exit 1 on failure)")
+    sp.add_argument("--skip-facts", action="store_true",
+                    help="do not re-run executable facts (they shell out)")
+    sp.set_defaults(func=cmd_check)
 
     sp = sub.add_parser("record-decision", help="log a decision (no LLM)")
     sp.add_argument("text")

@@ -1146,4 +1146,89 @@ PYEOF
 rm -rf "$DR"
 echo "drift + bare specifiers + orphan attribution ok"
 
+# --- executable memory, anti-facts, topics, brief, trivial-skip ---------
+FT=$(mktemp -d); mkdir -p "$FT/src"
+printf 'import sys\ndef scan(root=False):\n    if not root:\n        print("QUITTING")\n        sys.exit(1)\n    return 1\nscan()\n' \
+  > "$FT/src/scanner.py"
+printf 'def netcheck():\n    return 2\n' > "$FT/src/net.py"
+( cd "$FT" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 )
+python3 - "$IRAG_SRC" "$FT" << 'PYEOF'
+import sys, pathlib
+cfg = pathlib.Path(sys.argv[2], ".irag/config.toml"); t = cfg.read_text()
+cfg.write_text(t.replace(
+    'command = "claude -p"       # prompt on stdin, markdown on stdout',
+    f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"'))
+PYEOF
+( cd "$FT" && python3 -m irag update >/dev/null 2>&1 ) || true
+
+# executable memory: record a proof, then break the behaviour
+( cd "$FT" && python3 -m irag verify "scan aborts without root" \
+    --cmd "python3 src/scanner.py" --expect "QUITTING" \
+    --module src/scanner.py >/dev/null 2>&1 ) \
+  || { echo "FAIL: a true behavioural claim did not verify when recorded"; \
+       rm -rf "$FT"; exit 1; }
+printf 'import sys\nsys.exit(0)\n' > "$FT/src/scanner.py"
+if ( cd "$FT" && python3 -m irag verify >/dev/null 2>&1 ); then
+  echo "FAIL: a broken behavioural claim still verified"; rm -rf "$FT"; exit 1
+fi
+( cd "$FT" && python3 -m irag check 2>&1 | grep -q "behavioural claims no longer hold" ) \
+  || { echo "FAIL: check did not report the broken fact"; rm -rf "$FT"; exit 1; }
+# ...and check must pass it again once the behaviour is restored
+printf 'import sys\ndef scan(root=False):\n    if not root:\n        print("QUITTING")\n        sys.exit(1)\n    return 1\nscan()\n' \
+  > "$FT/src/scanner.py"
+( cd "$FT" && python3 -m irag verify >/dev/null 2>&1 ) \
+  || { echo "FAIL: restored behaviour did not re-verify"; rm -rf "$FT"; exit 1; }
+
+# anti-facts + brief
+( cd "$FT" && python3 -m irag tried "position:sticky" \
+    --because "only catches after you scroll past" --module src/scanner.py \
+    >/dev/null 2>&1 )
+( cd "$FT" && python3 -m irag brief src/scanner.py | grep -q "already ruled out" ) \
+  || { echo "FAIL: brief did not surface a recorded dead end"; rm -rf "$FT"; exit 1; }
+( cd "$FT" && echo '{"tool_input":{"file_path":"src/scanner.py"}}' \
+    | python3 -m irag brief - | grep -q "ruled out" ) \
+  || { echo "FAIL: brief did not read the hook payload"; rm -rf "$FT"; exit 1; }
+
+# topics: a concept page spanning files that share no folder
+( cd "$FT" && python3 -m irag topic "root privilege" \
+    --files src/scanner.py,src/net.py >/dev/null 2>&1 )
+( cd "$FT" && python3 -m irag update >/dev/null 2>&1 ) || true
+( cd "$FT" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db
+conn = db.connect(pathlib.Path(".irag/memory.db"))
+row = conn.execute("SELECT current_revision_id FROM pages "
+                   "WHERE subject_type='topic' AND subject_id='root privilege'"
+                   ).fetchone()
+assert row and row["current_revision_id"], "topic page was never synthesized"
+PYEOF
+) || { echo "FAIL: topic page"; rm -rf "$FT"; exit 1; }
+
+# candidate lessons are drafted from failures only
+( cd "$FT" && echo '{"tool_input":{"command":"nmap -O"},"tool_response":{"exit_code":1,"stderr":"QUITTING"}}' \
+    | python3 -m irag capture --quiet >/dev/null 2>&1 )
+( cd "$FT" && echo '{"tool_input":{"command":"ls"},"tool_response":{"exit_code":0}}' \
+    | python3 -m irag capture --quiet >/dev/null 2>&1 )
+n=$( cd "$FT" && python3 -m irag candidates | grep -c CANDIDATE || true )
+[ "$n" = "1" ] \
+  || { echo "FAIL: expected exactly 1 candidate from a failure, got $n"; \
+       rm -rf "$FT"; exit 1; }
+
+# trivial-change skip must not swallow a real change
+sleep 1
+printf 'import sys\ndef scan(root=False):\n    if not root:\n        print("QUITTING")\n        sys.exit(1)\n    return 1\nscan()\n# reflowed comment\n' \
+  > "$FT/src/scanner.py"
+( cd "$FT" && python3 -m irag update 2>&1 | grep -q "unchanged" ) \
+  || { echo "FAIL: comment-only edit still called the model"; rm -rf "$FT"; exit 1; }
+sleep 1
+printf 'import sys\ndef scan(root=False):\n    return 1\ndef brand_new():\n    return 9\n' \
+  > "$FT/src/scanner.py"
+( cd "$FT" && python3 -m irag update 2>&1 | grep -q "synthesized: src/scanner.py" ) \
+  || { echo "FAIL: a real change was skipped as trivial"; rm -rf "$FT"; exit 1; }
+rm -rf "$FT"
+echo "executable memory + anti-facts + topics + brief + trivial-skip ok"
+
 echo "SMOKE TEST PASSED"

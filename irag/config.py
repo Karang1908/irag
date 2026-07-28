@@ -50,6 +50,7 @@ max_staleness = 150
 fail_on_contradictions = true
 fail_on_staleness = true      # set false to let 'irag check' pass despite stale pages
 fail_on_unsynthesized = true  # a page with no version at all means synthesis never ran
+fail_on_facts = true          # re-run 'irag verify' proofs; fail when a behavioural claim stops holding
 '''
 
 DEFAULTS: dict[str, Any] = {
@@ -58,6 +59,10 @@ DEFAULTS: dict[str, Any] = {
         "command": "claude -p",
         "model_label": "claude",
         "timeout": 300,
+        # how many pages to synthesize at once. 1 keeps the old strictly
+        # sequential behaviour; raise it if your LLM CLI tolerates
+        # concurrent invocations (most do — each is its own process).
+        "parallel": 1,
     },
     "modules": {
         "ignore": [".irag", ".git", ".claude", "irag_vault", "node_modules",
@@ -68,6 +73,8 @@ DEFAULTS: dict[str, Any] = {
         "commit": 10,
         "dependency": 20,
         "threshold": 1,
+        # skip the model when only comments/whitespace changed
+        "skip_trivial": True,
     },
     "retrieval": {
         "token_budget": 8000,
@@ -84,6 +91,7 @@ DEFAULTS: dict[str, Any] = {
         "fail_on_contradictions": True,
         "fail_on_staleness": True,
         "fail_on_unsynthesized": True,
+        "fail_on_facts": True,
     },
 }
 

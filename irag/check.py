@@ -8,8 +8,15 @@ from __future__ import annotations
 import sqlite3
 
 
-def run(conn: sqlite3.Connection, cfg: dict) -> int:
-    """Print a health summary; return the intended process exit code."""
+def run(conn: sqlite3.Connection, cfg: dict, repo=None,
+        run_facts: bool = True) -> int:
+    """Print a health summary; return the intended process exit code.
+
+    When `repo` is given, executable facts are re-run: a behavioural claim
+    that no longer holds fails the build exactly like a hallucinated path.
+    Facts that have never been executed are not counted — "unverified" is
+    not "disproved", and the gate must not fail on something it never ran.
+    """
     max_staleness = int(cfg["check"]["max_staleness"])
     fail_on_contra = bool(cfg["check"]["fail_on_contradictions"])
     fail_on_stale = bool(cfg["check"].get("fail_on_staleness", True))
@@ -26,13 +33,42 @@ def run(conn: sqlite3.Connection, cfg: dict) -> int:
         "SELECT COUNT(*) c FROM pages WHERE current_revision_id IS NULL"
     ).fetchone()["c"]
 
+    fact_failures = []
+    if repo is not None and run_facts and bool(
+            cfg.get("check", {}).get("fail_on_facts", True)):
+        from . import facts as facts_mod
+        try:
+            results = facts_mod.run_all(conn, repo)
+        except sqlite3.OperationalError:
+            results = []           # pre-facts database
+        fact_failures = [(r, s, why) for r, s, why in results if s != "pass"]
+        fact_total = len(results)
+    else:
+        try:
+            fact_total = conn.execute(
+                "SELECT COUNT(*) c FROM facts").fetchone()["c"]
+        except sqlite3.OperationalError:
+            fact_total = 0
+
     print("irag check")
     print("-" * 40)
     print(f"open contradictions       : {open_contras}")
     print(f"pages over max staleness  : {over_stale} (max {max_staleness})")
     print(f"pages never synthesized   : {never_synth}")
+    if fact_total:
+        print(f"executable facts          : "
+              f"{fact_total - len(fact_failures)}/{fact_total} verified")
 
     failed = False
+    if fact_failures:
+        print("FAIL: behavioural claims no longer hold:")
+        for row, status, why in fact_failures[:8]:
+            print(f"  [{row['fact_id']}] {row['claim']}")
+            print(f"      $ {row['cmd']}")
+            print(f"      {status}: {why}")
+        if len(fact_failures) > 8:
+            print(f"  +{len(fact_failures) - 8} more")
+        failed = True
     if fail_on_contra and open_contras:
         print("FAIL: open contradictions present (run 'irag contradictions')")
         failed = True

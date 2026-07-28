@@ -167,6 +167,22 @@ def pending_file_pages(conn, cfg) -> list[sqlite3.Row]:
     ).fetchall()
 
 
+def pending_topic_pages(conn, cfg) -> list[sqlite3.Row]:
+    """Concept pages due. Written after folders so their member files
+    already have current summaries to build the topic out of."""
+    threshold = int(cfg["staleness"]["threshold"])
+    try:
+        return conn.execute(
+            """SELECT p.* FROM pages p
+               WHERE p.pinned = 0 AND p.page_type = 'topic'
+                 AND (p.current_revision_id IS NULL
+                      OR p.staleness_score >= ?)
+               ORDER BY p.staleness_score DESC""",
+            (threshold,)).fetchall()
+    except sqlite3.OperationalError:
+        return []
+
+
 def pending_folder_pages(conn, cfg) -> list[sqlite3.Row]:
     """Folders due: never synthesized (with at least one synthesized child)
     or stale. Deepest first so parents see fresh children."""
@@ -311,6 +327,66 @@ def build_folder_prompt(conn, cfg, page, repo: Path):
     return "\n".join(parts), events
 
 
+TOPIC_INSTRUCTION = """You maintain a page about ONE concept in a code \
+repository. A concept is not a folder: the files below were chosen by hand \
+because they collectively implement it, and they may live anywhere in the \
+tree. AI coding agents read this to understand the feature as a whole \
+before touching any part of it.
+
+OUTPUT FORMAT — exactly this structure, nothing else:
+
+# <topic name>
+
+One or two sentences: what this concept IS, in the language of this
+codebase.
+
+## How it works end to end
+The flow across the files below, in order. Name the file for each step.
+
+## Where it lives
+- `path` — the role this file plays in the concept (one line each)
+
+## Gotchas
+Constraints that span files: ordering requirements, shared assumptions,
+things that silently break the whole flow if changed in one place only.
+Omit the section entirely if you have nothing concrete.
+
+Rules: describe only what the summaries below support. Never invent a file
+or a symbol. Be specific and short."""
+
+
+def build_topic_prompt(conn, cfg, page, repo: Path):
+    """Prompt for a hand-curated concept page spanning several files.
+
+    Pages are otherwise file- and folder-shaped, but the thing an agent
+    actually needs to know — "how does root privilege affect scanning?" —
+    routinely spans a scanner, a util, a route and a template. A folder
+    page cannot express that, because the files do not share a folder.
+    """
+    events = _queued_events(conn, page["subject_id"])
+    members = [r["subject_id"] for r in conn.execute(
+        "SELECT subject_id FROM topic_members WHERE topic=? ORDER BY subject_id",
+        (page["subject_id"],)).fetchall()]
+    parts = [TOPIC_INSTRUCTION, "", f"TOPIC: {page['subject_id']}", "",
+             "MEMBER FILES AND THEIR SUMMARIES:"]
+    for subject in members:
+        row = conn.execute(
+            "SELECT r.body_markdown b FROM pages p "
+            "LEFT JOIN revisions r ON r.revision_id = p.current_revision_id "
+            "WHERE p.subject_id=?", (subject,)).fetchone()
+        body = (row["b"] if row and row["b"] else "").strip()
+        if body:
+            gist = " ".join(body.splitlines()[1:6])[:600]
+        else:
+            gist = "(no summary yet — run 'irag update')"
+        parts.append(f"- `{subject}`: {gist}")
+    parts.append("")
+    body = db.current_body(conn, page["page_id"])
+    parts += ["CURRENT PAGE:", body if body else "none — write the first "
+              "version"]
+    return "\n".join(parts), events
+
+
 ANSI_RE = None  # compiled lazily
 
 
@@ -387,8 +463,70 @@ def run_llm(cfg: dict, prompt: str) -> str:
                 pass
 
 
+_COMMENT_PREFIXES = ("#", "//", "*", "/*", "*/", "--", ";", '"""', "'''")
+
+
+def semantic_fingerprint(path: Path) -> str | None:
+    """Hash of a file with comments and blank lines removed.
+
+    Re-synthesizing a whole page because someone reflowed a comment costs a
+    model call and produces a near-identical body. Comparing against the
+    fingerprint stored at the last synthesis lets that case skip the LLM
+    entirely. Deliberately crude — it strips whole-line comments only, so a
+    trailing comment change still triggers a rewrite. Wrong in the safe
+    direction: it re-synthesizes when unsure, never skips a real change.
+    """
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    kept = []
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith(_COMMENT_PREFIXES):
+            continue
+        kept.append(" ".join(s.split()))
+    import hashlib
+    return hashlib.sha1("\n".join(kept).encode("utf-8")).hexdigest()
+
+
+def _skip_unchanged(conn, cfg, page, repo: Path) -> bool:
+    """True when this file page can be left alone: it already has a body and
+    nothing but comments/whitespace changed since it was written."""
+    if page["page_type"] != "file" or not page["current_revision_id"]:
+        return False
+    if not bool(cfg.get("staleness", {}).get("skip_trivial", True)):
+        return False
+    fp = semantic_fingerprint(repo / page["subject_id"])
+    if fp is None:
+        return False
+    try:
+        stored = conn.execute(
+            "SELECT content_fingerprint f FROM pages WHERE page_id=?",
+            (page["page_id"],)).fetchone()["f"]
+    except (sqlite3.OperationalError, TypeError):
+        return False
+    return bool(stored) and stored == fp
+
+
+def _consume_without_synthesis(conn, page, events) -> None:
+    """Retire the queued events and clear staleness without writing a
+    version — used when the change carried no semantic content."""
+    ids = [ev["event_id"] for ev in events]
+    if ids:
+        conn.execute(
+            f"UPDATE events SET status='completed', "
+            f"processed_at=datetime('now') "
+            f"WHERE event_id IN ({','.join('?' * len(ids))})", ids)
+    conn.execute("UPDATE pages SET staleness_score=0 WHERE page_id=?",
+                 (page["page_id"],))
+    conn.commit()
+
+
 def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False) -> bool:
-    if page["page_type"] == "folder":
+    if page["page_type"] == "topic":
+        prompt, events = build_topic_prompt(conn, cfg, page, repo)
+    elif page["page_type"] == "folder":
         prompt, events = build_folder_prompt(conn, cfg, page, repo)
     else:
         prompt, events = build_file_prompt(conn, cfg, page, repo)
@@ -396,6 +534,12 @@ def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False) -> bool:
         print(f"===== DRY RUN — prompt for {page['subject_id']} =====")
         print(prompt)
         print("===== end prompt =====")
+        return False
+
+    if _skip_unchanged(conn, cfg, page, repo):
+        print(f"unchanged  : {page['subject_id']} "
+              "(comments/whitespace only — no model call)")
+        _consume_without_synthesis(conn, page, events)
         return False
 
     event_ids = [ev["event_id"] for ev in events]
@@ -416,6 +560,20 @@ def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False) -> bool:
                 event_ids)
             conn.commit()
         raise
+    return _persist(conn, cfg, page, repo, body, prompt, events, event_ids)
+
+
+def _write_synthesis(conn, cfg, page, repo: Path, body: str) -> bool:
+    """Persist a body produced elsewhere (the parallel path), doing exactly
+    the bookkeeping synthesize_page would have done."""
+    events = _queued_events(conn, page["subject_id"])
+    event_ids = [ev["event_id"] for ev in events]
+    prompt = build_file_prompt(conn, cfg, page, repo)[0]
+    return _persist(conn, cfg, page, repo, body, prompt, events, event_ids)
+
+
+def _persist(conn, cfg, page, repo: Path, body: str, prompt: str,
+             events, event_ids) -> bool:
     # the trailing CHANGE-SUMMARY line is revision metadata, not page text
     body, llm_summary = _split_change_summary(body)
     if not body:
@@ -448,6 +606,17 @@ def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False) -> bool:
             f"processed_at=datetime('now') "
             f"WHERE event_id IN ({','.join('?' * len(event_ids))})",
             event_ids)
+    # remember what the code looked like semantically, so the next run can
+    # tell a real change from a reflowed comment
+    if page["page_type"] == "file":
+        fp = semantic_fingerprint(repo / page["subject_id"])
+        if fp:
+            try:
+                conn.execute(
+                    "UPDATE pages SET content_fingerprint=? WHERE page_id=?",
+                    (fp, page["page_id"]))
+            except sqlite3.OperationalError:
+                pass
     conn.commit()
     return True
 
@@ -475,10 +644,13 @@ def estimate_sweep(conn, cfg, repo: Path, limit: int | None = None) -> dict:
     if limit:
         pages = pages[:limit]
     folders = pending_folder_pages(conn, cfg)
+    topics = pending_topic_pages(conn, cfg)
     total_in, detail = 0, []
-    for page in list(pages) + list(folders):
+    for page in list(pages) + list(folders) + list(topics):
         try:
-            if page["page_type"] == "folder":
+            if page["page_type"] == "topic":
+                prompt, _ = build_topic_prompt(conn, cfg, page, repo)
+            elif page["page_type"] == "folder":
                 prompt, _ = build_folder_prompt(conn, cfg, page, repo)
             else:
                 prompt, _ = build_file_prompt(conn, cfg, page, repo)
@@ -488,6 +660,73 @@ def estimate_sweep(conn, cfg, repo: Path, limit: int | None = None) -> dict:
         total_in += n
         detail.append((page["subject_id"], n))
     return {"pages": len(detail), "prompt_tokens": total_in, "detail": detail}
+
+
+def _run_pages_parallel(conn, cfg, repo: Path, pages, workers: int,
+                        failures: list) -> int:
+    """Synthesize independent file pages with overlapping model calls.
+
+    Prompts are built and every result written on the calling thread; only
+    run_llm runs in the pool, because a sqlite3 connection belongs to the
+    thread that made it. Pages that a worker could not produce fall back to
+    the sequential path so their failure handling stays identical.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    todo, done = [], 0
+    for page in pages:
+        if _skip_unchanged(conn, cfg, page, repo):
+            print(f"unchanged  : {page['subject_id']} "
+                  "(comments/whitespace only — no model call)")
+            _consume_without_synthesis(conn, page, _queued_events(
+                conn, page["subject_id"]))
+            continue
+        todo.append(page)
+    if not todo:
+        return 0
+    prompts = {}
+    for page in todo:
+        try:
+            prompts[page["subject_id"]] = build_file_prompt(
+                conn, cfg, page, repo)[0]
+        except Exception:
+            prompts[page["subject_id"]] = None
+
+    def call(subject_id):
+        prompt = prompts.get(subject_id)
+        if prompt is None:
+            return subject_id, None
+        try:
+            return subject_id, run_llm(cfg, prompt)
+        except SystemExit as exc:
+            return subject_id, exc
+
+    bodies = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for subject_id, result in pool.map(call, list(prompts)):
+            bodies[subject_id] = result
+    for page in todo:
+        result = bodies.get(page["subject_id"])
+        if isinstance(result, str) and result.strip():
+            try:
+                if _write_synthesis(conn, cfg, page, repo, result):
+                    print(f"synthesized: {page['subject_id']}")
+                    done += 1
+                continue
+            except SystemExit as exc:
+                failures.append(page["subject_id"])
+                print(f"  ✗ {page['subject_id']}: {exc}")
+                continue
+        # the worker could not produce a body — retry it sequentially so
+        # the normal event bookkeeping and error reporting apply
+        try:
+            if synthesize_page(conn, cfg, page, repo):
+                print(f"synthesized: {page['subject_id']}")
+                done += 1
+        except SystemExit as exc:
+            failures.append(page["subject_id"])
+            print(f"  ✗ {page['subject_id']}: {exc}")
+    return done
 
 
 def sweep(conn, cfg, repo: Path, dry_run: bool = False,
@@ -523,9 +762,17 @@ def sweep(conn, cfg, repo: Path, dry_run: bool = False,
             print(f"  ✗ {page['subject_id']}{suffix}: {exc}")
         return False
 
-    for page in pages:
-        if _run(page):
-            done += 1
+    # File pages are independent, so their model calls can overlap. Only
+    # the LLM call is parallel: sqlite3 connections are not shareable
+    # across threads, and every write here stays on this one. The workers
+    # do nothing but wait on a subprocess.
+    workers = max(1, int(cfg.get("llm", {}).get("parallel", 1)))
+    if workers > 1 and len(pages) > 1 and not dry_run:
+        done += _run_pages_parallel(conn, cfg, repo, pages, workers, failures)
+    else:
+        for page in pages:
+            if _run(page):
+                done += 1
     if not subject:
         # fixpoint: a folder becomes eligible once its children have
         # revisions, which can happen within this very sweep — iterate
@@ -544,6 +791,13 @@ def sweep(conn, cfg, repo: Path, dry_run: bool = False,
                     progressed = True
             if not progressed:
                 break
+        # topics last: they are built from member-file summaries, so those
+        # must already be current when the concept page is written
+        for page in pending_topic_pages(conn, cfg):
+            if page["subject_id"] in failures:
+                continue
+            if _run(page, suffix=" (topic)"):
+                done += 1
     if failures:
         print(f"{len(failures)} page(s) failed synthesis "
               "(events remain queued and retry on the next 'irag update'): "

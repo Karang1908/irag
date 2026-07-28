@@ -78,6 +78,37 @@ CREATE TABLE IF NOT EXISTS events (
 );
 CREATE INDEX IF NOT EXISTS idx_events_queue ON events(status, subject_id, created_at);
 
+-- Executable memory: a claim that carries its own proof. Every other kind
+-- of page says what the code *is*; these say what it *does*, and are the
+-- only facts irag can re-establish from scratch rather than trust. `check`
+-- re-runs them, so a behavioural claim that stops holding fails the build
+-- the same way a hallucinated path does.
+CREATE TABLE IF NOT EXISTS facts (
+  fact_id      INTEGER PRIMARY KEY,
+  claim        TEXT NOT NULL,
+  cmd          TEXT NOT NULL,      -- shell command that demonstrates it
+  expect       TEXT,               -- substring required in output (NULL = exit 0)
+  expect_exit  INTEGER,            -- required exit code, when set
+  subject_id   TEXT,               -- module this is about ('' = repo-wide)
+  created_at   TEXT DEFAULT (datetime('now')),
+  last_run_at  TEXT,
+  last_status  TEXT,               -- pass | fail | error
+  last_output  TEXT,
+  session_key  TEXT,
+  UNIQUE(claim, cmd)
+);
+CREATE INDEX IF NOT EXISTS idx_facts_subject ON facts(subject_id);
+
+-- Concept pages: knowledge is feature-shaped, storage was file-shaped.
+-- "How does root privilege affect scanning?" spans a scanner, a util and a
+-- template that share no folder, so no folder page can answer it. Members
+-- are curated by hand — this is the one page type irag does not infer.
+CREATE TABLE IF NOT EXISTS topic_members (
+  topic      TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  PRIMARY KEY (topic, subject_id)
+);
+
 CREATE TABLE IF NOT EXISTS contradictions (
   contradiction_id INTEGER PRIMARY KEY,
   page_id          INTEGER NOT NULL REFERENCES pages(page_id),
@@ -249,6 +280,7 @@ def ensure_db(db_path: Path) -> sqlite3.Connection:
     _add_column_if_missing(conn, "events", "session_key", "TEXT")
     _add_column_if_missing(conn, "revisions", "session_key", "TEXT")
     _add_column_if_missing(conn, "contradictions", "resolution_kind", "TEXT")
+    _add_column_if_missing(conn, "pages", "content_fingerprint", "TEXT")
     # Backfill resolutions made before the column existed, so upgrading does
     # not silently discard every judgement a human already made. The auto
     # paths write a fixed sentinel note; anything else was a person typing.
