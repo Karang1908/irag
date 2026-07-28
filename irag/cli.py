@@ -345,6 +345,38 @@ def cmd_impact(args) -> int:
     structure.scan(conn, cfg, root)
     hits = structure.impact(conn, args.subject)
     if not hits:
+        # "change is contained" is a claim about a file irag actually
+        # tracks. Saying it about a path that does not exist — a typo, the
+        # wrong case, a file outside the project — is the same confident
+        # wrong answer that makes impact dangerous: it licenses the edit it
+        # exists to guard. Unknown paths fail closed instead.
+        # The tracked set is the authority, not the filesystem: on a
+        # case-insensitive volume `SRC/A.PY` "exists" while being a subject
+        # irag has never indexed, so an existence test alone still answers
+        # "contained" for a path the user got wrong.
+        known = conn.execute(
+            "SELECT 1 FROM pages WHERE subject_id=? UNION ALL "
+            "SELECT 1 FROM symbols WHERE file=? LIMIT 1",
+            (args.subject, args.subject)).fetchone()
+        if not known:
+            print(f"irag: {args.subject} is not a file irag tracks — no "
+                  "blast radius can be computed for it.")
+            near = conn.execute(
+                "SELECT subject_id FROM pages WHERE page_type='file' "
+                "AND (lower(subject_id) = lower(?) "
+                "     OR lower(subject_id) LIKE ?) LIMIT 5",
+                (args.subject, f"%{Path(args.subject).name.lower()}%")
+            ).fetchall()
+            if near:
+                print("did you mean: "
+                      + ", ".join(r["subject_id"] for r in near) + "?")
+            elif (root / args.subject).exists():
+                print("the file exists but is not indexed — run "
+                      "'irag sync' (it may be ignored by [modules].ignore).")
+            else:
+                print("check the path, or run 'irag map' to list what is "
+                      "tracked.")
+            return 2
         print(f"nothing imports {args.subject} — change is contained")
         return 0
     print(f"changing {args.subject} can affect ({len(hits)} module(s)):")

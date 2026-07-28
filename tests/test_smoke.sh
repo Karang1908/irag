@@ -1264,4 +1264,31 @@ esac
 rm -rf "$SH"
 echo "verify shell operators + missing --cmd ok"
 
+# --- impact must not claim "contained" about a path it does not track ---
+# A typo, the wrong case, or an ignored file all produced the identical
+# confident "change is contained" as a genuinely safe file, so a mistyped
+# path read as permission to edit. Unknown subjects fail closed.
+IM=$(mktemp -d); mkdir -p "$IM/src" "$IM/node_modules"
+printf 'def a(): return 1\n' > "$IM/src/a.py"
+printf 'x\n' > "$IM/node_modules/lib.js"
+( cd "$IM" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 && python3 -m irag scan >/dev/null 2>&1 )
+# a tracked file with no importers is the ONLY case that may say "contained"
+( cd "$IM" && python3 -m irag impact src/a.py | grep -q "change is contained" ) \
+  || { echo "FAIL: a tracked file lost its contained answer"; rm -rf "$IM"; exit 1; }
+( cd "$IM" && python3 -m irag impact src/a.py >/dev/null 2>&1 ) \
+  || { echo "FAIL: impact on a tracked file should exit 0"; rm -rf "$IM"; exit 1; }
+for bad in src/nope.py src/a.pyy node_modules/lib.js; do
+  if ( cd "$IM" && python3 -m irag impact "$bad" 2>&1 | grep -q "change is contained" ); then
+    echo "FAIL: impact claimed containment for untracked path $bad"
+    rm -rf "$IM"; exit 1
+  fi
+  if ( cd "$IM" && python3 -m irag impact "$bad" >/dev/null 2>&1 ); then
+    echo "FAIL: impact exited 0 for untracked path $bad"; rm -rf "$IM"; exit 1
+  fi
+done
+rm -rf "$IM"
+echo "impact fails closed on untracked paths ok"
+
 echo "SMOKE TEST PASSED"
