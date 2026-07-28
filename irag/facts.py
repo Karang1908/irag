@@ -31,8 +31,8 @@ def record(conn: sqlite3.Connection, claim: str, cmd: str,
            expect: str | None = None, expect_exit: int | None = None,
            subject_id: str = "", session_key: str | None = None) -> int:
     """Register a fact. Re-registering the same (claim, cmd) updates it."""
-    claim = claim.strip()
-    cmd = cmd.strip()
+    claim = (claim or "").strip()
+    cmd = (cmd or "").strip()
     if not claim:
         raise SystemExit("irag: a fact needs a claim")
     if not cmd:
@@ -66,12 +66,33 @@ def _judge(row, exit_code: int, output: str) -> tuple[str, str]:
     return "fail", f"expected exit {want}, got {exit_code}"
 
 
+# Operators that only a shell can honour. Without this check, a registered
+# `echo hi | grep hi` was shlex-split into `echo` with the literal arguments
+# `hi | grep hi`, whose output happens to contain "hi" — so the fact passed
+# while testing something the user never wrote. A false ✓ is the worst
+# possible bug in the one feature whose entire claim is that it re-proves
+# itself, so a command that needs a shell gets one.
+_SHELL_OPERATORS = ("|", "&", ";", "<", ">", "$(", "`", "*", "?", "\n", "&&",
+                    "||")
+
+
+def needs_shell(cmd: str) -> bool:
+    return any(op in cmd for op in _SHELL_OPERATORS)
+
+
+def _spawn(cmd: str, repo: Path, timeout: int):
+    if needs_shell(cmd):
+        return subprocess.run(cmd, cwd=repo, shell=True, capture_output=True,
+                              text=True, timeout=timeout)
+    return subprocess.run(shlex.split(cmd), cwd=repo, capture_output=True,
+                          text=True, timeout=timeout)
+
+
 def run_one(conn: sqlite3.Connection, row, repo: Path,
             timeout: int = DEFAULT_TIMEOUT) -> tuple[str, str]:
     """Execute one fact's command. Returns (status, reason)."""
     try:
-        proc = subprocess.run(shlex.split(row["cmd"]), cwd=repo,
-                              capture_output=True, text=True, timeout=timeout)
+        proc = _spawn(row["cmd"], repo, timeout)
         output = (proc.stdout or "") + (proc.stderr or "")
         status, reason = _judge(row, proc.returncode, output)
     except FileNotFoundError as exc:

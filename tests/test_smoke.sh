@@ -1231,4 +1231,37 @@ printf 'import sys\ndef scan(root=False):\n    return 1\ndef brand_new():\n    r
 rm -rf "$FT"
 echo "executable memory + anti-facts + topics + brief + trivial-skip ok"
 
+# --- verify: shell operators and missing --cmd --------------------------
+# `--cmd "echo hi | grep hi"` was shlex-split into `echo` with the literal
+# arguments `hi | grep hi`, whose output contains "hi" — so the fact PASSED
+# while testing something the user never wrote. A false pass is the worst
+# possible defect in the one feature whose whole claim is self-proof.
+SH=$(mktemp -d)
+printf 'hello world\n' > "$SH/data.txt"
+( cd "$SH" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 )
+( cd "$SH" && python3 -m irag verify "pipeline true" \
+    --cmd "grep hello data.txt | wc -l" --expect 1 >/dev/null 2>&1 ) \
+  || { echo "FAIL: a true pipeline claim did not verify"; rm -rf "$SH"; exit 1; }
+if ( cd "$SH" && python3 -m irag verify "pipeline false" \
+       --cmd "grep absent data.txt | wc -l" --expect 42 >/dev/null 2>&1 ); then
+  echo "FAIL: a false pipeline claim passed — shell operators not honoured"
+  rm -rf "$SH"; exit 1
+fi
+( cd "$SH" && python3 -m irag verify "chained" \
+    --cmd "test -f data.txt && echo FOUND" --expect FOUND >/dev/null 2>&1 ) \
+  || { echo "FAIL: && chaining not honoured"; rm -rf "$SH"; exit 1; }
+# a claim with no proof must be a clean error, not a traceback
+out=$( cd "$SH" && python3 -m irag verify "no proof" 2>&1 || true )
+case "$out" in
+  *Traceback*) echo "FAIL: 'verify' with no --cmd crashed:"; echo "$out" | tail -3
+               rm -rf "$SH"; exit 1 ;;
+  *"needs --cmd"*) : ;;
+  *) echo "FAIL: unexpected output for a claim with no --cmd: $out"
+     rm -rf "$SH"; exit 1 ;;
+esac
+rm -rf "$SH"
+echo "verify shell operators + missing --cmd ok"
+
 echo "SMOKE TEST PASSED"
