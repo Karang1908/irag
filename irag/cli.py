@@ -768,8 +768,8 @@ def cmd_capture(args) -> int:
         (args.module or "", json.dumps({"text": text}), db.active_key()))
     conn.commit()
     if not args.quiet:
-        print(f"irag: drafted a candidate lesson from a failed command. "
-              f"Confirm it with:\n  irag learn \"<what this taught you>\""
+        print("irag: drafted a candidate lesson from a failed command. "
+              "Confirm it with:\n  irag learn \"<what this taught you>\""
               + (f" --module {args.module}" if args.module else ""))
     return 0
 
