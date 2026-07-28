@@ -66,18 +66,50 @@ def _judge(row, exit_code: int, output: str) -> tuple[str, str]:
     return "fail", f"expected exit {want}, got {exit_code}"
 
 
-# Operators that only a shell can honour. Without this check, a registered
+# Characters that only a shell can honour. Without this check, a registered
 # `echo hi | grep hi` was shlex-split into `echo` with the literal arguments
 # `hi | grep hi`, whose output happens to contain "hi" — so the fact passed
 # while testing something the user never wrote. A false ✓ is the worst
 # possible bug in the one feature whose entire claim is that it re-proves
 # itself, so a command that needs a shell gets one.
-_SHELL_OPERATORS = ("|", "&", ";", "<", ">", "$(", "`", "*", "?", "\n", "&&",
-                    "||")
+_SHELL_CHARS = set("|&;<>()$`*?~\n")
 
 
 def needs_shell(cmd: str) -> bool:
-    return any(op in cmd for op in _SHELL_OPERATORS)
+    """True when the command contains an operator OUTSIDE quotes.
+
+    A substring scan was wrong in the common case: `python3 -c 'a*b'` or
+    `grep 'foo?' file` route through a shell they never needed, because the
+    operator is quoted data rather than syntax. Quote state is tracked so
+    only real syntax counts; anything shlex cannot tokenize at all is also
+    handed to the shell, since that is exactly the input shlex would
+    mis-split.
+    """
+    quote = None
+    escaped = False
+    for ch in cmd:
+        if escaped:
+            escaped = False
+            continue
+        if ch == "\\" and quote != "'":
+            escaped = True
+            continue
+        if quote:
+            if ch == quote:
+                quote = None
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            continue
+        if ch in _SHELL_CHARS:
+            return True
+    if quote:                       # unbalanced quote: shlex would raise
+        return True
+    try:
+        shlex.split(cmd)
+    except ValueError:
+        return True
+    return False
 
 
 def _spawn(cmd: str, repo: Path, timeout: int):

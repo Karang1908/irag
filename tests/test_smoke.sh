@@ -1334,9 +1334,30 @@ CEOF
 cat > "$LG/src/Svc.cs" <<'CSEOF'
 public class Service {
     public int Count { get; set; }
+    public int this[int i] { get { return 0; } }
     public static implicit operator int(Service s) { return 0; }
 }
 CSEOF
+cat > "$LG/src/App.java" <<'JAVAEOF'
+public abstract class App {
+    public abstract void mustImpl();
+    native void nat();
+    protected abstract String compute(int a) throws Exception;
+    public void real() {
+        helper();
+        return;
+    }
+}
+interface Greeter { void greet(); }
+JAVAEOF
+cat > "$LG/src/ops.rb" <<'OPSEOF'
+class Ops
+  def <=>(other); end
+  def [](i); end
+  def []=(i, v); end
+  private def hidden; end
+end
+OPSEOF
 ( cd "$LG" && git init -q . && git add -A \
   && git -c user.email=t@t -c user.name=t commit -qm i \
   && python3 -m irag init >/dev/null 2>&1 \
@@ -1355,7 +1376,11 @@ want = {
     "src/app.rb": {"Session", "MAX_AGE", "hidden"},
     "src/svc.php": {"Service", "VERSION", "run"},
     "src/core.c": {"MACRO_THING", "add"},
-    "src/Svc.cs": {"Service", "Count"},
+    "src/Svc.cs": {"Service", "Count", "this[]"},
+    # bodiless declarations: interface, abstract and native methods
+    "src/App.java": {"App", "Greeter", "mustImpl", "nat", "compute",
+                     "greet", "real"},
+    "src/ops.rb": {"Ops", "<=>", "[]", "[]=", "hidden"},
 }
 for f, expected in want.items():
     got = names(f)
@@ -1364,6 +1389,9 @@ for f, expected in want.items():
 # a primitive type name is never a symbol
 bad = names("src/Svc.cs") & {"int", "operator", "void", "string"}
 assert not bad, f"phantom symbols captured from C#: {sorted(bad)}"
+# a call statement is not a declaration
+bad = names("src/App.java") & {"helper", "return", "if", "for"}
+assert not bad, f"call statements captured as Java declarations: {sorted(bad)}"
 PYEOF
 ) || { echo "FAIL: non-Python symbol coverage"; rm -rf "$LG"; exit 1; }
 rm -rf "$LG"

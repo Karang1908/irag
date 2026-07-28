@@ -123,6 +123,19 @@ JAVA_TYPE_RE = re.compile(
 JAVA_METHOD_RE = re.compile(
     r"^\s*(?:@\w+[\w.]*(?:\([^)]*\))?\s+)*[\w<>\[\].,?\s]*?\b(\w+)\s*"
     r"\([^;{]*\)\s*(?:throws[\w,.\s]+)?\{", re.M)
+# Bodiless declarations — interface methods, `abstract`, `native` — are real
+# API surface and had no body for the pattern above to anchor on. A return
+# type is REQUIRED before the name so a bare call statement (`foo();`) can
+# never be mistaken for a declaration; the captured type is checked against
+# _METHOD_SKIP in the loop so `return foo();` is rejected too.
+JAVA_DECL_RE = re.compile(
+    # a declaration starts at line start OR immediately after an opening
+    # brace, so `interface G { void greet(); }` on one line still counts
+    r"(?:^|\{)\s*(?:@\w+[\w.]*(?:\([^)]*\))?\s+)*"
+    r"(?:(?:public|private|protected|abstract|static|final|native|"
+    r"synchronized|default|strictfp)\s+)*"
+    r"(?P<type>[\w<>\[\].,?]+)\s+(?P<name>\w+)\s*"
+    r"\([^;{)]*\)\s*(?:throws[\w,.\s]+)?;", re.M)
 
 CS_TYPE_RE = re.compile(
     r"^\s*(?:(?:public|private|protected|internal|abstract|sealed|static|partial)\s+)*"
@@ -134,6 +147,11 @@ CS_PROPERTY_RE = re.compile(
     r"^\s*(?:(?:public|private|protected|internal|static|virtual|override|"
     r"abstract|readonly|required)\s+)+[\w<>\[\].,?]+\s+(\w+)\s*\{\s*"
     r"(?:get|set|init)\b", re.M)
+# `public int this[int i] { get; }` — indexed under the name a caller can
+# actually write, rather than the bare keyword `this`.
+CS_INDEXER_RE = re.compile(
+    r"^\s*(?:(?:public|private|protected|internal|static|virtual|override|"
+    r"abstract)\s+)+[\w<>\[\].,?]+\s+this\s*\[[^\]]*\]\s*\{", re.M)
 
 # control-flow and expression keywords that the generic method regexes
 # above would otherwise capture as a method named e.g. `if` or `switch`
@@ -148,12 +166,25 @@ _METHOD_SKIP = {"if", "for", "while", "switch", "return", "catch", "do",
                 "float", "double", "void", "string", "object", "decimal",
                 "uint", "ulong", "ushort", "sbyte", "var", "operator"}
 
+# For the TYPE slot of a bodiless declaration, only statement keywords
+# disqualify it. _METHOD_SKIP cannot be reused here: it contains primitive
+# type names (needed to reject a symbol *named* `int`), and a return type
+# of `void` is exactly what an interface or abstract method declares — so
+# filtering on it dropped every `void greet();` in the codebase.
+_DECL_TYPE_SKIP = {"return", "throw", "new", "yield", "await", "assert",
+                   "else", "do", "case", "break", "continue", "import",
+                   "package", "if", "for", "while", "switch", "catch"}
+
 RB_TYPE_RE = re.compile(r"^\s*(?:class|module)\s+([A-Z]\w*)", re.M)
 # `private def name` / `protected def name` are ordinary Ruby; anchoring
 # on `def` alone missed every method declared that way.
+# Operator methods (`def <=>`, `def ==`, `def []=`) are ordinary Ruby API
+# and the identifier charset could not express them.
 RB_METHOD_RE = re.compile(
     r"^\s*(?:(?:private|public|protected|module_function)\s+)?"
-    r"def\s+(?:self\.)?([A-Za-z_]\w*[?!=]?)", re.M)
+    r"def\s+(?:self\.)?"
+    r"([A-Za-z_]\w*[?!=]?|<=>|===?|!=|<<|>>|<=|>=|\[\]=?|[+\-*/%<>!~^&|]|\*\*)",
+    re.M)
 RB_CONST_RE = re.compile(r"^\s*([A-Z][A-Z0-9_]*)\s*=", re.M)
 RB_IMPORT_RE = re.compile(r"""require_relative\s+['"]([^'"]+)['"]""")
 
@@ -363,6 +394,13 @@ def _regex_parse(text: str, rel: str, suffix: str):
         for m in JAVA_METHOD_RE.finditer(text):
             if m.group(1) not in _METHOD_SKIP:
                 yield ("sym", m.group(1), "method", _line(text, m.start()))
+        for m in JAVA_DECL_RE.finditer(text):
+            # the type slot holding a keyword means this is a statement
+            # (`return foo();`, `throw x();`), not a declaration
+            if (m.group("name") not in _METHOD_SKIP
+                    and m.group("type") not in _DECL_TYPE_SKIP):
+                yield ("sym", m.group("name"), "method",
+                       _line(text, m.start()))
         # Java imports are package paths, not files — resolving them needs
         # source roots we don't track, so Java contributes symbols but no
         # dependency edges (documented in the graph-widening notes).
@@ -374,6 +412,8 @@ def _regex_parse(text: str, rel: str, suffix: str):
                 yield ("sym", m.group(1), "method", _line(text, m.start()))
         for m in CS_PROPERTY_RE.finditer(text):
             yield ("sym", m.group(1), "const", _line(text, m.start()))
+        for m in CS_INDEXER_RE.finditer(text):
+            yield ("sym", "this[]", "method", _line(text, m.start()))
     elif suffix in RB_EXT:
         for m in RB_TYPE_RE.finditer(text):
             yield ("sym", m.group(1), "class", _line(text, m.start()))
