@@ -922,4 +922,55 @@ PYEOF
 rm -rf "$BF"
 echo "source-turns-binary purge ok"
 
+# --- web dep edges: HTML/CSS wiring and dynamic imports -----------------
+# `irag impact` answering "change is contained" about a file the whole page
+# loads is worse than no answer: it licenses the unsafe edit. Guards that
+# <script src>, <link href>, root-absolute specifiers and dynamic import()
+# all become edges, and that CDN/bare specifiers still do NOT.
+WD=$(mktemp -d); mkdir -p "$WD/static"
+cat > "$WD/index.html" <<'HTMLEOF'
+<link rel="stylesheet" href="/static/styles.css">
+<link rel="stylesheet" href="https://cdn.example.com/lib.css">
+<img src="/static/logo.png">
+<script src="/static/app.js" type="module"></script>
+<script src="//cdn.example.com/a.js"></script>
+HTMLEOF
+cat > "$WD/static/app.js" <<'JSEOF'
+import { helper } from "./helper.js";
+import * as THREE from "three";
+import "three/addons/controls/OrbitControls.js";
+const mod = await import("/static/topology3d.js");
+export function boot(){ return helper(mod, THREE); }
+JSEOF
+printf 'export function helper(m){ return m; }\n' > "$WD/static/helper.js"
+printf 'export function render(){ return 1; }\n' > "$WD/static/topology3d.js"
+printf '@import "./base.css";\nbody{color:red}\n' > "$WD/static/styles.css"
+printf 'body{margin:0}\n' > "$WD/static/base.css"
+( cd "$WD" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 \
+  && python3 -m irag scan >/dev/null 2>&1 )
+( cd "$WD" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config
+root = pathlib.Path(".").resolve()
+conn = db.connect(str(root / ".irag" / "memory.db")); config.load(root)
+edges = {(r["source_subject"], r["target_subject"]) for r in conn.execute(
+    "SELECT source_subject, target_subject FROM deps")}
+must = {("index.html", "static/app.js"),        # <script src>, root-absolute
+        ("index.html", "static/styles.css"),    # <link href>
+        ("static/app.js", "static/helper.js"),  # relative ESM
+        ("static/app.js", "static/topology3d.js"),  # dynamic import()
+        ("static/styles.css", "static/base.css")}   # css @import
+missing = must - edges
+assert not missing, f"missing web dep edges: {missing}"
+bad = [e for e in edges if "cdn" in e[1] or e[1].startswith("three")
+       or e[1].endswith(".png")]
+assert not bad, f"invented edges for non-repo targets: {bad}"
+PYEOF
+) || { echo "FAIL: web dep edges"; rm -rf "$WD"; exit 1; }
+rm -rf "$WD"
+echo "web dep edges (html/css/dynamic import) ok"
+
 echo "SMOKE TEST PASSED"

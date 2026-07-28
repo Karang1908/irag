@@ -32,8 +32,14 @@ CS_EXT = {".cs"}
 RB_EXT = {".rb"}
 PHP_EXT = {".php"}
 C_EXT = {".c", ".h", ".cc", ".cpp", ".cxx", ".hpp", ".hh", ".hxx"}
+# Markup is scanned for imports only (it defines no symbols). Without it,
+# `index.html` loading `app.js` via <script src> was not an edge, so
+# `irag impact static/app.js` answered "change is contained" about a file
+# the whole page depends on — a confident wrong answer that licenses the
+# unsafe edit impact exists to prevent.
+WEB_EXT = {".html", ".htm", ".css"}
 CODE_EXT = (PY_EXT | JS_EXT | GO_EXT | RS_EXT | JAVA_EXT | CS_EXT | RB_EXT
-            | PHP_EXT | C_EXT)
+            | PHP_EXT | C_EXT | WEB_EXT)
 
 # Named groups: the alternation has grown past the point where positional
 # indexes are safe to read. The `const` branch deliberately accepts ANY
@@ -56,11 +62,21 @@ JS_SYMBOL_RE = re.compile(
     r"|(?:const|let|var)\s*(?P<destr>[{\[][^}\]\n]+[}\]])\s*=)",
     re.M,
 )
+# `import\s+` cannot match `import("./x.js")` — there is no whitespace after
+# the keyword — so every dynamically imported module was invisible to the
+# graph. The `import\s*\(` branch must precede the bare `import\s+` one.
 JS_IMPORT_RE = re.compile(
-    r"""(?:import\s+[^'"]*?from\s+|import\s+|require\s*\(\s*|export\s+[^'"]*?from\s+)
+    r"""(?:import\s+[^'"]*?from\s+|import\s*\(\s*|import\s+
+        |require\s*\(\s*|export\s+[^'"]*?from\s+)
         ['"]([^'"]+)['"]""",
     re.X,
 )
+# <script src>, <link href>; also picks up <img src>, which resolves to a
+# non-code file and is dropped by _resolve_import.
+HTML_IMPORT_RE = re.compile(
+    r"""<[a-zA-Z][^>]*?\s(?:src|href)\s*=\s*['"]([^'"]+)['"]""", re.S)
+CSS_IMPORT_RE = re.compile(
+    r"""@import\s+(?:url\()?\s*['"]([^'"]+)['"]""")
 GO_SYMBOL_RE = re.compile(r"^func\s+(?:\([^)]*\)\s+)?(\w+)\s*\(", re.M)
 RS_SYMBOL_RE = re.compile(
     r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:fn\s+(\w+)|struct\s+(\w+)|enum\s+(\w+)|trait\s+(\w+))",
@@ -162,6 +178,29 @@ def _resolve_import(path_like: str, repo: Path,
     return None
 
 
+def _web_spec(rel: str, spec: str, bare_is_path: bool = False) -> str | None:
+    """Repo-relative target for a JS/HTML/CSS specifier, or None when it
+    cannot point at a file in this repo.
+
+    `/static/app.js` is served from the repo root, not the filesystem root:
+    treating it as "not relative" dropped every root-absolute reference on
+    the floor. Bare specifiers (`three`, `react`) go through an import map
+    or node_modules and are deliberately NOT guessed at — `bare_is_path` is
+    set only for HTML/CSS, where `src="app.js"` really is a sibling file.
+    """
+    spec = spec.split("?")[0].split("#")[0].strip()
+    if not spec or spec.startswith(
+            ("http://", "https://", "//", "data:", "mailto:", "tel:")):
+        return None
+    if spec.startswith("/"):
+        return spec.lstrip("/")
+    if spec.startswith("."):
+        return _rel_to_repo(rel, spec)
+    if bare_is_path:
+        return _rel_to_repo(rel, "./" + spec)
+    return None
+
+
 def _rel_to_repo(rel: str, spec: str) -> str:
     """Normalise a relative import spec (`./x`, `../y/z`) against the
     importing file's directory into a repo-relative path, without touching
@@ -246,9 +285,16 @@ def _regex_parse(text: str, rel: str, suffix: str):
                     "const" if g["var"] else "function")
             yield ("sym", name, kind, line_no)
         for m in JS_IMPORT_RE.finditer(text):
-            spec = m.group(1)
-            if spec.startswith("."):  # relative → repo path
-                yield ("imp", _rel_to_repo(rel, spec))
+            target = _web_spec(rel, m.group(1))
+            if target:
+                yield ("imp", target)
+    elif suffix in WEB_EXT:
+        # markup defines no symbols; it only wires files together
+        pattern = CSS_IMPORT_RE if suffix == ".css" else HTML_IMPORT_RE
+        for m in pattern.finditer(text):
+            target = _web_spec(rel, m.group(1), bare_is_path=True)
+            if target:
+                yield ("imp", target)
     elif suffix in GO_EXT:
         for m in GO_SYMBOL_RE.finditer(text):
             yield ("sym", m.group(1), "function", _line(text, m.start()))
