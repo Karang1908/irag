@@ -77,11 +77,34 @@ HTML_IMPORT_RE = re.compile(
     r"""<[a-zA-Z][^>]*?\s(?:src|href)\s*=\s*['"]([^'"]+)['"]""", re.S)
 CSS_IMPORT_RE = re.compile(
     r"""@import\s+(?:url\()?\s*['"]([^'"]+)['"]""")
-GO_SYMBOL_RE = re.compile(r"^func\s+(?:\([^)]*\)\s+)?(\w+)\s*\(", re.M)
+# `[...]` is the type-parameter list: without it every generic function
+# (Go 1.18+) went unindexed, because the name is not followed by `(`.
+GO_SYMBOL_RE = re.compile(
+    r"^func\s+(?:\([^)]*\)\s+)?(\w+)\s*(?:\[[^\]]*\]\s*)?\(", re.M)
+# Go declared no types at all: `type Server struct` and `type Handler
+# interface` were invisible, so `irag map` showed a Go package as nothing
+# but functions — while CLAUDE.md tells agents that map is parsed from the
+# code and always current. Covers grouped declarations too, where the
+# keyword appears once and the names are indented beneath it.
+GO_TYPE_RE = re.compile(
+    r"^type\s+(\w+)|^\s+(\w+)\s+(?:struct|interface)\s*\{", re.M)
+GO_CONST_RE = re.compile(r"^(?:const|var)\s+(\w+)", re.M)
+# `async`, `unsafe`, `const` and `extern "C"` all sit between `pub` and
+# `fn`; without them every async method in a Rust codebase was unindexed,
+# which is most of the API surface in anything doing I/O.
 RS_SYMBOL_RE = re.compile(
-    r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:fn\s+(\w+)|struct\s+(\w+)|enum\s+(\w+)|trait\s+(\w+))",
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?"
+    r"(?:(?:default|const|async|unsafe|extern(?:\s+\"[^\"]*\")?)\s+)*"
+    r"(?:fn\s+(\w+)|struct\s+(\w+)|enum\s+(\w+)|trait\s+(\w+))",
     re.M,
 )
+# `pub const LIMIT`, `static GLOBAL`, `type Alias = ...` are API surface a
+# caller can name, and none of them were indexed.
+RS_CONST_RE = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:const|static)\s+(?:mut\s+)?(\w+)\s*:",
+    re.M)
+RS_TYPE_ALIAS_RE = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?type\s+(\w+)\s*(?:<[^>]*>)?\s*=", re.M)
 
 # --- languages added by the graph-widening pass ---------------------
 # The phantom-symbol linter only ever flags a `name()` claim it can't
@@ -106,16 +129,32 @@ CS_TYPE_RE = re.compile(
     r"(?:class|interface|struct|enum|record)\s+(\w+)", re.M)
 CS_METHOD_RE = re.compile(
     r"^\s*(?:\[[^\]]*\]\s*)*[\w<>\[\].,?\s]*?\b(\w+)\s*\([^;{]*\)\s*\{", re.M)
+# auto-properties are public API a caller names, and were not indexed
+CS_PROPERTY_RE = re.compile(
+    r"^\s*(?:(?:public|private|protected|internal|static|virtual|override|"
+    r"abstract|readonly|required)\s+)+[\w<>\[\].,?]+\s+(\w+)\s*\{\s*"
+    r"(?:get|set|init)\b", re.M)
 
 # control-flow and expression keywords that the generic method regexes
 # above would otherwise capture as a method named e.g. `if` or `switch`
 _METHOD_SKIP = {"if", "for", "while", "switch", "return", "catch", "do",
                 "else", "new", "synchronized", "throw", "super", "this",
                 "assert", "yield", "lock", "using", "fixed", "await",
-                "instanceof", "sizeof"}
+                "instanceof", "sizeof",
+                # `public static implicit operator int(S s)` made the
+                # generic method pattern capture a symbol named `int`.
+                # A primitive type name is never a method name.
+                "int", "long", "short", "byte", "char", "bool", "boolean",
+                "float", "double", "void", "string", "object", "decimal",
+                "uint", "ulong", "ushort", "sbyte", "var", "operator"}
 
 RB_TYPE_RE = re.compile(r"^\s*(?:class|module)\s+([A-Z]\w*)", re.M)
-RB_METHOD_RE = re.compile(r"^\s*def\s+(?:self\.)?([A-Za-z_]\w*[?!=]?)", re.M)
+# `private def name` / `protected def name` are ordinary Ruby; anchoring
+# on `def` alone missed every method declared that way.
+RB_METHOD_RE = re.compile(
+    r"^\s*(?:(?:private|public|protected|module_function)\s+)?"
+    r"def\s+(?:self\.)?([A-Za-z_]\w*[?!=]?)", re.M)
+RB_CONST_RE = re.compile(r"^\s*([A-Z][A-Z0-9_]*)\s*=", re.M)
 RB_IMPORT_RE = re.compile(r"""require_relative\s+['"]([^'"]+)['"]""")
 
 PHP_TYPE_RE = re.compile(
@@ -123,6 +162,8 @@ PHP_TYPE_RE = re.compile(
 PHP_FUNC_RE = re.compile(
     r"^\s*(?:(?:public|private|protected|static|final|abstract)\s+)*"
     r"function\s+(\w+)", re.M)
+PHP_CONST_RE = re.compile(
+    r"^\s*(?:(?:public|private|protected|final)\s+)*const\s+(\w+)", re.M)
 PHP_IMPORT_RE = re.compile(
     r"""(?:require|require_once|include|include_once)\s*\(?\s*['"]([^'"]+)['"]""")
 
@@ -132,6 +173,9 @@ C_FUNC_RE = re.compile(
     r"^[A-Za-z_][\w\s\*&:<>,]*?\b(\w+)\s*\([^;{]*\)\s*(?:const\s*)?"
     r"(?:noexcept\s*)?\{", re.M)
 C_INCLUDE_RE = re.compile(r'^\s*#\s*include\s+"([^"]+)"', re.M)
+# object-like and function-like macros are the names a caller actually
+# writes in C; without them a page naming one looked like a phantom symbol
+C_DEFINE_RE = re.compile(r"^\s*#\s*define\s+(\w+)", re.M)
 # words that C_FUNC_RE would otherwise mistake for a function name
 _C_KEYWORDS = {"if", "for", "while", "switch", "return", "sizeof", "catch",
                "do", "else", "defined", "static_assert", "typeof", "and",
@@ -298,11 +342,21 @@ def _regex_parse(text: str, rel: str, suffix: str):
     elif suffix in GO_EXT:
         for m in GO_SYMBOL_RE.finditer(text):
             yield ("sym", m.group(1), "function", _line(text, m.start()))
+        for m in GO_TYPE_RE.finditer(text):
+            name = m.group(1) or m.group(2)
+            if name:
+                yield ("sym", name, "type", _line(text, m.start()))
+        for m in GO_CONST_RE.finditer(text):
+            yield ("sym", m.group(1), "const", _line(text, m.start()))
     elif suffix in RS_EXT:
         for m in RS_SYMBOL_RE.finditer(text):
             name = next(g for g in m.groups() if g)
             kind = "function" if m.group(1) else "type"
             yield ("sym", name, kind, _line(text, m.start()))
+        for m in RS_CONST_RE.finditer(text):
+            yield ("sym", m.group(1), "const", _line(text, m.start()))
+        for m in RS_TYPE_ALIAS_RE.finditer(text):
+            yield ("sym", m.group(1), "type", _line(text, m.start()))
     elif suffix in JAVA_EXT:
         for m in JAVA_TYPE_RE.finditer(text):
             yield ("sym", m.group(1), "class", _line(text, m.start()))
@@ -318,11 +372,15 @@ def _regex_parse(text: str, rel: str, suffix: str):
         for m in CS_METHOD_RE.finditer(text):
             if m.group(1) not in _METHOD_SKIP:
                 yield ("sym", m.group(1), "method", _line(text, m.start()))
+        for m in CS_PROPERTY_RE.finditer(text):
+            yield ("sym", m.group(1), "const", _line(text, m.start()))
     elif suffix in RB_EXT:
         for m in RB_TYPE_RE.finditer(text):
             yield ("sym", m.group(1), "class", _line(text, m.start()))
         for m in RB_METHOD_RE.finditer(text):
             yield ("sym", m.group(1), "method", _line(text, m.start()))
+        for m in RB_CONST_RE.finditer(text):
+            yield ("sym", m.group(1), "const", _line(text, m.start()))
         for m in RB_IMPORT_RE.finditer(text):
             yield ("imp", _rel_to_repo(rel, m.group(1)))
     elif suffix in PHP_EXT:
@@ -330,6 +388,8 @@ def _regex_parse(text: str, rel: str, suffix: str):
             yield ("sym", m.group(1), "class", _line(text, m.start()))
         for m in PHP_FUNC_RE.finditer(text):
             yield ("sym", m.group(1), "function", _line(text, m.start()))
+        for m in PHP_CONST_RE.finditer(text):
+            yield ("sym", m.group(1), "const", _line(text, m.start()))
         for m in PHP_IMPORT_RE.finditer(text):
             spec = m.group(1)
             if spec.startswith("."):
@@ -342,6 +402,8 @@ def _regex_parse(text: str, rel: str, suffix: str):
             if name in _C_KEYWORDS:
                 continue   # `if (...) {`, `while (...) {`, ... are not funcs
             yield ("sym", name, "function", _line(text, m.start()))
+        for m in C_DEFINE_RE.finditer(text):
+            yield ("sym", m.group(1), "const", _line(text, m.start()))
         for m in C_INCLUDE_RE.finditer(text):
             yield ("imp", _rel_to_repo(rel, m.group(1)))
 

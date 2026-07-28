@@ -1291,4 +1291,82 @@ done
 rm -rf "$IM"
 echo "impact fails closed on untracked paths ok"
 
+# --- non-Python symbol coverage ----------------------------------------
+# `irag map` is documented to agents as parsed from the code and always
+# current, so a whole category missing from it is a silent lie. Go had no
+# type extraction at all; Rust skipped async/const/static/type-alias; Ruby
+# skipped `private def` and constants; PHP and C skipped const/#define;
+# C# skipped properties AND captured a phantom symbol named `int`.
+LG=$(mktemp -d); mkdir -p "$LG/src"
+cat > "$LG/src/main.go" <<'GOEOF'
+package main
+type Server struct { port int }
+type Handler interface { Serve() error }
+const MaxConn = 100
+func NewServer(p int) *Server { return nil }
+func generic[T any](x T) {}
+GOEOF
+cat > "$LG/src/lib.rs" <<'RSEOF'
+pub struct Config { pub name: String }
+pub const LIMIT: u32 = 10;
+pub type Alias = String;
+impl Config {
+    pub async fn fetch(&self) -> u32 { 0 }
+}
+RSEOF
+cat > "$LG/src/app.rb" <<'RBEOF'
+class Session
+  MAX_AGE = 3600
+  private def hidden; end
+end
+RBEOF
+cat > "$LG/src/svc.php" <<'PHPEOF'
+<?php
+class Service {
+    const VERSION = "1.0";
+    public function run() {}
+}
+PHPEOF
+cat > "$LG/src/core.c" <<'CEOF'
+#define MACRO_THING 42
+int add(int a, int b) { return a + b; }
+CEOF
+cat > "$LG/src/Svc.cs" <<'CSEOF'
+public class Service {
+    public int Count { get; set; }
+    public static implicit operator int(Service s) { return 0; }
+}
+CSEOF
+( cd "$LG" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 \
+  && python3 -m irag scan >/dev/null 2>&1 )
+( cd "$LG" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db
+conn = db.connect(pathlib.Path(".irag/memory.db"))
+def names(f):
+    return {r["name"] for r in conn.execute(
+        "SELECT name FROM symbols WHERE file=?", (f,))}
+want = {
+    "src/main.go": {"Server", "Handler", "MaxConn", "NewServer", "generic"},
+    "src/lib.rs": {"Config", "LIMIT", "Alias", "fetch"},
+    "src/app.rb": {"Session", "MAX_AGE", "hidden"},
+    "src/svc.php": {"Service", "VERSION", "run"},
+    "src/core.c": {"MACRO_THING", "add"},
+    "src/Svc.cs": {"Service", "Count"},
+}
+for f, expected in want.items():
+    got = names(f)
+    missing = expected - got
+    assert not missing, f"{f}: symbols not indexed: {sorted(missing)} (got {sorted(got)})"
+# a primitive type name is never a symbol
+bad = names("src/Svc.cs") & {"int", "operator", "void", "string"}
+assert not bad, f"phantom symbols captured from C#: {sorted(bad)}"
+PYEOF
+) || { echo "FAIL: non-Python symbol coverage"; rm -rf "$LG"; exit 1; }
+rm -rf "$LG"
+echo "non-python symbol coverage (go/rust/ruby/php/c/c#) ok"
+
 echo "SMOKE TEST PASSED"

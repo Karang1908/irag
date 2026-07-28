@@ -910,6 +910,11 @@ def cmd_brief(args) -> int:
         subject = ((payload.get("tool_input") or {}).get("file_path") or "")
         if not subject:
             return 0
+    if not str(subject).strip():
+        # an empty path resolved to "." and reported on the repo root
+        if not args.quiet:
+            print("irag: brief needs a file path")
+        return 0
     conn, cfg, root = _open()
     try:
         subject = str(Path(subject).resolve().relative_to(root.resolve()))
