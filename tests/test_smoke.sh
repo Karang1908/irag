@@ -1018,4 +1018,60 @@ fi
 rm -rf "$SK"
 echo "stuck-page detection + recovery ok"
 
+# --- resolutions survive re-synthesis -----------------------------------
+# Dedup only matched OPEN rows, so resolving a contradiction hid it from
+# the check and the next lint re-raised the identical claim under a new id.
+# An agent whose judgement is overturned every update learns to ignore the
+# linter wholesale. Manual dismissals must stick; auto-resolutions must NOT,
+# or a real regression would be silently suppressed.
+RS=$(mktemp -d); mkdir -p "$RS/src"
+printf 'def login():\n    pass\n' > "$RS/src/auth.py"
+( cd "$RS" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 )
+python3 - "$IRAG_SRC" "$RS" << 'PYEOF'
+import sys, pathlib
+cfg = pathlib.Path(sys.argv[2], ".irag/config.toml"); t = cfg.read_text()
+cfg.write_text(t.replace(
+    'command = "claude -p"       # prompt on stdin, markdown on stdout',
+    f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"'))
+PYEOF
+( cd "$RS" && python3 -m irag update >/dev/null 2>&1 ) || true
+( cd "$RS" && python3 -m irag contradictions | grep -q "OPEN" ) \
+  || { echo "FAIL: expected a contradiction to lint against"; rm -rf "$RS"; exit 1; }
+CID=$( cd "$RS" && python3 -m irag contradictions --json \
+       | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["contradiction_id"])' )
+( cd "$RS" && python3 -m irag resolve "$CID" --notes "false positive" >/dev/null 2>&1 )
+# Assert on what lint() RETURNS (contradictions added). Checking the open
+# set instead would be masked by the connect-time upgrade cleanup in db.py,
+# which closes duplicates on the next connect — that made an earlier version
+# of this guard pass even with the suppression removed.
+( cd "$RS" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, linter
+root = pathlib.Path.cwd()
+conn = db.connect(root / ".irag" / "memory.db"); cfg = config.load(root)
+row = conn.execute(
+    "SELECT page_id, claim, ctype FROM contradictions "
+    "WHERE resolution_kind='manual' LIMIT 1").fetchone()
+assert row, "test setup: expected a manually resolved contradiction"
+added = linter.lint(conn, cfg, root)
+assert added == 0, (
+    f"re-lint re-raised {added} contradiction(s) after a human dismissed "
+    "them; per-ID resolution is being defeated by re-synthesis")
+assert linter._dismissed_claim(conn, row["page_id"], row["claim"],
+                               row["ctype"]), "manual dismissal not honoured"
+# an AUTO-resolved claim must stay re-raisable, or real regressions hide
+conn.execute("UPDATE contradictions SET resolution_kind='auto' "
+             "WHERE page_id=? AND claim=?", (row["page_id"], row["claim"]))
+conn.commit()
+assert not linter._dismissed_claim(conn, row["page_id"], row["claim"],
+                                   row["ctype"]), \
+    "an auto-resolved claim was treated as dismissed — regressions would hide"
+PYEOF
+) || { echo "FAIL: resolutions must survive re-synthesis"; rm -rf "$RS"; exit 1; }
+rm -rf "$RS"
+echo "resolutions survive re-synthesis ok"
+
 echo "SMOKE TEST PASSED"

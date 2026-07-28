@@ -211,10 +211,35 @@ def _existing_open_claim(conn, page_id: int, claim: str) -> bool:
     ).fetchone() is not None
 
 
+def _dismissed_claim(conn, page_id: int, claim: str, ctype: str) -> bool:
+    """A human already judged this exact claim on this page spurious.
+
+    Dedup alone only matched OPEN rows, so resolving a contradiction hid it
+    from the check and the next lint re-raised an identical claim under a
+    new id. Per-ID resolution was therefore defeated by re-synthesis, and
+    an agent that watches its judgment get overturned every update learns
+    to ignore the linter wholesale — which costs far more than the original
+    false positive.
+
+    Only MANUAL resolutions dismiss. An auto-resolved claim (one that
+    stopped failing on its own) must be free to re-raise: that is a real
+    regression, not a settled question. A re-synthesis that changes the
+    claim's wording also re-raises, since the fingerprint is the text.
+    """
+    return conn.execute(
+        "SELECT 1 FROM contradictions "
+        "WHERE page_id=? AND claim=? AND ctype=? "
+        "AND resolved_at IS NOT NULL AND resolution_kind='manual'",
+        (page_id, claim, ctype),
+    ).fetchone() is not None
+
+
 def _insert(conn, page_id: int, revision_id: int, claim: str, truth: str,
             ctype: str, severity: str, check: str,
             detector: str = "static") -> bool:
     if _existing_open_claim(conn, page_id, claim):
+        return False
+    if _dismissed_claim(conn, page_id, claim, ctype):
         return False
     conn.execute(
         "INSERT INTO contradictions(page_id, revision_id, claim, truth, ctype, "
@@ -394,7 +419,8 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
             if row["claim"] not in failing:
                 conn.execute(
                     "UPDATE contradictions SET resolved_at=datetime('now'), "
-                    "resolution_notes='auto-resolved: claim no longer fails' "
+                    "resolution_notes='auto-resolved: claim no longer fails', "
+                    "resolution_kind='auto' "
                     "WHERE contradiction_id=?",
                     (row["contradiction_id"],),
                 )
@@ -413,7 +439,8 @@ def resolve(conn: sqlite3.Connection, contradiction_id: int,
         raise SystemExit(f"irag: no contradiction with id {contradiction_id}")
     conn.execute(
         "UPDATE contradictions SET resolved_at=datetime('now'), "
-        "resolution_notes=? WHERE contradiction_id=?",
+        "resolution_notes=?, resolution_kind='manual' "
+        "WHERE contradiction_id=?",
         (notes, contradiction_id),
     )
     conn.commit()
@@ -484,7 +511,8 @@ def lint_llm(conn: sqlite3.Connection, cfg: dict, repo: Path,
             if row["claim"] not in flagged:
                 conn.execute(
                     "UPDATE contradictions SET resolved_at=datetime('now'), "
-                    "resolution_notes='auto-resolved: LLM no longer flags it' "
+                    "resolution_notes='auto-resolved: LLM no longer flags it', "
+                    "resolution_kind='auto' "
                     "WHERE contradiction_id=?", (row["contradiction_id"],))
     conn.commit()
     return added

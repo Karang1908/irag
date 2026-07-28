@@ -89,7 +89,11 @@ CREATE TABLE IF NOT EXISTS contradictions (
   detected_by      TEXT,
   detected_at      TEXT DEFAULT (datetime('now')),
   resolved_at      TEXT,
-  resolution_notes TEXT
+  resolution_notes TEXT,
+  -- 'manual' (a human judged the flag spurious) | 'auto' (the claim simply
+  -- stopped failing). Only manual resolutions suppress a re-raise: an
+  -- auto-resolved claim that starts failing again is a real regression.
+  resolution_kind  TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_contradictions_open
   ON contradictions(page_id) WHERE resolved_at IS NULL;
@@ -244,6 +248,28 @@ def ensure_db(db_path: Path) -> sqlite3.Connection:
     # and no owner. Stamping the writer lets a session report only its own.
     _add_column_if_missing(conn, "events", "session_key", "TEXT")
     _add_column_if_missing(conn, "revisions", "session_key", "TEXT")
+    _add_column_if_missing(conn, "contradictions", "resolution_kind", "TEXT")
+    # Backfill resolutions made before the column existed, so upgrading does
+    # not silently discard every judgement a human already made. The auto
+    # paths write a fixed sentinel note; anything else was a person typing.
+    conn.execute(
+        "UPDATE contradictions SET resolution_kind = CASE "
+        "  WHEN COALESCE(resolution_notes,'') LIKE 'auto-resolved:%' "
+        "  THEN 'auto' ELSE 'manual' END "
+        "WHERE resolved_at IS NOT NULL AND resolution_kind IS NULL")
+    # Close the duplicates the old behaviour already spawned: rows that are
+    # open only because re-synthesis re-raised a claim the human had dismissed.
+    # Without this, upgrading fixes the future but leaves the existing pile.
+    conn.execute(
+        "UPDATE contradictions SET resolved_at=datetime('now'), "
+        "resolution_kind='manual', "
+        "resolution_notes='auto-closed on upgrade: duplicate of a claim you "
+        "already resolved' "
+        "WHERE resolved_at IS NULL AND EXISTS ("
+        "  SELECT 1 FROM contradictions d WHERE d.page_id=contradictions.page_id"
+        "    AND d.claim=contradictions.claim AND d.ctype=contradictions.ctype"
+        "    AND d.resolved_at IS NOT NULL AND d.resolution_kind='manual')")
+    conn.commit()
     _ensure_unique_revisions_index(conn)
     return conn
 
