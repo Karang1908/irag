@@ -526,6 +526,24 @@ def sweep(conn, cfg, repo: Path, dry_run: bool = False,
     return done
 
 
+def stalled_subjects(conn) -> list[str]:
+    """Subjects whose page carries queued events but zero staleness.
+
+    That combination is self-contradictory: queuing an event always bumps
+    the page (see ingest._queue_file_event), and only writing a revision
+    resets the score to 0. A page in this state has had its change recorded
+    and then zeroed without the event being consumed, so it will never
+    reach the threshold again — the memory is stale and no amount of
+    're-running update' will fix it. Reported loudly rather than folded
+    into 'nothing pending', which reads as success.
+    """
+    return [r["subject_id"] for r in conn.execute(
+        "SELECT DISTINCT e.subject_id FROM events e "
+        "JOIN pages p ON p.subject_id = e.subject_id "
+        "WHERE e.status='queued' AND p.pinned=0 AND p.staleness_score=0 "
+        "ORDER BY e.subject_id")]
+
+
 def _explain_nothing_pending(conn, cfg) -> None:
     threshold = int(cfg["staleness"]["threshold"])
     queued = conn.execute("SELECT COUNT(*) c FROM events "
@@ -542,6 +560,19 @@ def _explain_nothing_pending(conn, cfg) -> None:
         print("the event queue is empty (all changes already synthesized). "
               "New changes land automatically; check 'irag stale'.")
     else:
+        stalled = stalled_subjects(conn)
+        if stalled:
+            print(f"{queued} queued event(s) exist and "
+                  f"{len(stalled)} page(s) are STUCK: they carry a queued "
+                  "change but zero staleness, so they can never become due. "
+                  "The memory for these is stale and re-running update will "
+                  "not fix it — force them with "
+                  f"'irag synthesize --subject {stalled[0]}'.")
+            for s in stalled[:8]:
+                print(f"  stuck: {s}")
+            if len(stalled) > 8:
+                print(f"  +{len(stalled) - 8} more")
+            return
         print(f"{queued} queued event(s) exist but no unpinned page has "
               f"reached the staleness threshold ({max_stale}/{threshold}). "
               "Force one with 'irag synthesize --subject <path>' or lower "

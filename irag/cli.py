@@ -575,6 +575,15 @@ def cmd_update(args) -> int:
     print(f"lint       : {new_contras} new, {open_contras} open "
           "contradiction(s)")
     print(f"update done: {done} page version(s) written")
+    # CLAUDE.md tells agents "a redundant run is free" and to move on after
+    # update. A page holding a queued change it can never act on turns that
+    # correct advice into a silent staleness leak, so it must not exit 0.
+    stalled = synthesis.stalled_subjects(conn)
+    if stalled:
+        print(f"WARNING    : {len(stalled)} page(s) have a queued change "
+              "but zero staleness — memory for them is stale and will NOT "
+              "self-heal. Run 'irag synthesize --subject <path>' for each.")
+        return 1
     return 0
 
 

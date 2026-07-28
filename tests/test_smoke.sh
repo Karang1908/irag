@@ -973,4 +973,49 @@ PYEOF
 rm -rf "$WD"
 echo "web dep edges (html/css/dynamic import) ok"
 
+# --- stuck pages must not report success --------------------------------
+# A page holding a queued change with zero staleness can never become due:
+# the change is recorded, then zeroed, and 'irag update' would print
+# "update done: 0" and exit 0 forever while memory rots. CLAUDE.md tells
+# agents a redundant update is free and to move on, so this must exit 1.
+SK=$(mktemp -d); mkdir -p "$SK/src"
+printf 'def a(): return 1\n' > "$SK/src/a.py"
+( cd "$SK" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 )
+python3 - "$IRAG_SRC" "$SK" << 'PYEOF'
+import sys, pathlib
+cfg = pathlib.Path(sys.argv[2], ".irag/config.toml"); t = cfg.read_text()
+cfg.write_text(t.replace(
+    'command = "claude -p"       # prompt on stdin, markdown on stdout',
+    f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"'))
+PYEOF
+( cd "$SK" && python3 -m irag update >/dev/null 2>&1 ) || true
+# a healthy repo must still exit 0 (guards against a false positive)
+( cd "$SK" && python3 -m irag update >/dev/null 2>&1 ) \
+  || { echo "FAIL: update exits non-zero on a healthy repo"; rm -rf "$SK"; exit 1; }
+( cd "$SK" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db
+conn = db.connect(pathlib.Path(".irag/memory.db"))
+conn.execute("INSERT INTO events(event_type, source_ref, subject_id, payload)"
+             " VALUES('commit','stuckref','src/a.py','{}')")
+conn.execute("UPDATE pages SET staleness_score=0 WHERE subject_id='src/a.py'")
+conn.commit()
+PYEOF
+)
+if ( cd "$SK" && python3 -m irag update >/dev/null 2>&1 ); then
+  echo "FAIL: update reported success while a page was stuck"; rm -rf "$SK"; exit 1
+fi
+( cd "$SK" && python3 -m irag update 2>&1 | grep -q "STUCK" ) \
+  || { echo "FAIL: stuck page not named in output"; rm -rf "$SK"; exit 1; }
+# the recovery it recommends must actually clear the state
+( cd "$SK" && python3 -m irag synthesize --subject src/a.py >/dev/null 2>&1 \
+  && python3 -m irag update >/dev/null 2>&1 ) \
+  || { echo "FAIL: recommended recovery did not clear the stuck page"; \
+       rm -rf "$SK"; exit 1; }
+rm -rf "$SK"
+echo "stuck-page detection + recovery ok"
+
 echo "SMOKE TEST PASSED"
