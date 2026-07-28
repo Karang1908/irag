@@ -529,12 +529,22 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
 
 
 def resolve(conn: sqlite3.Connection, contradiction_id: int,
-            notes: str | None = None) -> None:
-    """Mark a contradiction resolved."""
+            notes: str | None = None) -> sqlite3.Row:
+    """Dismiss a contradiction as a false positive.
+
+    This marks the FLAG wrong, not the page. The summary text is never
+    touched — a page that really does say something untrue is fixed by
+    re-running `irag update`, which rewrites it from current code. And
+    because a manual dismissal now permanently suppresses that claim
+    (otherwise re-synthesis resurrected it under a new id), dismissing a
+    genuine error silences it for good while leaving the wrong text in
+    place. Callers are expected to say so; `undo` exists for when it
+    happens anyway.
+    """
     row = conn.execute(
-        "SELECT 1 FROM contradictions WHERE contradiction_id=?",
-        (contradiction_id,),
-    ).fetchone()
+        "SELECT c.*, p.subject_id FROM contradictions c "
+        "JOIN pages p ON p.page_id = c.page_id "
+        "WHERE c.contradiction_id=?", (contradiction_id,)).fetchone()
     if not row:
         raise SystemExit(f"irag: no contradiction with id {contradiction_id}")
     conn.execute(
@@ -544,6 +554,29 @@ def resolve(conn: sqlite3.Connection, contradiction_id: int,
         (notes, contradiction_id),
     )
     conn.commit()
+    return row
+
+
+def undo_resolve(conn: sqlite3.Connection, contradiction_id: int) -> sqlite3.Row:
+    """Reopen a dismissed contradiction.
+
+    A manual dismissal is permanent by design, so without this the only way
+    back from a mis-click is editing the database by hand.
+    """
+    row = conn.execute(
+        "SELECT c.*, p.subject_id FROM contradictions c "
+        "JOIN pages p ON p.page_id = c.page_id "
+        "WHERE c.contradiction_id=?", (contradiction_id,)).fetchone()
+    if not row:
+        raise SystemExit(f"irag: no contradiction with id {contradiction_id}")
+    if row["resolved_at"] is None:
+        raise SystemExit(
+            f"irag: contradiction {contradiction_id} is already open")
+    conn.execute(
+        "UPDATE contradictions SET resolved_at=NULL, resolution_notes=NULL, "
+        "resolution_kind=NULL WHERE contradiction_id=?", (contradiction_id,))
+    conn.commit()
+    return row
 
 
 def lint_llm(conn: sqlite3.Connection, cfg: dict, repo: Path,

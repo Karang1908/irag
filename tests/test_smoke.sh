@@ -1397,4 +1397,76 @@ PYEOF
 rm -rf "$LG"
 echo "non-python symbol coverage (go/rust/ruby/php/c/c#) ok"
 
+# --- dismissing a flag never edits the page, and is reversible ----------
+# `resolve` marks the CHECK wrong, not the page — and since a manual
+# dismissal permanently suppresses the claim, dismissing a genuine error
+# would silence it forever with the wrong sentence still in the summary.
+# So: the body must be untouched, suppression must hold, and undo must
+# restore the claim to raisable.
+RV=$(mktemp -d); mkdir -p "$RV/src"
+printf 'def login():\n    pass\n' > "$RV/src/auth.py"
+( cd "$RV" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 )
+python3 - "$IRAG_SRC" "$RV" << 'PYEOF'
+import sys, pathlib
+cfg = pathlib.Path(sys.argv[2], ".irag/config.toml"); t = cfg.read_text()
+cfg.write_text(t.replace(
+    'command = "claude -p"       # prompt on stdin, markdown on stdout',
+    f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"'))
+PYEOF
+( cd "$RV" && python3 -m irag update >/dev/null 2>&1 ) || true
+( cd "$RV" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, linter
+root = pathlib.Path.cwd()
+conn = db.connect(root / ".irag" / "memory.db"); cfg = config.load(root)
+
+def body():
+    r = conn.execute(
+        "SELECT r.body_markdown b FROM pages p "
+        "JOIN revisions r ON r.revision_id = p.current_revision_id "
+        "WHERE p.subject_id='src/auth.py'").fetchone()
+    return r["b"] if r else ""
+
+def versions():
+    return conn.execute(
+        "SELECT COUNT(*) n FROM revisions r JOIN pages p "
+        "ON p.page_id=r.page_id WHERE p.subject_id='src/auth.py'"
+    ).fetchone()["n"]
+
+row = conn.execute("SELECT contradiction_id, claim FROM contradictions "
+                   "WHERE resolved_at IS NULL LIMIT 1").fetchone()
+assert row, "test setup: expected an open contradiction"
+cid = row["contradiction_id"]
+before, nbefore = body(), versions()
+linter.resolve(conn, cid, notes="spurious")
+assert body() == before, "dismissing a flag rewrote the page body"
+assert versions() == nbefore, "dismissing a flag wrote a new revision"
+assert linter._dismissed_claim(
+    conn, conn.execute("SELECT page_id FROM contradictions WHERE "
+                       "contradiction_id=?", (cid,)).fetchone()["page_id"],
+    row["claim"],
+    conn.execute("SELECT ctype FROM contradictions WHERE contradiction_id=?",
+                 (cid,)).fetchone()["ctype"]), "dismissal did not suppress"
+# undo restores it to raisable
+linter.undo_resolve(conn, cid)
+pid = conn.execute("SELECT page_id, ctype FROM contradictions WHERE "
+                   "contradiction_id=?", (cid,)).fetchone()
+assert not linter._dismissed_claim(conn, pid["page_id"], row["claim"],
+                                   pid["ctype"]), \
+    "undo left the claim suppressed — a mis-click would be unrecoverable"
+assert conn.execute("SELECT resolved_at FROM contradictions WHERE "
+                    "contradiction_id=?", (cid,)).fetchone()["resolved_at"] is None
+try:
+    linter.undo_resolve(conn, cid)
+    raise AssertionError("undo on an already-open contradiction should fail")
+except SystemExit:
+    pass
+PYEOF
+) || { echo "FAIL: dismiss/undo semantics"; rm -rf "$RV"; exit 1; }
+rm -rf "$RV"
+echo "dismiss never edits the page + undo restores ok"
+
 echo "SMOKE TEST PASSED"

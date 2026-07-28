@@ -481,10 +481,18 @@ def make_handler(state: _State):
                     return self._json({"mode": "ai", "answer": answer})
                 if url.path == "/api/resolve":
                     cid = int(data.get("id", 0))
-                    linter.resolve(conn, cid,
-                                   notes=data.get("notes") or
-                                   "resolved from dashboard")
-                    return self._json({"ok": True})
+                    if data.get("undo"):
+                        row = linter.undo_resolve(conn, cid)
+                        return self._json({"ok": True, "undone": True,
+                                           "subject": row["subject_id"]})
+                    row = linter.resolve(conn, cid,
+                                         notes=data.get("notes") or
+                                         "dismissed from dashboard")
+                    # the caller shows this: dismissing marks the flag
+                    # wrong, and never edits the page it was raised on
+                    return self._json({"ok": True, "subject": row["subject_id"],
+                                       "claim": row["claim"],
+                                       "page_unchanged": True})
                 if url.path == "/api/update":
                     # atomic check-and-set: two rapid POSTs must not both
                     # start a worker (they'd run sync/scan concurrently)

@@ -498,8 +498,21 @@ def cmd_contradictions(args) -> int:
 
 def cmd_resolve(args) -> int:
     conn, _, _ = _open()
-    linter.resolve(conn, args.id, notes=args.notes)
-    print(f"resolved contradiction {args.id}")
+    if args.undo:
+        row = linter.undo_resolve(conn, args.id)
+        print(f"reopened contradiction {args.id} on {row['subject_id']}")
+        print(f"    claim: {row['claim']}")
+        return 0
+    row = linter.resolve(conn, args.id, notes=args.notes)
+    print(f"dismissed contradiction {args.id} on {row['subject_id']} "
+          "as a false positive")
+    # Dismissing marks the FLAG wrong. Saying so matters more now that a
+    # manual dismissal permanently suppresses the claim: dismissing a real
+    # error silences it for good and leaves the wrong sentence in the page.
+    print(f"    the page text is UNCHANGED — it still says: "
+          f"{(row['claim'] or '')[:70]}")
+    print(f"    if the page is what's wrong, run 'irag update' instead "
+          f"(and 'irag resolve {args.id} --undo' to reopen this)")
     return 0
 
 
@@ -1456,9 +1469,13 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--json", action="store_true")
     sp.set_defaults(func=cmd_contradictions)
 
-    sp = sub.add_parser("resolve", help="resolve a contradiction")
+    sp = sub.add_parser("resolve", help="dismiss a contradiction as a false "
+                                        "positive (does NOT edit the page — "
+                                        "run 'update' for that)")
     sp.add_argument("id", type=int)
     sp.add_argument("--notes")
+    sp.add_argument("--undo", action="store_true",
+                    help="reopen a contradiction dismissed by mistake")
     sp.set_defaults(func=cmd_resolve)
 
     sub.add_parser("stale", help="show staleness scores").set_defaults(
