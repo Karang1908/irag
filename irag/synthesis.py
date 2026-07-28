@@ -259,6 +259,38 @@ def _event_messages(events) -> list[str]:
     return out
 
 
+def _touched_symbols(conn, subject_id: str, diff: str) -> list[str]:
+    """Indexed symbols whose definition line falls inside a changed hunk.
+
+    A three-line change made the model rewrite every paragraph of the page,
+    including descriptions of functions the diff never went near — which is
+    both wasteful and how accurate prose gets churned into different but
+    no better prose. Naming the touched symbols lets it hold the rest
+    still. Best-effort: an unparsable hunk header just yields nothing.
+    """
+    import re
+    ranges: list[tuple[int, int]] = []
+    for m in re.finditer(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@",
+                         diff, re.M):
+        start = int(m.group(1))
+        length = int(m.group(2) or 1)
+        ranges.append((start, start + max(length, 1)))
+    if not ranges:
+        return []
+    try:
+        rows = conn.execute(
+            "SELECT name, line FROM symbols WHERE file=? AND line IS NOT NULL",
+            (subject_id,)).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    out = []
+    for r in rows:
+        line = r["line"] or 0
+        if any(lo <= line <= hi for lo, hi in ranges) and r["name"] not in out:
+            out.append(r["name"])
+    return out
+
+
 def build_file_prompt(conn, cfg, page, repo: Path):
     events = _queued_events(conn, page["subject_id"])
     parts = [FILE_INSTRUCTION, "", f"FILE: {page['subject_id']}", ""]
@@ -287,6 +319,12 @@ def build_file_prompt(conn, cfg, page, repo: Path):
         parts += [f"CODE DIFF since the last synthesis (first {DIFF_CAP} "
                   "chars) — this is what ACTUALLY changed; base '## Recent "
                   "changes' and CHANGE-SUMMARY on it:", diff, ""]
+        touched = _touched_symbols(conn, page["subject_id"], diff)
+        if touched:
+            parts += ["SYMBOLS THE DIFF TOUCHED — rewrite the page as a "
+                      "whole, but change only what these affect; leave "
+                      "descriptions of everything else as they are: "
+                      + ", ".join(f"`{s}`" for s in touched[:20]), ""]
     fpath = repo / page["subject_id"]
     if fpath.is_file():
         try:
