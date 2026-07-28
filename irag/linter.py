@@ -45,6 +45,101 @@ def _pinned(spec: str) -> str | None:
     return spec if re.match(r"^\d+\.\d+", spec) else None
 
 
+def _package_names(repo: Path) -> tuple[set[str], tuple[str, ...]]:
+    """Declared third-party package names, and import-map path prefixes.
+
+    `three/addons/controls/OrbitControls.js` is a bare specifier resolved
+    through an <script type="importmap"> to a CDN — it is not a repo file
+    and must never be reported missing. _read_manifest_versions only keeps
+    entries pinned to a single version, so a normal `"three": "^0.160.0"`
+    range is absent from it and cannot be used for this.
+
+    Returns (names, prefixes): names are matched against the first path
+    segment (two, for @scoped packages); prefixes are import-map keys that
+    end in "/" and are matched against the whole specifier.
+    """
+    names: set[str] = set()
+    prefixes: list[str] = []
+    pkg = repo / "package.json"
+    if pkg.is_file():
+        try:
+            data = json.loads(pkg.read_text(encoding="utf-8"))
+            for section in ("dependencies", "devDependencies",
+                            "peerDependencies", "optionalDependencies"):
+                names.update((data.get(section) or {}).keys())
+        except (json.JSONDecodeError, OSError):
+            pass
+    for line in _requirements_names(repo):
+        names.add(line)
+    # import maps live in HTML; a project may have several
+    count = 0
+    for html in repo.rglob("*.htm*"):
+        if count >= 40:
+            break
+        count += 1
+        try:
+            text = html.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for m in re.finditer(
+                r"<script[^>]*type\s*=\s*['\"]importmap['\"][^>]*>(.*?)</script>",
+                text, re.S | re.I):
+            try:
+                imports = (json.loads(m.group(1)) or {}).get("imports") or {}
+            except json.JSONDecodeError:
+                continue
+            for key in imports:
+                if key.endswith("/"):
+                    prefixes.append(key)
+                else:
+                    names.add(key)
+    nm = repo / "node_modules"
+    if nm.is_dir():
+        try:
+            for entry in nm.iterdir():
+                if not entry.is_dir():
+                    continue
+                if entry.name.startswith("@"):
+                    names.update(f"{entry.name}/{s.name}"
+                                 for s in entry.iterdir() if s.is_dir())
+                elif not entry.name.startswith("."):
+                    names.add(entry.name)
+        except OSError:
+            pass
+    return {n.lower() for n in names}, tuple(p.lower() for p in prefixes)
+
+
+def _requirements_names(repo: Path) -> list[str]:
+    """Package names from requirements.txt, pinned or not."""
+    req = repo / "requirements.txt"
+    if not req.is_file():
+        return []
+    out = []
+    try:
+        for line in req.read_text(encoding="utf-8").splitlines():
+            line = line.split("#")[0].split(";")[0].strip()
+            if not line or line.startswith("-"):
+                continue
+            name = re.split(r"[=<>!~\[]", line)[0].strip().lower()
+            if name:
+                out.append(name)
+    except OSError:
+        pass
+    return out
+
+
+def _is_package_spec(probe: str, names: set[str],
+                     prefixes: tuple[str, ...]) -> bool:
+    """True when probe resolves through a package manager / import map."""
+    low = probe.lower()
+    if any(low.startswith(p) for p in prefixes):
+        return True
+    parts = low.split("/")
+    if parts[0].startswith("@") and len(parts) >= 2:
+        return f"{parts[0]}/{parts[1]}" in names
+    return parts[0] in names
+
+
 def _read_manifest_versions(repo: Path) -> dict[str, str]:
     """Collect declared dependency versions from package.json and requirements.txt.
     Only entries pinning a single concrete version are returned; anything a
@@ -267,6 +362,7 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
     ).fetchall()
 
     manifest = _read_manifest_versions(repo)
+    pkg_names, pkg_prefixes = _package_names(repo)
     basenames = _basename_index(repo, cfg)
     added = 0
 
@@ -297,6 +393,10 @@ def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
             # A bare token with no separator may be a package, not a file:
             # `three.js`, `Next.js`, `Vue.js` all satisfy PATH_RE.
             if "/" not in probe and probe.rsplit(".", 1)[0].lower() in manifest:
+                continue
+            # `three/addons/controls/OrbitControls.js` is a bare specifier
+            # resolved by an import map or node_modules, not a repo file.
+            if _is_package_spec(probe, pkg_names, pkg_prefixes):
                 continue
             # ...or a real file referred to by name only, e.g. `store.ts`
             # living at src/store.ts. Say where it is instead of denying it.

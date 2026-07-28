@@ -86,6 +86,27 @@ def begin(conn: sqlite3.Connection, agent: str = "claude-code",
     return sid
 
 
+def _sole_session_in_window(conn, row) -> bool:
+    """True when no other session overlapped this one's lifetime.
+
+    Overlap is the only thing that makes an unowned write ambiguous. With a
+    single conversation in flight, a row stamped with a key no session
+    claims can only have come from that conversation's repo — crediting it
+    restores the diary without ever moving one agent's work onto another's.
+    """
+    try:
+        sid, started, ended = (row["session_id"], row["started_at"],
+                               row["ended_at"])
+    except (IndexError, KeyError):
+        return False
+    return conn.execute(
+        "SELECT COUNT(*) c FROM sessions "
+        "WHERE session_id != ? "
+        "  AND COALESCE(ended_at, datetime('now')) >= ? "
+        "  AND started_at <= COALESCE(?, datetime('now'))",
+        (sid, started, ended)).fetchone()["c"] == 0
+
+
 def _window_facts(conn, row) -> dict:
     """What this session actually did.
 
@@ -114,6 +135,28 @@ def _window_facts(conn, row) -> dict:
         # and under-reporting beats writing false history into the diary.
         ev_where, ev_args = "event_id > ? AND session_key = ?", (ev0, key)
         rv_where, rv_args = "r.revision_id > ? AND r.session_key = ?", (rv0, key)
+        # _resolve_key mints a throwaway key for writes that arrive with no
+        # id while a KEYED session is open, on the premise that such a
+        # session's owner always passes its key. Hook-driven writes do; a
+        # human typing `irag update`, or the dashboard's button, does not.
+        # Those rows carry a key belonging to no session at all, so strict
+        # matching reported "No file changes recorded this session" for the
+        # session that did all the work — which is exactly the history
+        # `irag recap` feeds forward.
+        #
+        # An orphan key (one no session row claims) is safe to credit here
+        # *only* when this session had the window to itself. With a second
+        # session overlapping, ownership is genuinely unknowable and the
+        # under-report stands — that is the cross-attribution guarantee.
+        if _sole_session_in_window(conn, row):
+            ev_where = ("event_id > ? AND (session_key = ? "
+                        "OR session_key IS NULL "
+                        "OR session_key NOT IN (SELECT session_key FROM "
+                        "sessions WHERE session_key IS NOT NULL))")
+            rv_where = ("r.revision_id > ? AND (r.session_key = ? "
+                        "OR r.session_key IS NULL "
+                        "OR r.session_key NOT IN (SELECT session_key FROM "
+                        "sessions WHERE session_key IS NOT NULL))")
     else:
         ev_where, ev_args = "event_id > ?", (ev0,)
         rv_where, rv_args = "r.revision_id > ?", (rv0,)

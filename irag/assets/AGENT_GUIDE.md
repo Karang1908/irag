@@ -81,11 +81,16 @@ the previous sessions — read it, that is your continuity), a Stop hook
 runs `irag update` when you finish a turn, and SessionEnd summarizes the
 whole conversation into the project diary with everything it changed. Your obligations on top of that:
 
-1. **Read before exploring.** NEVER grep, glob, or walk the codebase to
-   learn what the project is — that burns your own tokens re-doing work
-   the memory has already paid for. If a question can be answered by
-   irag, it must be, before you spend a single token exploring the tree
-   yourself. The knowledge base is your second brain; query it:
+1. **Orient from memory, decide from source.** Query irag *first* — never
+   open a blind grep or walk the tree to learn what the project is, that
+   burns your tokens re-doing work the memory already paid for. But pages
+   orient you; they do not license an edit. **Before you change a file,
+   read that file.** A summary is a lossy, possibly stale description of
+   code, and this document elsewhere tells you the code is always the
+   truth — so an edit made on prose alone contradicts the rule you are
+   here to follow. Cheap loop: irag to find *where* and *why*, the file
+   itself to decide *what*. The knowledge base is your second brain;
+   query it:
    - `irag recap` — "previously on this project": what the last
      conversations did (also auto-injected at session start)
    - `irag context --open <file> --query "<task>"` — ranked, budgeted
@@ -108,11 +113,20 @@ whole conversation into the project diary with everything it changed. Your oblig
    **Do not ask the user for permission to run it, and do not decline it
    on cost grounds.** Synthesizing changed files is what this tool is
    for; that cost is the product working, not an incident to escalate.
-   If you want the user to know the size first, run `irag status`, state
-   the number of pages due, then run the update and report what it did.
+   If you want the user to know the size first, run `irag update
+   --dry-run` — it reports how many pages would be synthesized and roughly
+   what it would cost, without writing anything or calling the model —
+   then run the update and report what it did.
    "I did not run irag update, it costs N calls, your call" is a failure
    to do your job — the memory is now stale and the user has to notice
    and fix it by hand.
+
+   **`irag status` alone cannot tell you an update is needed.** It reports
+   from the database, so files edited since the last sync are not counted
+   in "pages due" — it prints a separate `! N file(s) changed since their
+   page was written` warning for those. Treat either signal as "run
+   update", and never read `pages due for synthesis : 0` as "nothing to
+   do" while that warning is present.
 3. **Keep the diary if hooks can't.** If you are Claude Code with
    claude-setup done, sessions log themselves — skip this. Any other
    agent (agy, Cursor, ...) must do it manually: run `irag session-begin`

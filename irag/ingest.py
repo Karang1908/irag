@@ -13,6 +13,7 @@ generate events.
 """
 from __future__ import annotations
 
+import datetime
 import fnmatch
 import json
 import subprocess
@@ -390,6 +391,53 @@ def _has_commits(repo: Path | None = None) -> bool:
 # ---------------------------------------------------------------------
 SNAP_MAX_FILE = 1_000_000
 SNAP_MAX_FILES = 20_000
+
+
+def drifted_files(conn, cfg: dict, repo: Path, limit: int = 50) -> list[str]:
+    """Files whose mtime is newer than the page written for them.
+
+    `irag status` reports from the database, so after editing files it says
+    "pages due for synthesis : 0" until something runs sync — and CLAUDE.md
+    tells agents to read that number and decide whether to update. Silence
+    there means a skipped update and permanently stale memory.
+
+    Deliberately stat-only: hashing the tree is what sync does, and status
+    must stay a cheap read. mtime can report a false positive (touch with no
+    edit), which is the safe direction — it says "run update", and update is
+    a no-op when nothing really changed.
+    """
+    pages = {r["subject_id"]: r["last_updated_at"] for r in conn.execute(
+        "SELECT subject_id, last_updated_at FROM pages "
+        "WHERE page_type='file' AND current_revision_id IS NOT NULL")}
+    if not pages:
+        return []
+    out, count = [], 0
+    for f in sorted(repo.rglob("*")):
+        if count >= SNAP_MAX_FILES or len(out) >= limit:
+            break
+        if not f.is_file():
+            continue
+        rel = f.relative_to(repo).as_posix()
+        if is_ignored(rel, cfg, repo):
+            continue
+        count += 1
+        written = pages.get(rel)
+        if not written:
+            continue
+        try:
+            mtime = f.stat().st_mtime
+        except OSError:
+            continue
+        # page timestamps are UTC 'YYYY-MM-DD HH:MM:SS' from datetime('now')
+        try:
+            page_ts = datetime.datetime.strptime(
+                written, "%Y-%m-%d %H:%M:%S").replace(
+                    tzinfo=datetime.timezone.utc).timestamp()
+        except ValueError:
+            continue
+        if mtime > page_ts + 1:      # 1s slack: page write and edit can race
+            out.append(rel)
+    return sorted(out)
 
 
 def _tree_hashes(repo: Path, cfg: dict) -> dict[str, str]:

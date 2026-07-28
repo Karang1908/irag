@@ -1074,4 +1074,76 @@ PYEOF
 rm -rf "$RS"
 echo "resolutions survive re-synthesis ok"
 
+# --- drift / bare specifiers / orphan attribution -----------------------
+DR=$(mktemp -d); mkdir -p "$DR/src" "$DR/node_modules/lodash"
+printf 'def a(): return 1\n' > "$DR/src/a.py"
+printf '{"dependencies":{"three":"^0.160.0"},"devDependencies":{"@types/node":"^20"}}\n' \
+  > "$DR/package.json"
+cat > "$DR/index.html" <<'HTMLEOF'
+<script type="importmap">
+{"imports":{"three":"https://cdn.skypack.dev/three",
+            "three/addons/":"https://cdn.skypack.dev/three/examples/jsm/"}}
+</script>
+HTMLEOF
+printf 'requests==2.31.0\nflask>=2.0\n' > "$DR/requirements.txt"
+( cd "$DR" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 )
+python3 - "$IRAG_SRC" "$DR" << 'PYEOF'
+import sys, pathlib
+cfg = pathlib.Path(sys.argv[2], ".irag/config.toml"); t = cfg.read_text()
+cfg.write_text(t.replace(
+    'command = "claude -p"       # prompt on stdin, markdown on stdout',
+    f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"'))
+PYEOF
+# a session whose work arrives WITHOUT its id (manual update / dashboard)
+( cd "$DR" && python3 -m irag session-begin --id cc-xyz --agent claude-code \
+    >/dev/null 2>&1 )
+sleep 1
+printf 'def a(): return 999\ndef b(): pass\n' > "$DR/src/a.py"
+( cd "$DR" && python3 -m irag update >/dev/null 2>&1 ) || true
+( cd "$DR" && python3 -m irag session-end --id cc-xyz >/dev/null 2>&1 ) || true
+( cd "$DR" && python3 - << 'PYEOF'
+import json, pathlib, subprocess, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+out = subprocess.run([sys.executable, "-m", "irag", "sessions", "--json"],
+                     capture_output=True, text=True).stdout
+rows = json.loads(out)
+assert rows and rows[0]["versions_written"] > 0, (
+    "a lone session got zero attribution for work done without its id: "
+    f"{rows}")
+from irag import db, config, linter
+root = pathlib.Path.cwd()
+conn = db.connect(root / ".irag" / "memory.db"); cfg = config.load(root)
+# bare specifiers must not be reported missing; real misses still must be
+db.get_or_create_page(conn, "src/a.py", subject_type="file", page_type="file")
+pid = conn.execute("SELECT page_id FROM pages WHERE subject_id='src/a.py'"
+                   ).fetchone()["page_id"]
+nxt = conn.execute("SELECT COALESCE(MAX(version_number),0)+1 v FROM revisions "
+                   "WHERE page_id=?", (pid,)).fetchone()["v"]
+conn.execute("INSERT INTO revisions(page_id, version_number, body_markdown,"
+             " tokens_used) VALUES(?,?,?,0)", (pid, nxt,
+             "Uses `three/addons/controls/OrbitControls.js`, "
+             "`@types/node/index.d.ts`, `lodash/debounce.js`, `flask/app.py` "
+             "and a missing `src/ghost.js`."))
+conn.commit()
+linter.lint(conn, cfg, root)
+open_claims = {r["claim"] for r in conn.execute(
+    "SELECT claim FROM contradictions WHERE resolved_at IS NULL")}
+bad = [c for c in open_claims if "three/" in c or "@types/" in c
+       or "lodash/" in c or "flask/" in c]
+assert not bad, f"bare package specifiers reported as missing files: {bad}"
+assert any("src/ghost.js" in c for c in open_claims), \
+    f"a genuinely missing path stopped being flagged: {open_claims}"
+# status must surface files edited since their page was written
+import time; time.sleep(1)
+(root / "src" / "a.py").write_text("def a(): return 0\n# drifted\n")
+from irag import ingest
+drifted = ingest.drifted_files(conn, cfg, root)
+assert "src/a.py" in drifted, f"edited file not reported as drifted: {drifted}"
+PYEOF
+) || { echo "FAIL: drift / specifiers / attribution"; rm -rf "$DR"; exit 1; }
+rm -rf "$DR"
+echo "drift + bare specifiers + orphan attribution ok"
+
 echo "SMOKE TEST PASSED"

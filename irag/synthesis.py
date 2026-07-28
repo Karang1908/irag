@@ -462,6 +462,34 @@ def requeue_stuck(conn: sqlite3.Connection) -> int:
     return cur.rowcount
 
 
+def estimate_sweep(conn, cfg, repo: Path, limit: int | None = None) -> dict:
+    """What the next sweep would cost, without calling the model.
+
+    CLAUDE.md asks agents to state the size before running an update, but
+    the only number available was tokens ALREADY spent. Estimating from the
+    real prompts (the same builders synthesis uses) makes that a decision
+    the agent can actually make in advance.
+    """
+    from . import tokens
+    pages = pending_file_pages(conn, cfg)
+    if limit:
+        pages = pages[:limit]
+    folders = pending_folder_pages(conn, cfg)
+    total_in, detail = 0, []
+    for page in list(pages) + list(folders):
+        try:
+            if page["page_type"] == "folder":
+                prompt, _ = build_folder_prompt(conn, cfg, page, repo)
+            else:
+                prompt, _ = build_file_prompt(conn, cfg, page, repo)
+        except Exception:            # a page we cannot prompt for costs 0
+            continue
+        n = tokens.count(prompt)
+        total_in += n
+        detail.append((page["subject_id"], n))
+    return {"pages": len(detail), "prompt_tokens": total_in, "detail": detail}
+
+
 def sweep(conn, cfg, repo: Path, dry_run: bool = False,
           limit: int | None = None, subject: str | None = None) -> int:
     """Two-phase synthesis: pending file pages first, then folders

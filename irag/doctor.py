@@ -26,6 +26,26 @@ KNOWN_KEYS = {
 }
 
 
+def _sibling_installs(active: Path) -> list[str]:
+    """Other importable irag package dirs on sys.path, excluding the active
+    one. Two clones plus an editable install is a real layout here, and the
+    one `irag` resolves to has flipped between them."""
+    import sys
+    found = []
+    for entry in sys.path:
+        if not entry:
+            continue
+        try:
+            cand = (Path(entry) / "irag").resolve()
+        except (OSError, ValueError):
+            continue
+        if cand != active and (cand / "__init__.py").is_file():
+            s = str(cand)
+            if s not in found:
+                found.append(s)
+    return found
+
+
 def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
             probe_llm: bool = False) -> list[tuple[str, str, str]]:
     """Run every diagnostic and return (level, name, detail) rows. Shared by
@@ -47,6 +67,24 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
         ok("git on PATH")
     else:
         fail("git on PATH", "irag cannot ingest without git")
+
+    # Which copy of irag is actually running. With more than one clone on
+    # disk, the `irag` on PATH has silently switched between them before,
+    # so edits landed in a tree the command was not serving. Print the
+    # resolved path rather than leaving it to be discovered.
+    try:
+        import irag as _pkg
+        pkg_dir = Path(_pkg.__file__).resolve().parent
+        detail = f"{pkg_dir} (v{getattr(_pkg, '__version__', '?')})"
+        others = _sibling_installs(pkg_dir)
+        if others:
+            warn("irag install", f"{detail} — but {len(others)} other "
+                                 f"clone(s) exist: {', '.join(others[:3])}. "
+                                 "Confirm you are editing the one it serves.")
+        else:
+            ok("irag install", detail)
+    except Exception as exc:                       # never break doctor
+        warn("irag install", f"could not resolve: {exc}")
 
     # database integrity
     try:

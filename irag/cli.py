@@ -203,6 +203,11 @@ def cmd_status(args) -> int:
     from . import stats
     conn, cfg, root = _open()
     s = stats.status_dict(conn, cfg, root, dirty_files=_dirty_count(root))
+    # status reads the DB, so edits made since the last sync are invisible
+    # here. CLAUDE.md tells agents to read pages_due and decide whether to
+    # update; without this they read 0 and skip, leaving memory stale.
+    drifted = ingest.drifted_files(conn, cfg, root)
+    s["drifted_files"] = drifted
     if args.json:
         print(json.dumps(s, indent=2, default=str))
         return 0
@@ -220,6 +225,16 @@ def cmd_status(args) -> int:
     print(f"db size                  : {s['db_bytes'] / 1024:.0f} KB")
     print(f"synced @ {(s['last_synced'] or '-')[:10]}   "
           f"scanned @ {(s['last_scanned_head'] or '-')[:10]}")
+    if drifted:
+        print("-" * 44)
+        print(f"! {len(drifted)} file(s) changed since their page was "
+              "written and are NOT yet counted above.")
+        for rel in drifted[:8]:
+            print(f"    {rel}")
+        if len(drifted) > 8:
+            print(f"    +{len(drifted) - 8} more")
+        print("  'pages due' is computed from the database, which has not "
+              "seen these edits yet — run 'irag update'.")
     return 0
 
 
@@ -440,7 +455,7 @@ def cmd_resolve(args) -> int:
 
 
 def cmd_stale(args) -> int:
-    conn, cfg, _ = _open()
+    conn, cfg, root = _open()
     threshold = int(cfg["staleness"]["threshold"])
     rows = conn.execute(
         "SELECT subject_id, staleness_score, pinned FROM pages "
@@ -452,6 +467,14 @@ def cmd_stale(args) -> int:
         flag = " (pinned)" if r["pinned"] else ""
         due = " ← due" if r["staleness_score"] >= threshold else ""
         print(f"{r['staleness_score']:>5}  {r['subject_id']}{flag}{due}")
+    drifted = ingest.drifted_files(conn, cfg, root)
+    if drifted:
+        print(f"\n! {len(drifted)} file(s) edited since their page was "
+              "written — these scores are stale until 'irag update':")
+        for rel in drifted[:8]:
+            print(f"    {rel}")
+        if len(drifted) > 8:
+            print(f"    +{len(drifted) - 8} more")
     return 0
 
 
@@ -557,6 +580,17 @@ def cmd_update(args) -> int:
         from . import structure
         structure.scan(conn, cfg, root)
         print(f"sync       : {n} new event(s)")
+        if getattr(args, "dry_run", False):
+            est = synthesis.estimate_sweep(conn, cfg, root, limit=args.limit)
+            print(f"would synthesize: {est['pages']} page(s), "
+                  f"~{est['prompt_tokens']} prompt tokens "
+                  "(output not included)")
+            for subject, n_tok in est["detail"][:12]:
+                print(f"    {n_tok:>7} tok  {subject}")
+            if len(est["detail"]) > 12:
+                print(f"    +{len(est['detail']) - 12} more")
+            print("nothing was written — drop --dry-run to run it")
+            return 0
         done = synthesis.sweep(conn, cfg, root, limit=args.limit)
         new_contras = linter.lint(conn, cfg, root)
     except sqlite3.OperationalError as exc:
@@ -608,7 +642,24 @@ def cmd_ask(args) -> int:
                             budget_tokens=args.budget or 6000)
     prompt = (f"{ASK_INSTRUCTION}\n\nPROJECT CONTEXT:\n{md}\n\n"
               f"QUESTION: {args.question}\n\nANSWER:")
-    print(synthesis.run_llm(cfg, prompt))
+    answer = synthesis.run_llm(cfg, prompt)
+    print(answer)
+    # Telling the caller to go run `irag search` themselves wastes a round
+    # trip on the flagship command — and search is free, so there is no
+    # reason not to have already done it. Only runs when the model says it
+    # could not answer, so a good answer is never padded with noise.
+    low = answer.lower()
+    if any(p in low for p in ("does not contain", "not contain information",
+                              "no information", "cannot answer",
+                              "could not find", "irag search")):
+        hits = retrieval.search(conn, args.question)
+        if hits:
+            print("\n— free keyword search for the same question "
+                  "(0 tokens, no model) —")
+            for h in hits[:8]:
+                tag = "current" if h["current"] else f"v{h['version']}"
+                snippet = (h["snippet"] or "").strip().replace("\n", " ")
+                print(f"  {h['subject']} ({tag}): {snippet[:150]}")
     return 0
 
 
@@ -880,6 +931,10 @@ def build_parser() -> argparse.ArgumentParser:
                                        "in one shot (the agent trigger)")
     sp.add_argument("--id", metavar="KEY", help=ID_HELP)
     sp.add_argument("--limit", type=int)
+    sp.add_argument("--dry-run", action="store_true",
+                    help="report how many pages would be synthesized and "
+                         "roughly what it would cost, without calling the "
+                         "model or writing anything")
     sp.set_defaults(func=cmd_update)
 
     sp = sub.add_parser("ask", help="AI search: answer a question from the "
