@@ -561,7 +561,8 @@ def _consume_without_synthesis(conn, page, events) -> None:
     conn.commit()
 
 
-def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False) -> bool:
+def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False,
+                    force: bool = False) -> bool:
     if page["page_type"] == "topic":
         prompt, events = build_topic_prompt(conn, cfg, page, repo)
     elif page["page_type"] == "folder":
@@ -574,7 +575,10 @@ def synthesize_page(conn, cfg, page, repo: Path, dry_run: bool = False) -> bool:
         print("===== end prompt =====")
         return False
 
-    if _skip_unchanged(conn, cfg, page, repo):
+    # `--subject` is the escape hatch the "nothing pending" message tells
+    # you to use. Letting the trivial-change skip short-circuit it made
+    # irag recommend a command that then refused to do anything.
+    if not force and _skip_unchanged(conn, cfg, page, repo):
         print(f"unchanged  : {page['subject_id']} "
               "(comments/whitespace only — no model call)")
         _consume_without_synthesis(conn, page, events)
@@ -792,7 +796,9 @@ def sweep(conn, cfg, repo: Path, dry_run: bool = False,
         # refusing LLM on THIS page) marks its events failed and is
         # recorded, but must not abort synthesis of every other page
         try:
-            if synthesize_page(conn, cfg, page, repo, dry_run=dry_run):
+            # naming a subject is an explicit force; a sweep is not
+            if synthesize_page(conn, cfg, page, repo, dry_run=dry_run,
+                               force=bool(subject)):
                 print(f"synthesized: {page['subject_id']}{suffix}")
                 return True
         except SystemExit as exc:

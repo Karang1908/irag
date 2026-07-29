@@ -208,6 +208,10 @@ def cmd_status(args) -> int:
     # update; without this they read 0 and skip, leaving memory stale.
     drifted = ingest.drifted_files(conn, cfg, root)
     s["drifted_files"] = drifted
+    # which change-detection mode is live, so --json consumers and the
+    # human view report the same thing doctor does
+    minfo = ingest.active_mode(cfg, root)
+    s["ingest_mode"] = minfo
     if args.json:
         print(json.dumps(s, indent=2, default=str))
         return 0
@@ -223,6 +227,8 @@ def cmd_status(args) -> int:
     print(f"est. LLM tokens spent    : {s['est_tokens_spent']}")
     print(f"uncommitted changes      : {s['dirty_files']}")
     print(f"db size                  : {s['db_bytes'] / 1024:.0f} KB")
+    print(f"change detection         : {minfo['mode']} — "
+          f"{ingest.describe_mode(minfo)}")
     print(f"synced @ {(s['last_synced'] or '-')[:10]}   "
           f"scanned @ {(s['last_scanned_head'] or '-')[:10]}")
     if drifted:

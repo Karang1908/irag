@@ -393,6 +393,56 @@ SNAP_MAX_FILE = 1_000_000
 SNAP_MAX_FILES = 20_000
 
 
+def active_mode(cfg: dict, repo: Path) -> dict:
+    """How change detection is actually running, in one place.
+
+    `sync` decides this inline, `doctor` inferred something adjacent from
+    git hooks, and `status` never said anything — so a project could look
+    like it was in one mode while running in another, with no command that
+    would tell you. This is the single answer all three now print.
+
+    Returns mode ('git' | 'hybrid' | 'snapshot'), whether the project root
+    is a git toplevel, whether an enclosing repo exists, and whether that
+    enclosing repo actually tracks anything here — the last one is the
+    layout (a scratch project inside a versioned home dir) that looks
+    git-managed but has no diffs of its own to observe.
+    """
+    configured = str(cfg.get("ingest", {}).get("mode", "auto"))
+    rooted = git_rooted(repo)
+    enclosing = git_toplevel(repo)
+    inside_foreign = bool(enclosing) and not rooted
+    tracked_here = False
+    if inside_foreign:
+        try:
+            out = _git(["ls-files", "--", str(repo)], cwd=enclosing)
+            tracked_here = bool(out.strip())
+        except SystemExit:
+            tracked_here = False
+    if configured == "git":
+        mode = "git"
+    elif configured == "snapshot" or not rooted:
+        mode = "snapshot"
+    else:
+        # auto + own repo: commits AND working-tree fingerprints
+        mode = "hybrid"
+    return {"configured": configured, "mode": mode, "git_rooted": rooted,
+            "inside_foreign_repo": inside_foreign,
+            "enclosing": str(enclosing) if enclosing else None,
+            "tracked_by_enclosing": tracked_here}
+
+
+def describe_mode(info: dict) -> str:
+    """One-line human summary of active_mode()."""
+    if info["mode"] == "hybrid":
+        return "git commits + working-tree fingerprints (own repo)"
+    if info["mode"] == "git":
+        return "git commits only (uncommitted edits are NOT detected)"
+    if info["inside_foreign_repo"]:
+        return ("working-tree fingerprints — this directory sits inside "
+                f"{info['enclosing']}, which is not the project")
+    return "working-tree fingerprints (no git repo at the project root)"
+
+
 def drifted_files(conn, cfg: dict, repo: Path, limit: int = 50) -> list[str]:
     """Files whose mtime is newer than the page written for them.
 

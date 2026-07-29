@@ -1469,4 +1469,61 @@ PYEOF
 rm -rf "$RV"
 echo "dismiss never edits the page + undo restores ok"
 
+# --- ingest mode is reported, and --subject really forces ---------------
+# A project inside a versioned home dir looks git-managed; until doctor and
+# status printed the live mode, nothing told you which was running. And the
+# "nothing pending" message recommends `synthesize --subject` as the escape
+# hatch, so the trivial-change skip must not short-circuit it.
+MD=$(mktemp -d); mkdir -p "$MD/parent/proj"
+( cd "$MD/parent" && git init -q . && printf 'x\n' > README.md && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm parent >/dev/null 2>&1 )
+printf 'def a(): return 1\n' > "$MD/parent/proj/app.py"
+( cd "$MD/parent/proj" && python3 -m irag init >/dev/null 2>&1 )
+python3 - "$IRAG_SRC" "$MD/parent/proj" << 'PYEOF'
+import sys, pathlib
+cfg = pathlib.Path(sys.argv[2], ".irag/config.toml"); t = cfg.read_text()
+cfg.write_text(t.replace(
+    'command = "claude -p"       # prompt on stdin, markdown on stdout',
+    f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"'))
+PYEOF
+# an untracked project inside a foreign repo must run on fingerprints, and
+# must SAY so in both places
+( cd "$MD/parent/proj" && python3 -m irag status | grep -q "change detection" ) \
+  || { echo "FAIL: status does not report the change-detection mode"; rm -rf "$MD"; exit 1; }
+( cd "$MD/parent/proj" && python3 -m irag doctor 2>&1 | grep -q "ingest mode" ) \
+  || { echo "FAIL: doctor does not report the ingest mode"; rm -rf "$MD"; exit 1; }
+( cd "$MD/parent/proj" && python3 -m irag status | grep "change detection" \
+    | grep -q "snapshot" ) \
+  || { echo "FAIL: untracked subdir did not resolve to snapshot"; rm -rf "$MD"; exit 1; }
+# and edits there must actually be detected (the reported blind spot)
+( cd "$MD/parent/proj" && python3 -m irag update >/dev/null 2>&1 ) || true
+sleep 1
+printf 'def a(): return 999\ndef added(): pass\n' > "$MD/parent/proj/app.py"
+( cd "$MD/parent/proj" && python3 -m irag update 2>&1 | grep -q "synthesized: app.py" ) \
+  || { echo "FAIL: edits in an untracked subdir were not detected"; rm -rf "$MD"; exit 1; }
+# --subject must force even when nothing semantic changed
+( cd "$MD/parent/proj" && python3 - << 'PYEOF'
+import pathlib, subprocess, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db
+conn = db.connect(pathlib.Path(".irag/memory.db"))
+def n():
+    return conn.execute(
+        "SELECT COUNT(*) c FROM revisions r JOIN pages p ON p.page_id=r.page_id "
+        "WHERE p.subject_id='app.py'").fetchone()["c"]
+before = n()
+subprocess.run([sys.executable, "-m", "irag", "synthesize", "--subject",
+                "app.py"], capture_output=True)
+conn2 = db.connect(pathlib.Path(".irag/memory.db"))
+after = conn2.execute(
+    "SELECT COUNT(*) c FROM revisions r JOIN pages p ON p.page_id=r.page_id "
+    "WHERE p.subject_id='app.py'").fetchone()["c"]
+assert after > before, (
+    "synthesize --subject did not force a rewrite; the escape hatch the "
+    "'nothing pending' message recommends does nothing")
+PYEOF
+) || { echo "FAIL: --subject does not force"; rm -rf "$MD"; exit 1; }
+rm -rf "$MD"
+echo "ingest mode reported + --subject forces ok"
+
 echo "SMOKE TEST PASSED"

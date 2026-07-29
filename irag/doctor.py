@@ -86,6 +86,33 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
     except Exception as exc:                       # never break doctor
         warn("irag install", f"could not resolve: {exc}")
 
+    # How change detection is actually running. Printed rather than
+    # inferred: a project inside a versioned home dir looks git-managed,
+    # and until this line existed nothing told you which mode was live.
+    try:
+        from . import ingest as ingest_mod
+        minfo = ingest_mod.active_mode(cfg, repo)
+        summary = ingest_mod.describe_mode(minfo)
+        if minfo["configured"] == "git" and not minfo["git_rooted"]:
+            fail("ingest mode", "configured 'git' but the project root is "
+                                "not a git toplevel — nothing will be "
+                                "detected; use 'auto' or 'snapshot'")
+        elif minfo["inside_foreign_repo"]:
+            # the auditable case: looks git-managed, is not its own repo
+            warn("ingest mode",
+                 f"{minfo['mode']} — {summary}. "
+                 + ("The enclosing repo does track files here, but irag "
+                    "still scopes to this directory."
+                    if minfo["tracked_by_enclosing"] else
+                    "The enclosing repo tracks nothing here, so commit "
+                    "history is irrelevant and fingerprints are the only "
+                    "signal — this is correct, not a fault.")
+                 + " 'git init' here to upgrade to commit-based ingestion.")
+        else:
+            ok("ingest mode", f"{minfo['mode']} — {summary}")
+    except Exception as exc:                     # never break doctor
+        warn("ingest mode", f"could not determine: {exc}")
+
     # database integrity
     try:
         row = conn.execute("PRAGMA integrity_check").fetchone()
