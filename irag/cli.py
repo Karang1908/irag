@@ -225,7 +225,15 @@ def cmd_status(args) -> int:
     print(f"open contradictions      : {s['open_contradictions']}")
     print(f"pages due for synthesis  : {s['pages_due']}")
     print(f"est. LLM tokens spent    : {s['est_tokens_spent']}")
-    print(f"uncommitted changes      : {s['dirty_files']}")
+    # In snapshot mode this is hard-coded 0 (git status would report the
+    # enclosing repo's noise), so printing "0 uncommitted changes" read as
+    # "nothing has changed" when it meant "not measured". drifted_files is
+    # the real signal there.
+    if minfo["mode"] == "snapshot":
+        print("uncommitted changes      : n/a (snapshot mode — see drift "
+              "below)")
+    else:
+        print(f"uncommitted changes      : {s['dirty_files']}")
     print(f"db size                  : {s['db_bytes'] / 1024:.0f} KB")
     print(f"change detection         : {minfo['mode']} — "
           f"{ingest.describe_mode(minfo)}")
@@ -393,6 +401,7 @@ def cmd_impact(args) -> int:
 
 def cmd_learn(args) -> int:
     conn, cfg, _ = _open()
+    db.set_active_key(_session_key(args))
     _append_log(conn, page_subject="lessons", page_type="lessons",
                 title="Lessons", event_type="session",
                 text=args.text, module=args.module)
@@ -409,6 +418,7 @@ def cmd_tried(args) -> int:
     so a briefing can say "already ruled out" rather than "known good".
     """
     conn, cfg, _ = _open()
+    db.set_active_key(_session_key(args))
     text = f"TRIED (did not work): {args.approach} — because {args.because}"
     _append_log(conn, page_subject="antifacts", page_type="antifacts",
                 title="Approaches already ruled out", event_type="antifact",
@@ -504,6 +514,7 @@ def cmd_contradictions(args) -> int:
 
 def cmd_resolve(args) -> int:
     conn, _, _ = _open()
+    db.set_active_key(_session_key(args))
     if args.undo:
         row = linter.undo_resolve(conn, args.id)
         print(f"reopened contradiction {args.id} on {row['subject_id']}")
@@ -807,7 +818,20 @@ def cmd_capture(args) -> int:
         except (TypeError, ValueError):
             exit_code = None
     if not command or not exit_code:
-        return 0                      # nothing surprising happened
+        # The installed hook is `... --quiet 2>/dev/null || true`, so a
+        # payload shape we cannot read looks identical to "the command
+        # succeeded" — auto-capture would be dead forever with no signal.
+        # Interactively, say which it was.
+        if not args.quiet:
+            if not payload:
+                print("irag: no hook payload on stdin (and no --command "
+                      "given) — nothing to capture")
+            elif not command:
+                print("irag: payload had no tool_input.command — capture "
+                      "cannot tell what ran; is the hook matcher 'Bash'?")
+            else:
+                print("irag: command succeeded — nothing to capture")
+        return 0
     output = (args.output or str(response.get("stderr") or "")
               or str(response.get("stdout") or ""))[:400].strip()
     text = (f"CANDIDATE (unconfirmed): `{command}` exited {exit_code}"
@@ -828,6 +852,23 @@ def cmd_capture(args) -> int:
 def cmd_candidates(args) -> int:
     """Unconfirmed drafts waiting to become lessons."""
     conn, _, _ = _open()
+    # Drafts accumulate automatically from failing commands, so there has
+    # to be a way to throw them away without hand-editing the database.
+    if args.discard is not None or args.clear:
+        if args.clear:
+            n = conn.execute(
+                "DELETE FROM events WHERE event_type='candidate'").rowcount
+            conn.commit()
+            print(f"discarded {n} candidate(s)")
+            return 0
+        cur = conn.execute(
+            "DELETE FROM events WHERE event_type='candidate' AND event_id=?",
+            (args.discard,))
+        conn.commit()
+        if not cur.rowcount:
+            raise SystemExit(f"irag: no candidate with id {args.discard}")
+        print(f"discarded candidate {args.discard}")
+        return 0
     rows = conn.execute(
         "SELECT event_id, subject_id, payload, created_at FROM events "
         "WHERE event_type='candidate' ORDER BY event_id DESC LIMIT ?",
@@ -978,6 +1019,29 @@ def cmd_brief(args) -> int:
                 continue
             if text:
                 out.append(f"• {label}: {text}")
+
+    # The page already contains an accurate, LLM-written gotchas section.
+    # Emitting only hand-recorded lessons meant the hook fired and said
+    # almost nothing for any file nobody had run `learn` on — which, early
+    # in a project, is every file. Pull the warnings straight off the page.
+    body = conn.execute(
+        "SELECT r.body_markdown b FROM pages p "
+        "LEFT JOIN revisions r ON r.revision_id = p.current_revision_id "
+        "WHERE p.subject_id=?", (subject,)).fetchone()
+    if body and body["b"]:
+        want = ("gotcha", "behaviour worth knowing", "behavior worth knowing",
+                "caveat", "warning", "pitfall")
+        section, hits = None, []
+        for line in body["b"].splitlines():
+            s = line.strip()
+            if s.startswith("#"):
+                section = s.lstrip("#").strip().lower()
+                continue
+            if section and any(w in section for w in want) and s.startswith(
+                    ("-", "*")):
+                hits.append(s.lstrip("-* ").strip())
+        for h in hits[:4]:
+            out.append(f"• from the page: {h}")
 
     deps = conn.execute(
         "SELECT source_subject FROM deps WHERE target_subject=? LIMIT 6",
@@ -1227,6 +1291,7 @@ def cmd_dashboard(args) -> int:
 
 def cmd_record_decision(args) -> int:
     conn, cfg, _ = _open()
+    db.set_active_key(_session_key(args))
     _append_log(conn, page_subject="decisions", page_type="decisions",
                 title="Decisions", event_type="decision",
                 text=args.text, module=args.module)
@@ -1318,6 +1383,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("learn", help="log a lesson/gotcha (no LLM)")
     sp.add_argument("text")
     sp.add_argument("--module")
+    sp.add_argument("--id", metavar="KEY", help=ID_HELP)
     sp.set_defaults(func=cmd_learn)
 
     sp = sub.add_parser("tried", help="log an approach that did NOT work, so "
@@ -1326,10 +1392,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--because", required=True,
                     help="why it failed — the mechanism, not just 'it broke'")
     sp.add_argument("--module")
+    sp.add_argument("--id", metavar="KEY", help=ID_HELP)
     sp.set_defaults(func=cmd_tried)
 
-    sp = sub.add_parser("update", help="sync + synthesize + lint + export "
-                                       "in one shot (the agent trigger)")
+    sp = sub.add_parser("update", help="sync + scan + synthesize + lint in "
+                                       "one shot (the agent trigger; does "
+                                       "NOT export the agent guide)")
     sp.add_argument("--id", metavar="KEY", help=ID_HELP)
     sp.add_argument("--limit", type=int)
     sp.add_argument("--dry-run", action="store_true",
@@ -1351,10 +1419,15 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--output")
     sp.add_argument("--module")
     sp.add_argument("--quiet", action="store_true")
+    sp.add_argument("--id", metavar="KEY", help=ID_HELP)
     sp.set_defaults(func=cmd_capture)
 
     sp = sub.add_parser("candidates", help="unconfirmed lesson drafts")
     sp.add_argument("--limit", type=int, default=20)
+    sp.add_argument("--discard", type=int, metavar="ID",
+                    help="throw away one draft")
+    sp.add_argument("--clear", action="store_true",
+                    help="throw away every draft")
     sp.set_defaults(func=cmd_candidates)
 
     sp = sub.add_parser("topic", help="a concept page spanning several files "
@@ -1482,6 +1555,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--notes")
     sp.add_argument("--undo", action="store_true",
                     help="reopen a contradiction dismissed by mistake")
+    sp.add_argument("--id", metavar="KEY", help=ID_HELP)
     sp.set_defaults(func=cmd_resolve)
 
     sub.add_parser("stale", help="show staleness scores").set_defaults(
@@ -1528,6 +1602,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("record-decision", help="log a decision (no LLM)")
     sp.add_argument("text")
     sp.add_argument("--module")
+    sp.add_argument("--id", metavar="KEY", help=ID_HELP)
     sp.set_defaults(func=cmd_record_decision)
 
     return p

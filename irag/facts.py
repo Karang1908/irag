@@ -53,17 +53,24 @@ def record(conn: sqlite3.Connection, claim: str, cmd: str,
 
 
 def _judge(row, exit_code: int, output: str) -> tuple[str, str]:
-    """(status, reason) for one execution."""
-    if row["expect"]:
-        if row["expect"] in output:
-            return "pass", ""
-        return "fail", (f"expected {row['expect']!r} in the output, "
-                        f"got exit {exit_code}")
-    want = row["expect_exit"]
-    want = 0 if want is None else int(want)
-    if exit_code == want:
-        return "pass", ""
-    return "fail", f"expected exit {want}, got {exit_code}"
+    """(status, reason) for one execution.
+
+    Both expectations are checked when both were given. The earlier version
+    returned on the output branch and never read expect_exit, so a fact
+    registered with `--expect X --expect-exit 99` passed on exit 0 — the
+    command satisfied one condition the user asked for and silently ignored
+    the other, in the feature whose whole premise is trustworthy re-proof.
+    """
+    want_exit = row["expect_exit"]
+    want_text = row["expect"]
+    if want_text is None and want_exit is None:
+        want_exit = 0                      # bare command: must succeed
+    if want_text is not None and want_text not in output:
+        return "fail", (f"expected {want_text!r} in the output "
+                        f"(exit was {exit_code})")
+    if want_exit is not None and exit_code != int(want_exit):
+        return "fail", f"expected exit {int(want_exit)}, got {exit_code}"
+    return "pass", ""
 
 
 # Characters that only a shell can honour. Without this check, a registered
@@ -143,24 +150,50 @@ def run_one(conn: sqlite3.Connection, row, repo: Path,
 
 def run_all(conn: sqlite3.Connection, repo: Path,
             subject_id: str | None = None,
-            timeout: int = DEFAULT_TIMEOUT) -> list[tuple]:
-    """Re-verify every fact (optionally scoped). Returns (row, status, reason)."""
+            timeout: int = DEFAULT_TIMEOUT,
+            announce: bool = False) -> list[tuple]:
+    """Re-verify every fact (optionally scoped). Returns (row, status, reason).
+
+    `announce` prints each command before running it. These commands come
+    out of a database that travels with the repo, so anything that executes
+    them unattended must first say what it is about to execute.
+    """
     if subject_id:
         rows = conn.execute(
             "SELECT * FROM facts WHERE subject_id=? ORDER BY fact_id",
             (subject_id,)).fetchall()
     else:
         rows = conn.execute("SELECT * FROM facts ORDER BY fact_id").fetchall()
+    if announce and rows:
+        print(f"running {len(rows)} registered command(s) from "
+              ".irag/memory.db:")
+        for row in rows:
+            print(f"    $ {row['cmd']}")
     return [(row, *run_one(conn, row, repo, timeout)) for row in rows]
 
 
 def failing(conn: sqlite3.Connection) -> list[sqlite3.Row]:
-    """Facts whose last run did not pass. Never counts one that has not run:
-    'not yet verified' is not the same as 'disproved', and the CI gate must
-    not fail on a fact it has never executed."""
+    """Facts whose claim was DISPROVED.
+
+    Three outcomes, three meanings, and only one of them is a build
+    failure. 'not yet run' is not 'disproved' — the gate must not fail on a
+    fact it never executed. Neither is 'error': a command that is not
+    installed here says nothing about whether the claim holds, and counting
+    it meant the docstring's own nmap example broke CI on every machine
+    without nmap. Only 'fail' — the command ran and the expectation did not
+    hold — gates.
+    """
     return conn.execute(
-        "SELECT * FROM facts WHERE last_status IS NOT NULL "
-        "AND last_status != 'pass' ORDER BY fact_id").fetchall()
+        "SELECT * FROM facts WHERE last_status = 'fail' "
+        "ORDER BY fact_id").fetchall()
+
+
+def unrunnable(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """Facts whose command could not be executed here (missing tool,
+    timeout). Reported so they are visible, but never gating."""
+    return conn.execute(
+        "SELECT * FROM facts WHERE last_status = 'error' "
+        "ORDER BY fact_id").fetchall()
 
 
 def for_subject(conn: sqlite3.Connection, subject_id: str,

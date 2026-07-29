@@ -34,16 +34,27 @@ def run(conn: sqlite3.Connection, cfg: dict, repo=None,
     ).fetchone()["c"]
 
     fact_failures = []
+    # Executable facts are shell commands stored IN THE MEMORY DATABASE, and
+    # that database is meant to be committed and shared. Running them here by
+    # default meant `git clone && irag check` — the gate this project's own
+    # docs tell you to put in CI — executed whatever commands a contributor
+    # had registered. That is remote code execution on every dev machine and
+    # runner, so it is opt-in: the person enabling it is vouching for the
+    # commands in their own repo.
     if repo is not None and run_facts and bool(
-            cfg.get("check", {}).get("fail_on_facts", True)):
+            cfg.get("check", {}).get("fail_on_facts", False)):
         from . import facts as facts_mod
         try:
-            results = facts_mod.run_all(conn, repo)
+            results = facts_mod.run_all(conn, repo, announce=True)
         except sqlite3.OperationalError:
             results = []           # pre-facts database
-        fact_failures = [(r, s, why) for r, s, why in results if s != "pass"]
+        # only a command that RAN and disproved the claim gates the build;
+        # one that could not run here says nothing about the claim
+        fact_failures = [(r, s, why) for r, s, why in results if s == "fail"]
+        fact_errors = [(r, s, why) for r, s, why in results if s == "error"]
         fact_total = len(results)
     else:
+        fact_errors = []
         try:
             fact_total = conn.execute(
                 "SELECT COUNT(*) c FROM facts").fetchone()["c"]
@@ -56,8 +67,13 @@ def run(conn: sqlite3.Connection, cfg: dict, repo=None,
     print(f"pages over max staleness  : {over_stale} (max {max_staleness})")
     print(f"pages never synthesized   : {never_synth}")
     if fact_total:
-        print(f"executable facts          : "
-              f"{fact_total - len(fact_failures)}/{fact_total} verified")
+        ran = fact_total - len(fact_failures) - len(fact_errors)
+        print(f"executable facts          : {ran}/{fact_total} verified"
+              + (f", {len(fact_errors)} could not run here"
+                 if fact_errors else ""))
+        for row, _s, why in fact_errors[:5]:
+            print(f"  ~ [{row['fact_id']}] {row['claim']}")
+            print(f"      not gating — {why}")
 
     failed = False
     if fact_failures:

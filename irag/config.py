@@ -50,7 +50,10 @@ max_staleness = 150
 fail_on_contradictions = true
 fail_on_staleness = true      # set false to let 'irag check' pass despite stale pages
 fail_on_unsynthesized = true  # a page with no version at all means synthesis never ran
-fail_on_facts = true          # re-run 'irag verify' proofs; fail when a behavioural claim stops holding
+fail_on_facts = false         # OFF by default: these are shell commands stored in the
+                              # memory database, which travels with the repo. Turning this
+                              # on means `irag check` executes them — only do that in a
+                              # repo whose registered commands you vouch for.
 '''
 
 DEFAULTS: dict[str, Any] = {
@@ -91,7 +94,7 @@ DEFAULTS: dict[str, Any] = {
         "fail_on_contradictions": True,
         "fail_on_staleness": True,
         "fail_on_unsynthesized": True,
-        "fail_on_facts": True,
+        "fail_on_facts": False,
     },
 }
 

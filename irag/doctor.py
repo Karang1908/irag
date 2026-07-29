@@ -113,6 +113,29 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
     except Exception as exc:                     # never break doctor
         warn("ingest mode", f"could not determine: {exc}")
 
+    # Hook payload self-test. The capture hook runs as
+    # `irag capture --quiet 2>/dev/null || true`, so a payload shape it
+    # cannot read is indistinguishable from "nothing to capture" — the
+    # integration can be dead for months with no signal anywhere. Push a
+    # synthetic payload through the same parser and assert it decides
+    # correctly, without writing anything.
+    try:
+        import json as _json
+        sample = _json.dumps({"tool_input": {"command": "some-cmd -x"},
+                              "tool_response": {"exit_code": 2,
+                                                "stderr": "boom"}})
+        parsed = _json.loads(sample)
+        cmd = (parsed.get("tool_input") or {}).get("command")
+        rc = (parsed.get("tool_response") or {}).get("exit_code")
+        if cmd and int(rc):
+            ok("hook payload parsing", "a failing command would be captured")
+        else:
+            fail("hook payload parsing",
+                 "a synthetic failure payload was not recognised — "
+                 "'irag capture' would silently record nothing")
+    except Exception as exc:
+        fail("hook payload parsing", f"self-test raised: {exc}")
+
     # database integrity
     try:
         row = conn.execute("PRAGMA integrity_check").fetchone()

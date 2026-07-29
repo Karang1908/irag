@@ -1157,9 +1157,12 @@ printf 'def netcheck():\n    return 2\n' > "$FT/src/net.py"
 python3 - "$IRAG_SRC" "$FT" << 'PYEOF'
 import sys, pathlib
 cfg = pathlib.Path(sys.argv[2], ".irag/config.toml"); t = cfg.read_text()
-cfg.write_text(t.replace(
+t = t.replace(
     'command = "claude -p"       # prompt on stdin, markdown on stdout',
-    f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"'))
+    f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"')
+# facts are opt-in (they shell out); this block is exercising them
+t = t.replace("fail_on_facts = false", "fail_on_facts = true")
+cfg.write_text(t)
 PYEOF
 ( cd "$FT" && python3 -m irag update >/dev/null 2>&1 ) || true
 
@@ -1525,5 +1528,96 @@ PYEOF
 ) || { echo "FAIL: --subject does not force"; rm -rf "$MD"; exit 1; }
 rm -rf "$MD"
 echo "ingest mode reported + --subject forces ok"
+
+# --- executable facts must not be a code-execution vector --------------
+# The memory database is meant to be committed, and facts are shell
+# commands stored in it. Running them from `check` by default meant
+# `git clone && irag check` executed whatever a contributor registered.
+FX=$(mktemp -d); mkdir -p "$FX/up"
+printf 'def a(): return 1\n' > "$FX/up/a.py"
+( cd "$FX/up" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 \
+  && python3 -m irag verify "payload" \
+       --cmd "sh -c 'echo PWNED > $FX/pwned.txt'" >/dev/null 2>&1 \
+  && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm mem >/dev/null 2>&1 )
+rm -f "$FX/pwned.txt"
+( cd "$FX" && git clone -q up victim )
+# Strip the key entirely so the built-in DEFAULT decides — this is the
+# real-world case: a project initialised before facts existed has no such
+# line, and an upgraded irag must still not execute on its behalf.
+python3 - "$FX/victim" << 'PYEOF'
+import sys, pathlib, re
+p = pathlib.Path(sys.argv[1], ".irag/config.toml")
+p.write_text(re.sub(r"^fail_on_facts.*\n(?:\s{2,}#.*\n)*", "",
+                    p.read_text(), flags=re.M))
+assert "fail_on_facts" not in p.read_text(), "key not removed"
+PYEOF
+( cd "$FX/victim" && python3 -m irag check >/dev/null 2>&1 ) || true
+if [ -f "$FX/pwned.txt" ]; then
+  echo "FAIL: cloning + 'irag check' executed a registered command"
+  rm -rf "$FX"; exit 1
+fi
+# and with the key absent, opting in must be an explicit act
+python3 - "$FX/victim" << 'PYEOF'
+import sys, pathlib
+p = pathlib.Path(sys.argv[1], ".irag/config.toml")
+p.write_text(p.read_text().replace("[check]", "[check]\nfail_on_facts = true"))
+PYEOF
+# opt-in must still work, and must announce what it runs
+( cd "$FX/victim" && python3 -m irag check 2>&1 | grep -q "registered command" ) \
+  || { echo "FAIL: opt-in run did not announce the commands"; rm -rf "$FX"; exit 1; }
+[ -f "$FX/pwned.txt" ] \
+  || { echo "FAIL: opt-in did not actually run the fact"; rm -rf "$FX"; exit 1; }
+rm -rf "$FX"
+echo "facts are opt-in, not executed on clone, ok"
+
+# --- fact judgement: both expectations, and error != disproved ---------
+FJ=$(mktemp -d)
+printf 'def a(): return 1\n' > "$FJ/a.py"
+( cd "$FJ" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 )
+# --expect satisfied but --expect-exit not: must FAIL, not silently pass
+if ( cd "$FJ" && python3 -m irag verify "conflicting" --cmd "echo hi" \
+       --expect hi --expect-exit 99 >/dev/null 2>&1 ); then
+  echo "FAIL: --expect-exit was ignored when --expect was given"
+  rm -rf "$FJ"; exit 1
+fi
+( cd "$FJ" && python3 -m irag verify "both ok" --cmd "echo hi" \
+    --expect hi --expect-exit 0 >/dev/null 2>&1 ) \
+  || { echo "FAIL: a fact satisfying both expectations did not pass"; \
+       rm -rf "$FJ"; exit 1; }
+# a command that cannot run here says nothing about the claim
+( cd "$FJ" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, facts
+conn = db.connect(pathlib.Path(".irag/memory.db"))
+fid = facts.record(conn, "needs a missing tool",
+                   "definitely-not-installed-xyz --version", expect="X")
+row = conn.execute("SELECT * FROM facts WHERE fact_id=?", (fid,)).fetchone()
+status, _ = facts.run_one(conn, row, pathlib.Path.cwd())
+assert status == "error", f"expected 'error', got {status!r}"
+assert not any(r["fact_id"] == fid for r in facts.failing(conn)), \
+    "a missing tool was counted as a disproved claim — CI would break on "\
+    "any machine without it"
+assert any(r["fact_id"] == fid for r in facts.unrunnable(conn)), \
+    "an unrunnable fact was not reported as unrunnable"
+PYEOF
+) || { echo "FAIL: error/disproved conflation"; rm -rf "$FJ"; exit 1; }
+rm -rf "$FJ"
+echo "fact judgement (both expectations, error != disproved) ok"
+
+# --- every write command can be attributed -----------------------------
+# CLAUDE.md tells non-Claude agents to pass --id to every command that
+# writes; five of them did not accept it, so their writes were unattributable.
+for c in learn tried record-decision resolve capture update synthesize verify \
+         session-begin session-end topic; do
+  python3 -m irag "$c" --help 2>&1 | grep -q -- "--id" \
+    || { echo "FAIL: '$c' writes but does not accept --id"; exit 1; }
+done
+echo "every write command accepts --id ok"
 
 echo "SMOKE TEST PASSED"
