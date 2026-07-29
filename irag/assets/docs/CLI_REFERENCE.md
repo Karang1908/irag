@@ -98,9 +98,22 @@ manual cleanup. `--llm` additionally runs the LLM audit tier
 List open (default) or resolved contradictions with id, subject, type,
 severity, claim, and truth.
 
-### `irag resolve ID [--notes TEXT]`
+### `irag resolve ID [--notes TEXT] [--undo] [--id KEY]`
 
-Mark a contradiction resolved, with optional notes.
+**Dismiss a contradiction as a false positive.** This marks the *check*
+wrong — it does **not** edit the page. A summary that really does say
+something untrue keeps saying it; that is fixed by `irag update`, which
+rewrites the page from current code and clears the flag on its own.
+
+Dismissal is permanent for that exact claim on that page: re-synthesis
+will not raise it again, which is what stops a false positive returning
+under a new id forever. Because it is permanent, dismissing a *genuine*
+error silences it for good with the wrong text still in place — so
+`--undo` reopens one dismissed by mistake.
+
+Auto-resolved contradictions (the claim simply stopped failing) are never
+suppressed: if such a claim starts failing again that is a real
+regression, and it is raised.
 
 ### `irag stale`
 
@@ -154,14 +167,27 @@ decision); `_meta/` — `stats.md`, `contradictions.md`,
 `graph_settings.md` (color groups + the `-tag:#version` toggle trick);
 `README.md` index. `--no-versions` omits the history nodes.
 
-### `irag update [--limit N]`
+### `irag update [--limit N] [--dry-run] [--id KEY]`
 
 The one-shot pipeline and the standard agent trigger: sync (detect
-changes) → synthesize (new page versions for everything affected, file
-pages then folder rollups) → lint (fact-check). Updates the memory
+changes) → scan (rebuild the structural map) → synthesize (new page
+versions for everything affected, file pages then folder rollups) → lint
+(fact-check). It does **not** export the agent guide. Updates the memory
 database only; the CLAUDE.md/AGENTS.md agent guide (installed by
 `irag init`) instructs agents to run this after finishing edits, so page
 versions advance with every change automatically.
+
+`--dry-run` reports how many pages would be synthesized and roughly what
+it would cost, without calling the model or writing anything — use it to
+state the size before spending.
+
+Exits **1** when a page holds a queued change it can never act on (a
+"stuck" page). That state is self-contradictory and cannot self-heal, so
+it is reported loudly rather than folded into a successful-looking run.
+
+An edit that changes only comments or whitespace skips the model
+entirely. Naming a page with `synthesize --subject` is an explicit force
+and always rewrites it.
 
 ### `irag ask QUESTION [--open FILE] [--budget N]`
 
@@ -197,7 +223,7 @@ Transitive reverse dependencies with hop distance: everything that could
 break if the module changes. "Nothing imports X — change is contained"
 when it's a leaf.
 
-### `irag learn TEXT [--module M]`
+### `irag learn TEXT [--module M] [--id KEY]`
 
 Log a lesson/gotcha discovered while working (deterministic, no LLM).
 Lands on the `lessons` page, which — like `decisions` — is boosted so it
@@ -284,6 +310,12 @@ logs knowledge (`irag learn` / `irag record-decision`) and traces a claim
 back to the revision and commit that created it (`irag why`).
 **Health** — open contradictions with one-click
 resolve, staleness table, click any page to read its current body.
+**Visualize** — the codebase as a 3D force-directed graph built from the
+same symbol and dependency tables `map` queries: nodes are files (sized by
+symbol count, coloured by top-level folder), edges are real imports. Drag
+to orbit, scroll to zoom, click a file to inspect what it defines, what it
+imports, what depends on it, and everything irag has written about it; the
+map is re-read every few seconds so new files appear without a refresh.
 **Tools** — everything else the CLI does: *What your agent sees* renders
 the exact `irag context` briefing with its token count and tier
 breakdown; *Time travel* runs `asof` for any date; *Operations* runs
@@ -309,6 +341,14 @@ failures, open contradictions, pages due, estimated LLM tokens spent,
 uncommitted changes, db size, sync/scan heads. `--json` for tooling and
 benchmarks.
 
+It also reports the live **change-detection mode** (`hybrid`, `git` or
+`snapshot`) and, separately from `pages due`, any files whose mtime is
+newer than the page written for them. `pages due` is computed from the
+database, so edits made since the last sync are not counted in it — treat
+either signal as "run update". In snapshot mode "uncommitted changes"
+reads `n/a`, because git status there would describe an enclosing repo
+rather than the project.
+
 ### `irag diff SUBJECT [V1] [V2]`
 
 Unified diff between two revisions of a page (default: previous vs
@@ -328,14 +368,122 @@ database and FTS integrity, config keys and types, LLM command on PATH
 stuck/failed queue events, Claude Code hook wiring. Exit 1 on any FAIL —
 suitable for CI.
 
-### `irag check`
+### `irag check [--skip-facts]`
 
 The CI gate. Prints open contradictions, pages over `max_staleness`, and
 never-synthesized pages. Exits 1 if open contradictions exist (when
 `fail_on_contradictions = true`) or any page exceeds `max_staleness`.
 
-### `irag record-decision TEXT [--module M]`
+It can also re-run executable facts (see `irag verify`), but **only when
+you opt in** with `[check].fail_on_facts = true`. That default is `false`
+on purpose: facts are shell commands stored in `.irag/memory.db`, and that
+database is meant to be committed — so running them automatically would
+mean `git clone && irag check` executes whatever commands the repo
+carries. When enabled, every command is printed before it runs.
+
+Of the three fact outcomes, only one gates the build:
+
+| outcome | meaning | gates? |
+|---|---|---|
+| `pass` | the command ran and the expectation held | no |
+| `fail` | it ran and the expectation did **not** hold | **yes** |
+| `error` | it could not run here (tool missing, timeout) | no — reported only |
+
+`error` is deliberately not a failure: a machine without `nmap` says
+nothing about whether a claim about `nmap` is true.
+
+### `irag record-decision TEXT [--module M] [--id KEY]`
 
 Log a decision deterministically (no LLM): inserts a `decision` event and
 appends a line to the `decisions` page as a new revision. Like lessons,
 decisions are boosted into every context serve.
+
+### `irag tried APPROACH --because WHY [--module M] [--id KEY]`
+
+Record a **dead end** — an approach that was attempted and did not work,
+with the mechanism that defeated it. What you ruled out is worth as much
+as what worked, and without somewhere to put it the next session pays full
+price to rediscover the same failure. Surfaced by `irag brief` as
+"already ruled out" so it arrives before someone tries it again.
+
+```
+irag tried "position:sticky for the toolbar" \
+  --because "it only catches after you scroll past it" --module ui/bar.css
+```
+
+### `irag verify [CLAIM --cmd CMD] [--expect TEXT] [--expect-exit N] [--module M] [--timeout S] [--id KEY]`
+
+**Executable memory**: a claim that carries its own proof. Every other
+layer describes what the code *says*; this records what it *does* — the
+facts you can only learn by running something, together with the command
+that demonstrates them.
+
+```
+irag verify "scan aborts entirely without root, it does not degrade" \
+  --cmd "python3 -m scanner --probe" --expect "QUITTING" --module scanner.py
+```
+
+With a claim and `--cmd`, the fact is recorded and run immediately. With no
+arguments, every recorded fact is re-run. Exits non-zero if any fact fails.
+
+- `--expect TEXT` — this substring must appear in stdout+stderr.
+- `--expect-exit N` — the command must exit with this code.
+- Give both and **both** must hold. Give neither and the command must
+  exit 0.
+- A command containing shell operators (`|`, `&&`, `>`, globs …) is run
+  through a shell, so pipelines work as written. Operators inside quotes
+  are data, not syntax.
+
+Facts are re-run by `irag check` only when `[check].fail_on_facts = true`
+— see that command for why it is opt-in.
+
+### `irag facts`
+
+List every recorded fact with its last verification status, without
+running anything.
+
+### `irag topic [NAME] [--files A,B,C] [--replace] [--list] [--id KEY]`
+
+A page for a **concept** rather than a file. Knowledge is often
+feature-shaped while storage is file-shaped: "how does root privilege
+affect scanning?" spans a scanner, a helper and a template that share no
+folder, so no folder page can answer it. Members are curated by hand —
+the one page type irag will not infer.
+
+```
+irag topic "root privilege" --files src/scanner.py,src/net.py,ui/index.html
+irag update                 # writes the page
+irag topic "root privilege" # read it back
+irag topic --list
+```
+
+### `irag brief PATH [--limit N] [--quiet]`
+
+Everything known about **one file**, in a few lines: disputed claims,
+verified behaviour, dead ends, gotchas lifted from the page itself, and
+who imports it. Small enough to inject on every edit.
+
+Session-start context is just-in-case; by turn 40 it has scrolled away.
+`claude-setup` wires this to **PreToolUse** so it arrives at the moment a
+file is about to be edited. Pass `-` as the path to read the file from a
+hook payload on stdin.
+
+### `irag suggest [--limit N]`
+
+What needs doing right now, each with the command that does it — drifted
+files, stuck pages, contradictions, broken behavioural claims,
+unsynthesized pages. A flat command index is not discovery; this surfaces
+the right command at the moment it applies.
+
+### `irag capture [--command C] [--exit-code N] [--output T] [--module M] [--quiet] [--id KEY]`
+
+Draft a **candidate lesson** from a command that failed. Anything relying
+on an agent volunteering knowledge gets skipped under load, so the draft is
+written from the strongest available signal that something surprising
+happened. `claude-setup` wires this to **PostToolUse** on `Bash`; it reads
+the tool call from stdin and does nothing when the command succeeded.
+
+### `irag candidates [--limit N] [--discard ID] [--clear]`
+
+List unconfirmed drafts, promote the useful ones with `irag learn`, and
+throw the rest away with `--discard ID` or `--clear`.

@@ -1620,4 +1620,29 @@ for c in learn tried record-decision resolve capture update synthesize verify \
 done
 echo "every write command accepts --id ok"
 
+# --- docs: shipped copies must match, and cover every command ----------
+# irag/assets/docs/ is what the dashboard's Docs tab serves; docs/ is what
+# the website builds from. Nothing syncs them, and they had already drifted
+# (a whole Visualize section existed in one and not the other).
+for f in ARCHITECTURE CLI_REFERENCE COMPARISON SETUP STORY; do
+  diff -q "$IRAG_SRC/docs/$f.md" "$IRAG_SRC/irag/assets/docs/$f.md" >/dev/null \
+    || { echo "FAIL: docs/$f.md and irag/assets/docs/$f.md have drifted — "\
+              "the dashboard and the website would show different things"; \
+         exit 1; }
+done
+# every command the CLI exposes must appear in the reference
+python3 - "$IRAG_SRC" << 'PYEOF'
+import re, subprocess, sys, pathlib
+ref = pathlib.Path(sys.argv[1], "docs/CLI_REFERENCE.md").read_text()
+out = subprocess.run([sys.executable, "-m", "irag", "--help"],
+                     capture_output=True, text=True).stdout
+m = re.search(r"\{([a-z,\-]+)\}", out)
+assert m, "could not read the command list from --help"
+cmds = [c for c in m.group(1).split(",") if c]
+missing = [c for c in cmds if f"irag {c}" not in ref]
+assert not missing, f"commands missing from CLI_REFERENCE.md: {missing}"
+PYEOF
+[ $? -eq 0 ] || { echo "FAIL: CLI reference is missing commands"; exit 1; }
+echo "docs in sync + every command documented ok"
+
 echo "SMOKE TEST PASSED"

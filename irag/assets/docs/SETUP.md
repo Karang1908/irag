@@ -147,6 +147,14 @@ commit = 10              # per-commit staleness bump
 dependency = 20          # extra bump when a manifest file is touched
 threshold = 1            # default: resynthesize on every change
                          # (raise to batch, e.g. 100, on large repos)
+skip_trivial = true      # an edit touching only comments/whitespace skips
+                         # the model entirely (compared against a
+                         # comment-stripped fingerprint of the file)
+
+[llm]
+parallel = 1             # pages synthesized at once. 1 is strictly
+                         # sequential; raise it if your LLM CLI tolerates
+                         # concurrent invocations (each is its own process)
 
 [retrieval]
 token_budget = 8000      # serving budget (~chars/4)
@@ -156,7 +164,22 @@ min_score = 20           # relevance floor
 [check]
 max_staleness = 150
 fail_on_contradictions = true
+fail_on_facts = false    # see the warning below before enabling
 ```
+
+### Executable facts run shell commands — that is why they are off
+
+`irag verify` stores a claim together with the command that proves it, and
+`irag check` can re-run them. Those commands live in `.irag/memory.db`,
+which is **meant to be committed and shared**.
+
+So `fail_on_facts` defaults to `false`. With it on, `git clone && irag
+check` would execute whatever commands the repository carries — on every
+developer machine and CI runner that runs the gate. Enable it only in a
+repository whose registered commands you vouch for, and treat a pull
+request that adds a fact exactly like a pull request that adds a CI script.
+When enabled, every command is printed before it runs, and
+`irag check --skip-facts` overrides it for a single invocation.
 
 ## Daily loop (short version)
 
@@ -260,6 +283,11 @@ jobs:
 `irag check` exits 1 when there are open contradictions
 (`fail_on_contradictions = true`) or any page's staleness exceeds
 `max_staleness`.
+
+It does **not** run executable facts unless `fail_on_facts = true` — see
+the warning in "Other config knobs". If you do enable them in CI, note
+that a fact whose tool is missing on the runner is reported but does not
+fail the build: only a command that ran and disproved its claim gates.
 
 ## Smoke test
 

@@ -62,3 +62,33 @@ tokens.
 `irag why "<claim>"` · `irag diff <file>` · `irag contradictions` ·
 `irag learn "<gotcha>"` · `irag record-decision "<choice>"` ·
 `irag claude-setup` · `irag doctor` · `irag backup`
+
+Not sure what to do next? **`irag suggest`** prints what needs attention
+right now with the command that fixes it.
+
+## Writing down what you learn
+
+Summaries are written for you. These four are the things only a person or
+an agent in the moment can know:
+
+```bash
+irag learn "argon2 rehash happens in place on verify" --module auth.py
+irag tried "position:sticky" --because "only catches after you scroll past"
+irag topic "root privilege" --files scanner.py,net.py,ui.html
+irag verify "scan aborts without root" \
+  --cmd "python3 -m scanner --probe" --expect QUITTING --module scanner.py
+```
+
+- **`learn`** — a gotcha worth keeping.
+- **`tried`** — a dead end, so nobody re-derives it. What you ruled out is
+  worth as much as what worked.
+- **`topic`** — a page for a *concept* that spans several files, when the
+  thing you need to know doesn't live in one folder.
+- **`verify`** — a claim that carries its own proof. Everything else
+  describes what the code *says*; this records what it *does*, and the
+  command can be re-run to check the claim still holds. (It is not re-run
+  automatically — see `fail_on_facts` in the Setup guide.)
+
+**`irag brief <file>`** prints everything known about one file — disputed
+claims, dead ends, gotchas, who imports it. After `irag claude-setup` it
+fires automatically just before your agent edits a file.

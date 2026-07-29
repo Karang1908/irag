@@ -72,8 +72,24 @@ Core relations plus an FTS5 inverted index:
   so uncommitted edits are seen)
 - **tree_state** — path→sha1 fingerprints for snapshot-mode ingestion
   and scan gating
+- **facts** — executable memory: a `claim` plus the `cmd` that
+  demonstrates it, an expected substring and/or exit code, and the last
+  run's status. The only relation whose contents irag can *re-establish*
+  rather than trust. Because these are shell commands in a database that
+  travels with the repo, nothing executes them unless
+  `[check].fail_on_facts` is explicitly enabled.
+- **topic_members** — `(topic, subject_id)` for concept pages. Knowledge
+  is feature-shaped while every other page is file- or folder-shaped;
+  membership is curated by hand, the one page type irag will not infer.
 - **revisions_fts** — FTS5 external-content table over `body_markdown`,
   kept in sync by triggers
+
+`pages` also carries **content_fingerprint**, a hash of the file with
+comments and blank lines stripped, written at synthesis. Comparing against
+it lets a comment-only edit skip the model entirely.
+`contradictions.resolution_kind` distinguishes a human dismissal (which
+suppresses that claim permanently) from an auto-resolution (which must be
+free to re-raise, since a recurrence is a real regression).
 
 ### The signature trigger
 
