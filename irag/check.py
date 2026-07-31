@@ -41,6 +41,7 @@ def run(conn: sqlite3.Connection, cfg: dict, repo=None,
     # had registered. That is remote code execution on every dev machine and
     # runner, so it is opt-in: the person enabling it is vouching for the
     # commands in their own repo.
+    stale_report = None
     if repo is not None and run_facts and bool(
             cfg.get("check", {}).get("fail_on_facts", False)):
         from . import facts as facts_mod
@@ -54,12 +55,21 @@ def run(conn: sqlite3.Connection, cfg: dict, repo=None,
         fact_errors = [(r, s, why) for r, s, why in results if s == "error"]
         fact_total = len(results)
     else:
+        # Not re-running is not the same as everything passing. Computing
+        # `total - 0 failures` here printed "2/2 verified" for a database
+        # containing a disproved claim — a false green in the one feature
+        # whose entire premise is trustworthy re-proof. Report the STORED
+        # status instead, and label it as not-re-run.
         fact_errors = []
         try:
             fact_total = conn.execute(
                 "SELECT COUNT(*) c FROM facts").fetchone()["c"]
+            stored = {r["s"]: r["c"] for r in conn.execute(
+                "SELECT COALESCE(last_status,'never') s, COUNT(*) c "
+                "FROM facts GROUP BY 1")}
         except sqlite3.OperationalError:
-            fact_total = 0
+            fact_total, stored = 0, {}
+        stale_report = stored
 
     print("irag check")
     print("-" * 40)
@@ -67,13 +77,28 @@ def run(conn: sqlite3.Connection, cfg: dict, repo=None,
     print(f"pages over max staleness  : {over_stale} (max {max_staleness})")
     print(f"pages never synthesized   : {never_synth}")
     if fact_total:
-        ran = fact_total - len(fact_failures) - len(fact_errors)
-        print(f"executable facts          : {ran}/{fact_total} verified"
-              + (f", {len(fact_errors)} could not run here"
-                 if fact_errors else ""))
-        for row, _s, why in fact_errors[:5]:
-            print(f"  ~ [{row['fact_id']}] {row['claim']}")
-            print(f"      not gating — {why}")
+        if stale_report is None:
+            ran = fact_total - len(fact_failures) - len(fact_errors)
+            print(f"executable facts          : {ran}/{fact_total} verified"
+                  + (f", {len(fact_errors)} could not run here"
+                     if fact_errors else ""))
+            for row, _s, why in fact_errors[:5]:
+                print(f"  ~ [{row['fact_id']}] {row['claim']}")
+                print(f"      not gating — {why}")
+        else:
+            # facts were NOT re-run; report what the last run recorded
+            bits = []
+            for key, label in (("pass", "passing"), ("fail", "DISPROVED"),
+                               ("error", "could not run"),
+                               ("never", "never run")):
+                if stale_report.get(key):
+                    bits.append(f"{stale_report[key]} {label}")
+            print(f"executable facts          : {fact_total} recorded "
+                  f"({', '.join(bits)}) — NOT re-run "
+                  "([check].fail_on_facts is off)")
+            if stale_report.get("fail"):
+                print("  note: a claim was disproved on its last run. This "
+                      "gate did not re-check it — run 'irag verify'.")
 
     failed = False
     if fact_failures:

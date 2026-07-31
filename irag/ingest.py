@@ -109,26 +109,72 @@ def repo_root() -> Path:
 # ---------------------------------------------------------------------
 # ignoring
 # ---------------------------------------------------------------------
+# Files whose contents must never reach a synthesis prompt or the memory
+# database, regardless of what any ignore file says. Dotfiles are already
+# excluded, so these are the non-dotted names that carry credentials.
+SECRET_GLOBS = (
+    "id_rsa", "id_dsa", "id_ecdsa", "id_ed25519", "*.pem", "*.key", "*.pfx",
+    "*.p12", "*.keystore", "*.jks", "*_rsa", "*_ed25519",
+    "secrets.*", "secret.*", "credentials", "credentials.*",
+    "*secrets.yml", "*secrets.yaml", "*credentials.json",
+    "service-account*.json", "*.env", "env.*",
+)
+
+
+def looks_secret(rel: str) -> bool:
+    """True when a path looks like it carries credentials."""
+    name = Path(rel).name.lower()
+    return any(fnmatch.fnmatch(name, g) for g in SECRET_GLOBS)
+
+
+def escapes_repo(path: Path, repo: Path) -> bool:
+    """True when `path` resolves outside the project.
+
+    A symlink inside the repo pointing at ~/.ssh/id_rsa was ingested as an
+    ordinary source file, and its TARGET's bytes went into the synthesis
+    prompt and into .irag/memory.db — the database intended to be committed
+    and shared. One symlink in a pull request was enough, because the guide
+    tells agents to run `irag update` unconditionally.
+    """
+    try:
+        return not path.resolve().is_relative_to(repo.resolve())
+    except (OSError, ValueError, RuntimeError):
+        return True                # unresolvable: refuse to read it
+
+
 def _ignore_patterns(cfg: dict, repo: Path | None) -> tuple[set, list]:
     """(segment_names, glob_patterns). Cached on cfg."""
     cache = cfg.get("_ignore_cache")
     if cache is not None:
         return cache
     segments = {str(x).lower() for x in cfg["modules"]["ignore"]}
-    globs: list[str] = []
+    globs: list[str] = list(SECRET_GLOBS)
     if repo is not None:
-        ig = repo / ".iragignore"
-        if ig.is_file():
+        # .gitignore is read as well as .iragignore. In git mode the diff
+        # never surfaced an ignored file, but snapshot mode walks the tree
+        # directly — so an identical project with no git repo at its root
+        # ingested `id_rsa` and `secrets.yaml` and sent them to the LLM.
+        # Snapshot is the mode for every project that is not its own git
+        # root, which makes that the common case, not the corner one.
+        for name in (".gitignore", ".iragignore"):
+            ig = repo / name
+            if not ig.is_file():
+                continue
             try:
                 for line in ig.read_text(encoding="utf-8").splitlines():
                     line = line.strip()
-                    if not line or line.startswith("#"):
+                    # negations need real gitignore semantics to honour;
+                    # skipping them keeps this conservative (we may ignore
+                    # a file git would track, never the reverse)
+                    if not line or line.startswith(("#", "!")):
                         continue
-                    line = line.rstrip("/")
+                    line = line.lstrip("/").rstrip("/")
+                    if not line:
+                        continue
                     if any(ch in line for ch in "*?[") or "/" in line:
                         globs.append(line)
                     else:
-                        segments.add(line)
+                        segments.add(line.lower())
             except OSError:
                 pass
     cfg["_ignore_cache"] = (segments, globs)
@@ -145,6 +191,13 @@ def is_ignored(path: str, cfg: dict, repo: Path | None = None) -> bool:
     # hidden files/dirs are never tracked (.git, .env, .iragignore, ...)
     # — also keeps secrets out of synthesis prompts
     if any(p.startswith(".") for p in parts):
+        return True
+    # credential-shaped names, whatever the ignore files say
+    if looks_secret(path):
+        return True
+    # a symlink whose target leaves the project would put a file the user
+    # never meant to share into the prompt and the database
+    if repo is not None and escapes_repo(repo / path, repo):
         return True
     segments, globs = _ignore_patterns(cfg, repo)
     # case-insensitive: macOS and Windows filesystems are, so a checked-in

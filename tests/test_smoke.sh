@@ -1645,4 +1645,73 @@ PYEOF
 [ $? -eq 0 ] || { echo "FAIL: CLI reference is missing commands"; exit 1; }
 echo "docs in sync + every command documented ok"
 
+# --- secrets must never reach a prompt or the database ------------------
+# A symlink inside the repo pointing outside it was ingested as an ordinary
+# source file and its TARGET's bytes went into the synthesis prompt — on the
+# `update` path, which the agent guide says to run unconditionally. And
+# snapshot mode (every project that is not its own git root) walked the tree
+# without honouring .gitignore, so id_rsa and secrets.yaml were tracked.
+SL=$(mktemp -d); OUTSIDE=$(mktemp -d)
+printf 'SECRET_KEY=hunter2\n' > "$OUTSIDE/target.txt"
+printf 'def a(): return 1\n' > "$SL/app.py"
+ln -s "$OUTSIDE/target.txt" "$SL/escape_link.py"
+ln -s app.py "$SL/internal_link.py"
+printf 'ssh-rsa PRIVATE\n' > "$SL/id_rsa"
+printf 'db_password: hunter2\n' > "$SL/secrets.yaml"
+printf 'x\n' > "$SL/server.pem"
+printf 'x: 1\n' > "$SL/config.yaml"
+printf 'ignored_by_git.py\n' > "$SL/.gitignore"
+printf 'def q(): pass\n' > "$SL/ignored_by_git.py"
+# NO git repo here on purpose: this is snapshot mode
+( cd "$SL" && python3 -m irag init >/dev/null 2>&1 )
+( cd "$SL" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db
+conn = db.connect(pathlib.Path(".irag/memory.db"))
+pages = {r["subject_id"] for r in conn.execute(
+    "SELECT subject_id FROM pages WHERE page_type='file'")}
+leaked = pages & {"escape_link.py", "id_rsa", "secrets.yaml", "server.pem",
+                  "ignored_by_git.py"}
+assert not leaked, (
+    f"secret/escaping files were ingested and would be sent to the LLM: "
+    f"{sorted(leaked)}")
+# and the guard must not over-block ordinary files
+for keep in ("app.py", "internal_link.py", "config.yaml"):
+    assert keep in pages, f"{keep} was wrongly excluded (got {sorted(pages)})"
+PYEOF
+) || { echo "FAIL: secret/symlink ingestion"; rm -rf "$SL" "$OUTSIDE"; exit 1; }
+rm -rf "$SL" "$OUTSIDE"
+echo "secrets + escaping symlinks never ingested ok"
+
+# --- check must not print a false green --------------------------------
+# With facts not re-run, computing "total - 0 failures" reported every fact
+# verified while a stored status said DISPROVED.
+FG=$(mktemp -d)
+printf 'def a(): return 1\n' > "$FG/app.py"
+( cd "$FG" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 \
+  && python3 -m irag verify "conflicting" --cmd "echo hi" \
+       --expect hi --expect-exit 99 >/dev/null 2>&1 ) || true
+out=$( cd "$FG" && python3 -m irag check 2>&1 || true )
+case "$out" in
+  *"verified"*) if ! printf '%s' "$out" | grep -q "NOT re-run"; then
+      echo "FAIL: check reported facts as verified without re-running them"
+      printf '%s\n' "$out" | grep "executable facts"; rm -rf "$FG"; exit 1
+    fi ;;
+esac
+printf '%s' "$out" | grep -q "DISPROVED" \
+  || { echo "FAIL: a disproved fact was not surfaced by check"; \
+       printf '%s\n' "$out" | grep "executable facts"; rm -rf "$FG"; exit 1; }
+# the hint must name a flag that exists
+hint=$( cd "$FG" && python3 -m irag verify "bad" --cmd "false" \
+        --expect NOPE 2>&1 || true )
+case "$hint" in
+  *"verify --run"*) echo "FAIL: hint names a nonexistent flag 'verify --run'"
+                    rm -rf "$FG"; exit 1 ;;
+esac
+rm -rf "$FG"
+echo "check reports stored fact status, no false green, ok"
+
 echo "SMOKE TEST PASSED"

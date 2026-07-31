@@ -1080,7 +1080,7 @@ def cmd_verify(args) -> int:
         if status != "pass":
             print(f"    {status}: {reason}")
             print("    recorded anyway — fix the command or the claim, then "
-                  "re-run 'irag verify --run'")
+                  "re-run 'irag verify'")
             return 1
         return 0
     results = facts.run_all(conn, root, subject_id=args.module,
@@ -1620,6 +1620,17 @@ def main(argv: list[str] | None = None) -> None:
         db.set_active_key(str(explicit))
     try:
         sys.exit(args.func(args))
+    except sqlite3.OperationalError as exc:
+        # busy_timeout expired: another writer (a dashboard, a Stop hook, a
+        # second update) held the WAL write lock the whole time. `update`
+        # had a friendly message for this and every other command printed a
+        # raw traceback, which reads like corruption; it isn't. Handled once
+        # here so no write path can regress into the traceback again.
+        if "locked" not in str(exc).lower():
+            raise
+        sys.exit(f"irag: {exc} — another irag process is writing to "
+                 ".irag/memory.db. Close 'irag dashboard' (or wait for the "
+                 "running command to finish) and try again.")
     except KeyboardInterrupt:
         sys.exit(130)
     except BrokenPipeError:

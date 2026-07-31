@@ -167,6 +167,29 @@ fail_on_contradictions = true
 fail_on_facts = false    # see the warning below before enabling
 ```
 
+### What irag refuses to read
+
+File contents reach the configured LLM and are stored in
+`.irag/memory.db`, so three classes of file are excluded before anything
+reads them — regardless of what your ignore files say:
+
+- **Dotfiles and dot-directories** (`.env`, `.git`, `.ssh`, …).
+- **Credential-shaped names**: `id_rsa`, `*.pem`, `*.key`, `*.p12`,
+  `secrets.*`, `credentials*`, `service-account*.json`, `*.env`, and
+  similar.
+- **Symlinks whose target leaves the project.** A link inside the repo
+  pointing at `~/.ssh/id_rsa` would otherwise be read as an ordinary
+  source file. Links that stay inside the project work normally.
+
+`.gitignore` is honoured **in both modes**, not only when a git repo
+exists — snapshot mode walks the tree directly, so without this an
+otherwise-ignored `id_rsa` would be ingested. `.iragignore` adds
+gitignore-style patterns of your own; negations (`!pattern`) are skipped,
+which can only over-ignore, never under-ignore.
+
+If something sensitive is still reachable, add it to `.iragignore` and run
+`irag sync` — pages for files that become ignored are purged.
+
 ### Executable facts run shell commands — that is why they are off
 
 `irag verify` stores a claim together with the command that proves it, and
