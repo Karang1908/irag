@@ -647,6 +647,48 @@ def cmd_obsidian(args) -> int:
     return 0
 
 
+class _UpdateLock:
+    """Whole-repo lock around a synthesis sweep.
+
+    `pending_file_pages` selects on staleness, and events are only marked
+    'processing' after selection — so two sweeps starting together choose
+    the same pages and each pays for them. The Stop hook runs `irag update`
+    at the end of every agent turn and the docs support two agents on one
+    repo, so simultaneous finishes are expected, not exotic. The dashboard
+    already guarded its own path with a mutex; the CLI had nothing.
+
+    Advisory and non-blocking: the second run says so and exits 0 rather
+    than queueing, because its work is exactly what the first is doing.
+    """
+
+    def __init__(self, root: Path):
+        self.path = root / ".irag" / "update.lock"
+        self.fh = None
+
+    def __enter__(self):
+        import fcntl
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.fh = open(self.path, "w")
+        try:
+            fcntl.flock(self.fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            self.fh.close()
+            self.fh = None
+            return False
+        self.fh.write(str(__import__("os").getpid()))
+        self.fh.flush()
+        return True
+
+    def __exit__(self, *exc):
+        if self.fh:
+            import fcntl
+            try:
+                fcntl.flock(self.fh, fcntl.LOCK_UN)
+            finally:
+                self.fh.close()
+        return False
+
+
 def cmd_update(args) -> int:
     """One command for agents: sync -> scan -> synthesize -> lint. Updates
     the memory database only; the CLAUDE.md/AGENTS.md agent guide is static
@@ -655,6 +697,18 @@ def cmd_update(args) -> int:
     # stamp everything this run writes with the conversation that asked for
     # it, so two agents on one repo don't claim each other's work in the diary
     db.set_active_key(_session_key(args))
+    lock = _UpdateLock(root)
+    if not lock.__enter__():
+        print("irag: another 'irag update' is already running in this repo "
+              "— skipping (its sweep covers the same pages).")
+        return 0
+    try:
+        return _update_body(args, conn, cfg, root)
+    finally:
+        lock.__exit__()
+
+
+def _update_body(args, conn, cfg, root) -> int:
     try:
         n = ingest.sync(conn, cfg, root)
         from . import structure

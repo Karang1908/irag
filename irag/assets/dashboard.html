@@ -1249,7 +1249,8 @@ async function refreshFeed(){
 async function runUpdate(){
   const btn=$("#run-update");btn.disabled=true;
   try{
-    await api("/api/update",{method:"POST",body:"{}"});
+    await api("/api/update",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:"{}"});
   }catch(e){
     $("#update-log").textContent="update failed to start — is the server running?";
     btn.disabled=false;return;

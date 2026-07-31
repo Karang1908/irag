@@ -443,8 +443,38 @@ def make_handler(state: _State):
                 return self._json({"error": "internal error — see the dashboard server console"}, 500)
 
         # ---------- POST ----------
+        def _csrf_rejected(self) -> bool:
+            """Refuse writes that a foreign web page could have sent.
+
+            Every mutating endpoint was reachable as a CORS "simple
+            request": no preflight, so any site the user had open could
+            POST to 127.0.0.1 and force an `update` (real money), a
+            `rollback` (silent memory corruption the agent then reads as
+            truth), or unbounded `backup` writes. The port walk makes it
+            sprayable.
+
+            Requiring application/json is the load-bearing half — that
+            content type is not "simple", so the browser must preflight and
+            the same-origin policy blocks it. The Origin check is
+            belt-and-braces for anything that can set the header.
+            """
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0]
+            if ctype.strip().lower() != "application/json":
+                self._json({"error": "Content-Type: application/json "
+                                     "required"}, 415)
+                return True
+            origin = self.headers.get("Origin")
+            if origin:
+                host = urlparse(origin).hostname
+                if host not in ("127.0.0.1", "localhost", "::1"):
+                    self._json({"error": "cross-origin request refused"}, 403)
+                    return True
+            return False
+
         def do_POST(self):
             try:
+                if self._csrf_rejected():
+                    return
                 url = urlparse(self.path)
                 data = self._body()
                 conn = state.conn()

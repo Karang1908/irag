@@ -190,6 +190,34 @@ which can only over-ignore, never under-ignore.
 If something sensitive is still reachable, add it to `.iragignore` and run
 `irag sync` — pages for files that become ignored are purged.
 
+### Source files are treated as untrusted input
+
+A page is written by a model that has just read the file, and that page is
+injected into your agent automatically — at session start, and by the
+`PreToolUse` hook immediately before the file is edited. So a comment
+saying "ignore all previous instructions" is an attempt to author the
+page, with a delivery mechanism attached.
+
+Three things guard it: file content is fenced and explicitly labelled as
+data rather than instructions, the output contract is restated *after* the
+content so the last word is irag's, and any instruction-shaped line that
+survives into a page (`ignore previous instructions`, `curl … | sh`, a
+fake `<system>` block) is stripped before the page is stored, with a
+warning naming the file.
+
+The linter cannot help here — it verifies paths, versions and symbols, and
+this payload is prose.
+
+### The dashboard refuses cross-origin writes
+
+`irag dashboard` binds to 127.0.0.1, but a page you have open in the same
+browser can still POST to it. Every mutating endpoint therefore requires
+`Content-Type: application/json` — which forces a CORS preflight the
+same-origin policy blocks — and rejects a request whose `Origin` is not
+localhost. Without this, any site could have triggered an `update`
+(spending real money), a `rollback` (silently corrupting memory your agent
+then reads as truth), or unbounded backups.
+
 ### Executable facts run shell commands — that is why they are off
 
 `irag verify` stores a claim together with the command that proves it, and
