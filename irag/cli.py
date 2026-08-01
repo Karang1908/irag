@@ -797,6 +797,42 @@ def cmd_ask(args) -> int:
     return 0
 
 
+def cmd_forget(args) -> int:
+    """Drop a page from live memory.
+
+    Deleted files are excluded automatically, but a page can outlive its
+    subject in ways irag cannot infer — a path that moved outside the
+    project, a folder that will never come back. Without this the only
+    remedy was editing SQLite by hand, and the reflex an agent reaches for
+    (`irag resolve`) permanently suppresses the warning while leaving the
+    page live, which is worse than doing nothing.
+    """
+    conn, _, _ = _open()
+    row = conn.execute(
+        "SELECT page_id, subject_id, COALESCE(deleted_at,'') d FROM pages "
+        "WHERE subject_id=?", (args.path,)).fetchone()
+    if not row:
+        raise SystemExit(f"irag: no page for {args.path!r} "
+                         "(run 'irag map' to list what is tracked)")
+    if args.purge:
+        pid = row["page_id"]
+        conn.execute("DELETE FROM contradictions WHERE page_id=?", (pid,))
+        conn.execute("DELETE FROM links WHERE source_page_id=? "
+                     "OR target_page_id=?", (pid, pid))
+        conn.execute("DELETE FROM revisions WHERE page_id=?", (pid,))
+        conn.execute("DELETE FROM pages WHERE page_id=?", (pid,))
+        conn.commit()
+        print(f"purged {args.path} — page and all its history are gone")
+        return 0
+    conn.execute("UPDATE pages SET deleted_at=datetime('now') "
+                 "WHERE page_id=?", (row["page_id"],))
+    conn.commit()
+    print(f"forgot {args.path} — no longer served by search or context")
+    print("    history is kept, so 'irag asof' and 'irag why' still see it")
+    print(f"    use 'irag forget {args.path} --purge' to delete it entirely")
+    return 0
+
+
 def cmd_suggest(args) -> int:
     """What irag would tell you to do next, given the current state.
 
@@ -1459,6 +1495,13 @@ def build_parser() -> argparse.ArgumentParser:
                          "roughly what it would cost, without calling the "
                          "model or writing anything")
     sp.set_defaults(func=cmd_update)
+
+    sp = sub.add_parser("forget", help="drop a page from live memory "
+                                       "(history kept unless --purge)")
+    sp.add_argument("path")
+    sp.add_argument("--purge", action="store_true",
+                    help="delete the page and all its revisions permanently")
+    sp.set_defaults(func=cmd_forget)
 
     sp = sub.add_parser("suggest", help="what needs doing right now, with "
                                         "the command that does it")

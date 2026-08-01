@@ -235,7 +235,7 @@ def _children(conn, folder: str) -> list[sqlite3.Row]:
     return conn.execute(
         f"""SELECT p.*, r.body_markdown body FROM pages p
             JOIN revisions r ON r.revision_id = p.current_revision_id
-            WHERE {cond}
+            WHERE COALESCE(p.deleted_at,'') = '' AND {cond}
             ORDER BY (p.page_type='folder') DESC, p.subject_id""",
         params).fetchall()
 

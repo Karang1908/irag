@@ -294,20 +294,44 @@ def _line(text: str, pos: int) -> int:
     return text[:pos].count("\n") + 1
 
 
+def _py_scope(body, prefix: str):
+    """Symbols declared in one Python scope, recursing where the result is
+    still module/class API.
+
+    Only `tree.body` was walked before, which meant a nested `class Config`
+    (pydantic), a `class Meta` (django), and anything defined inside
+    `if sys.platform ...` or a `try/except ImportError` fallback were absent
+    from the symbol table entirely. Those are standard idioms, and the table
+    is handed to the model as "STRUCTURAL FACTS (ground truth)" — an
+    incomplete list presented as complete.
+
+    Function BODIES are deliberately not descended into: a def inside a def
+    is a local, not the file's interface.
+    """
+    for node in body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            kind = "method" if prefix else "function"
+            yield ("sym", f"{prefix}{node.name}", kind, node.lineno)
+        elif isinstance(node, ast.ClassDef):
+            yield ("sym", f"{prefix}{node.name}", "class", node.lineno)
+            yield from _py_scope(node.body, prefix=f"{prefix}{node.name}.")
+        elif isinstance(node, (ast.If, ast.Try, ast.With, ast.AsyncWith,
+                               ast.For, ast.AsyncFor, ast.While)):
+            # still the enclosing scope: a platform-conditional def or an
+            # ImportError fallback defines a real module-level name
+            for attr in ("body", "orelse", "finalbody"):
+                yield from _py_scope(getattr(node, attr, []) or [], prefix)
+            for handler in getattr(node, "handlers", []) or []:
+                yield from _py_scope(handler.body, prefix)
+
+
 def _py_parse(text: str, rel: str):
     """Yield ('sym', name, kind, line) and ('imp', dotted_or_relpath)."""
     try:
         tree = ast.parse(text)
     except SyntaxError:
         return
-    for node in tree.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            yield ("sym", node.name, "function", node.lineno)
-        elif isinstance(node, ast.ClassDef):
-            yield ("sym", node.name, "class", node.lineno)
-            for sub in node.body:
-                if isinstance(sub, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                    yield ("sym", f"{node.name}.{sub.name}", "method", sub.lineno)
+    yield from _py_scope(tree.body, prefix="")
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:

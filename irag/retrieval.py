@@ -50,7 +50,12 @@ def score(conn: sqlite3.Connection, cfg: dict,
     """Score every page. Returns dicts sorted by score desc."""
     open_files = open_files or []
     threshold = int(cfg["staleness"]["threshold"])
-    pages = conn.execute("SELECT * FROM pages").fetchall()
+    # A page whose file was deleted is history, not live memory. Serving
+    # it meant search and context handed agents summaries of files that no
+    # longer exist — and a rename is a delete plus an add, so every rename
+    # added one permanently. `asof`/`why` still see it; only serving stops.
+    pages = conn.execute(
+        "SELECT * FROM pages WHERE COALESCE(deleted_at,'') = ''").fetchall()
     fts = _fts_page_scores(conn, query or "")
 
     # subjects derivable from open files: the file itself + its folders
@@ -295,6 +300,7 @@ def search(conn: sqlite3.Connection, query: str) -> list[dict]:
                JOIN revisions r ON r.revision_id = f.rowid
                JOIN pages p ON p.page_id = r.page_id
                WHERE revisions_fts MATCH ?
+                 AND COALESCE(p.deleted_at,'') = ''
                ORDER BY (r.revision_id = p.current_revision_id) DESC, rank
                LIMIT 15""",
             (q,),

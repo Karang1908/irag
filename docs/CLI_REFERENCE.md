@@ -115,6 +115,23 @@ Auto-resolved contradictions (the claim simply stopped failing) are never
 suppressed: if such a claim starts failing again that is a real
 regression, and it is raised.
 
+### `irag forget PATH [--purge]`
+
+Drop a page from **live memory** — it stops being served by `search`,
+`context` and folder rollups, while its history stays queryable by `asof`
+and `why`. `--purge` deletes the page and every revision permanently.
+
+A file that is deleted from disk is withdrawn automatically: the next sync
+marks its page, and re-adding the path restores it. Since a rename is a
+delete plus an add, this is what stops every rename leaving behind a page
+for a file that no longer exists. Use `forget` for the cases irag cannot
+infer — a path that moved out of the project, a folder that will not
+return.
+
+Do **not** reach for `irag resolve` here. That dismisses the *contradiction*
+permanently while leaving the page live and served, which is worse than
+doing nothing.
+
 ### `irag stale`
 
 Show every page's staleness score, pinned flag, and whether it is due for

@@ -144,7 +144,9 @@ ignore = [".irag", ".git", "node_modules", "venv", ".venv", "dist", "build", "__
 
 [staleness]
 commit = 10              # per-commit staleness bump
-dependency = 20          # extra bump when a manifest file is touched
+dependency = 20          # bump applied to a file's IMPORTERS when it
+                         # changes (its page may describe that file's
+                         # interface), and again when a manifest is touched
 threshold = 1            # default: resynthesize on every change
                          # (raise to batch, e.g. 100, on large repos)
 skip_trivial = true      # an edit touching only comments/whitespace skips

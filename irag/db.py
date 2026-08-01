@@ -281,6 +281,12 @@ def ensure_db(db_path: Path) -> sqlite3.Connection:
     _add_column_if_missing(conn, "revisions", "session_key", "TEXT")
     _add_column_if_missing(conn, "contradictions", "resolution_kind", "TEXT")
     _add_column_if_missing(conn, "pages", "content_fingerprint", "TEXT")
+    # When a tracked file is deleted, its page must stop being served as
+    # live memory — search and context were still handing agents summaries
+    # of files that no longer exist, and a rename is a delete plus an add,
+    # so every rename left one behind permanently. History is kept so
+    # `asof` and `why` still work; only serving is affected.
+    _add_column_if_missing(conn, "pages", "deleted_at", "TEXT")
     # Backfill resolutions made before the column existed, so upgrading does
     # not silently discard every judgement a human already made. The auto
     # paths write a fixed sentinel note; anything else was a person typing.

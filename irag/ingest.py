@@ -257,7 +257,8 @@ def ancestors(path: str) -> list[str]:
 
 
 def _queue_file_event(conn, cfg, subject: str, ref: str, payload: dict,
-                      event_type: str = "commit") -> bool:
+                      event_type: str = "commit",
+                      repo: Path | None = None) -> bool:
     """Insert an event for a file page (idempotent on ref+subject) and bump
     the file page and its ancestor folders. Returns True if inserted."""
     exists = conn.execute(
@@ -267,16 +268,47 @@ def _queue_file_event(conn, cfg, subject: str, ref: str, payload: dict,
         return False
     db.get_or_create_page(conn, subject, subject_type="file",
                           page_type="file")
+    # Mark whether the file still exists. A deleted file kept a live page
+    # that search and context went on serving as current, and a rename is a
+    # delete plus an add — so every rename left one behind permanently, with
+    # no command able to remove it. Re-adding the path clears the mark, so a
+    # revert restores the page rather than orphaning it.
+    try:
+        gone = not (repo / subject).exists() if repo is not None else False
+    except OSError:
+        gone = False
+    conn.execute(
+        "UPDATE pages SET deleted_at = CASE WHEN ? THEN datetime('now') "
+        "ELSE NULL END WHERE subject_type='file' AND subject_id=?",
+        (1 if gone else 0, subject))
     conn.execute(
         "INSERT INTO events(event_type, source_ref, subject_id, payload, "
         "session_key) VALUES(?, ?, ?, ?, ?)",
         (event_type, ref, subject, json.dumps(payload), db.active_key()))
     bump = int(cfg["staleness"]["commit"])
+    dep_bump = int(cfg["staleness"]["dependency"])
     if Path(subject).name in MANIFEST_FILES:
-        bump += int(cfg["staleness"]["dependency"])
+        bump += dep_bump
     conn.execute(
         "UPDATE pages SET staleness_score = staleness_score + ? "
         "WHERE subject_type='file' AND subject_id=?", (bump, subject))
+    # Propagate to importers. The page template deliberately records
+    # cross-file claims ("## Connections & blast radius — who imports it and
+    # for what"), so a neighbour's interface change invalidates THIS page —
+    # and nothing rewrote it until that file happened to change on its own.
+    # [staleness].dependency previously applied only to six manifest
+    # filenames while the deps table, which `impact` traverses correctly,
+    # was never consulted. One hop: enough to catch the direct callers whose
+    # pages name the changed symbols, without cascading a whole repo.
+    if dep_bump:
+        try:
+            conn.execute(
+                "UPDATE pages SET staleness_score = staleness_score + ? "
+                "WHERE subject_type='file' AND subject_id IN "
+                "(SELECT source_subject FROM deps WHERE target_subject=?)",
+                (dep_bump, subject))
+        except sqlite3.OperationalError:
+            pass                      # pre-deps database
     for folder in ancestors(subject):
         db.get_or_create_page(conn, folder, subject_type="folder",
                               page_type="folder")
@@ -305,7 +337,8 @@ def ingest_commit(conn: sqlite3.Connection, cfg: dict, ref: str,
         if repo is not None and _content_already_known(conn, repo, subject):
             continue   # snapshot already captured this exact content
         if _queue_file_event(conn, cfg, subject, commit_hash,
-                             {"files": [subject], "message": message}):
+                             {"files": [subject], "message": message},
+                             repo=repo):
             inserted += 1
     conn.commit()
     return inserted
@@ -596,7 +629,7 @@ def snapshot(conn: sqlite3.Connection, cfg: dict, repo: Path,
         if subject and _queue_file_event(
                 conn, cfg, subject, ref,
                 {"files": [subject], "message": "working-tree change"},
-                event_type="snapshot"):
+                event_type="snapshot", repo=repo):
             inserted += 1
     for p in deleted:
         subject = file_subject(p, cfg, repo)
@@ -604,7 +637,7 @@ def snapshot(conn: sqlite3.Connection, cfg: dict, repo: Path,
                 conn, cfg, subject, ref,
                 {"files": [], "deleted": [subject],
                  "message": "file deleted from working tree"},
-                event_type="snapshot"):
+                event_type="snapshot", repo=repo):
             inserted += 1
 
     conn.execute("DELETE FROM tree_state")

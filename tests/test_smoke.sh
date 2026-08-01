@@ -1782,4 +1782,124 @@ skipped=$(cat "$CC/a.out" "$CC/b.out" | grep -c "already running" || true)
 rm -rf "$CC"
 echo "concurrent updates serialised ok"
 
+# --- deleted files, dep staleness, nested python symbols ---------------
+# A rename is a delete plus an add, so every rename left a page for a file
+# that no longer exists — served by search and context as live memory, with
+# no command able to remove it. And [staleness].dependency applied only to
+# six manifest filenames while the deps table was never consulted, so a
+# page claiming "calls helper() from lib.py" was never rewritten when
+# lib.py's interface changed.
+FN=$(mktemp -d)
+printf 'def helper():\n    return 1\n' > "$FN/lib.py"
+printf 'from lib import helper\ndef main():\n    return helper()\n' > "$FN/app.py"
+printf 'def run():\n    return 1\n' > "$FN/oldname.py"
+cat > "$FN/nested.py" <<'PYSRC'
+import sys
+class User:
+    class Config: pass
+    def save(self): pass
+if sys.platform == "win32":
+    def get_config_dir(): pass
+else:
+    def get_config_dir(): pass
+try:
+    from fast import loads
+except ImportError:
+    def loads(s): pass
+def outer():
+    def inner_local(): pass
+PYSRC
+( cd "$FN" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 )
+python3 - "$IRAG_SRC" "$FN" << 'PYEOF'
+import sys, pathlib
+cfg = pathlib.Path(sys.argv[2], ".irag/config.toml"); t = cfg.read_text()
+cfg.write_text(t.replace(
+    'command = "claude -p"       # prompt on stdin, markdown on stdout',
+    f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"'))
+PYEOF
+( cd "$FN" && python3 -m irag update >/dev/null 2>&1 ) || true
+# F-3: nested classes and conditionally-defined functions
+( cd "$FN" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db
+conn = db.connect(pathlib.Path(".irag/memory.db"))
+got = {r["name"] for r in conn.execute(
+    "SELECT name FROM symbols WHERE file='nested.py'")}
+want = {"User", "User.Config", "User.save", "get_config_dir", "loads",
+        "outer"}
+assert not (want - got), f"python symbols not indexed: {sorted(want - got)}"
+assert "inner_local" not in got and "outer.inner_local" not in got, \
+    "a function-local def was indexed as module API"
+PYEOF
+) || { echo "FAIL: nested/conditional python symbols"; rm -rf "$FN"; exit 1; }
+# F-2: an interface change must make importers due
+sleep 1
+printf 'def renamed():\n    return 1\n' > "$FN/lib.py"
+( cd "$FN" && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm change >/dev/null 2>&1 \
+  && python3 -m irag sync >/dev/null 2>&1 )
+( cd "$FN" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db
+conn = db.connect(pathlib.Path(".irag/memory.db"))
+app = conn.execute("SELECT staleness_score s FROM pages WHERE subject_id="
+                   "'app.py'").fetchone()["s"]
+assert app > 0, (
+    "app.py imports lib.py and its page names lib.py's symbols, but a "
+    "change to lib.py left it at staleness 0 — it will never be rewritten")
+PYEOF
+) || { echo "FAIL: dependency staleness propagation"; rm -rf "$FN"; exit 1; }
+# F-1: a renamed-away file must stop being served
+( cd "$FN" && git mv oldname.py newname.py \
+  && git -c user.email=t@t -c user.name=t commit -qm rename >/dev/null 2>&1 \
+  && python3 -m irag update >/dev/null 2>&1 ) || true
+( cd "$FN" && python3 -m irag synthesize --subject . >/dev/null 2>&1 ) || true
+( cd "$FN" && python3 -m irag search Mock 2>&1 | grep -q "oldname" ) \
+  && { echo "FAIL: a deleted file is still served by search"; rm -rf "$FN"; exit 1; }
+( cd "$FN" && python3 -m irag context 2>&1 | grep -q "oldname" ) \
+  && { echo "FAIL: a deleted file is still served in context"; rm -rf "$FN"; exit 1; }
+# history must survive
+( cd "$FN" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db
+conn = db.connect(pathlib.Path(".irag/memory.db"))
+row = conn.execute("SELECT deleted_at FROM pages WHERE subject_id="
+                   "'oldname.py'").fetchone()
+assert row and row["deleted_at"], "the deleted page was not marked"
+n = conn.execute("SELECT COUNT(*) c FROM revisions r JOIN pages p ON "
+                 "p.page_id=r.page_id WHERE p.subject_id='oldname.py'"
+                 ).fetchone()["c"]
+assert n > 0, "history was destroyed rather than withdrawn from serving"
+PYEOF
+) || { echo "FAIL: deleted-page bookkeeping"; rm -rf "$FN"; exit 1; }
+# and an explicit forget must exist and work
+( cd "$FN" && python3 -m irag forget app.py >/dev/null 2>&1 ) \
+  || { echo "FAIL: 'irag forget' does not work"; rm -rf "$FN"; exit 1; }
+# check the PAGE stops being served, not that its name vanishes from other
+# pages' prose (a folder rollup legitimately still names it until rewritten)
+( cd "$FN" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, config, retrieval
+root = pathlib.Path.cwd()
+conn = db.connect(root / ".irag" / "memory.db"); cfg = config.load(root)
+hits = {h["subject"] for h in retrieval.search(conn, "Mock")}
+assert "app.py" not in hits, f"a forgotten page is still a search hit: {hits}"
+row = conn.execute("SELECT deleted_at FROM pages WHERE subject_id="
+                   "'app.py'").fetchone()
+assert row and row["deleted_at"], "forget did not mark the page"
+# NOTE: the structural map may still list app.py, and correctly so — the
+# file is still on disk. `forget` withdraws the PAGE, not the fact that
+# the file exists. A file deleted from disk leaves the map on its own,
+# because the scanner rebuilds symbols from what is there.
+PYEOF
+) || { echo "FAIL: forgotten page still served"; rm -rf "$FN"; exit 1; }
+rm -rf "$FN"
+echo "deleted pages withdrawn + dep staleness + nested py symbols ok"
+
 echo "SMOKE TEST PASSED"
