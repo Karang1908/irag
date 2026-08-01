@@ -4,6 +4,104 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.45.0 — 2026-08-01
+
+### Fixed — JS/TS class methods were never indexed
+Python emitted `Outer.method`; JS emitted only the class name, so every
+method was absent from the symbol table — the table given to the model as
+"STRUCTURAL FACTS (ground truth)" and used by `map` and `brief`. JS now
+uses the same dotted convention, which the linter already matched.
+
+### Fixed — `touch` reported drift forever
+A file touched without a content change warned permanently: nothing
+rewrites an unchanged file, so its page timestamp never advanced past the
+mtime and no command could clear it. Drift now compares the
+comment-stripped fingerprint, and `sync` records a baseline for pages that
+predate that column.
+
+## 4.44.0 — 2026-07-31
+
+### Fixed — deleted files stayed in live memory
+A page whose file was deleted was still served by `search`, `context` and
+folder rollups. A rename is a delete plus an add, so every rename left one
+behind permanently, and no command could remove it. Pages now carry
+`deleted_at`; serving skips them while `asof`/`why` keep the history.
+**New:** `irag forget PATH [--purge]`.
+
+### Fixed — staleness never propagated through the dependency graph
+`[staleness].dependency` applied only to six manifest filenames while the
+`deps` table was never consulted, so a page saying "calls `helper()` from
+`lib.py`" was never rewritten when `lib.py` renamed it. Importers of a
+changed file now take the dependency bump.
+
+### Fixed — Python missed nested classes and conditional definitions
+Only `tree.body` was walked, so a nested `class Config` (pydantic), a
+`class Meta` (django), and anything defined inside `if sys.platform …` or a
+`try/except ImportError` fallback were absent entirely.
+
+## 4.43.0 — 2026-07-30
+
+### Security — the dashboard accepted cross-origin writes
+Every mutating endpoint was reachable as a CORS "simple request", so any
+page open in the same browser could force an `update` (real spend), a
+`rollback` (silent memory corruption), or unbounded backups. Mutating
+requests now require `application/json` — which forces a preflight the
+same-origin policy blocks — and a non-localhost `Origin` is refused.
+
+### Security — source files could steer their own summaries
+File content was injected raw as the last substantial thing in the prompt,
+and the resulting page is fed to agents automatically at session start and
+by the `PreToolUse` hook. Content is now fenced and labelled as data, the
+output contract is restated after it, and instruction-shaped lines are
+stripped before a page is stored.
+
+### Fixed — concurrent updates duplicated work
+Two sweeps starting together selected the same pages and each paid for
+them. An advisory lock serialises the CLI path.
+
+## 4.42.0 — 2026-07-30
+
+### Security — secrets and out-of-repo symlinks reached the LLM
+A symlink inside the project pointing outside it was ingested as ordinary
+source, sending its target's bytes to the model and into the database. And
+snapshot mode — the mode for every project that is not its own git root —
+ignored `.gitignore`, so `id_rsa` and `secrets.yaml` were tracked.
+`.gitignore` is now honoured in both modes, credential-shaped names are
+always refused, and escaping symlinks are skipped.
+
+### Fixed — `check` printed a false green
+With facts not re-run, every fact was reported verified while a stored
+status said DISPROVED. It now reports the stored status, labelled NOT
+re-run.
+
+## 4.41.0 — 2026-07-29
+
+### Security — `irag check` executed commands from the database
+Executable facts are shell commands stored in `.irag/memory.db`, which is
+meant to be committed — so `git clone && irag check` ran whatever a
+contributor had registered. Facts are now opt-in
+(`[check].fail_on_facts` defaults false) and every command is printed
+before it runs.
+
+### Added — executable memory, concept pages, just-in-time context
+`irag verify` records a claim together with the command that proves it;
+`irag check` can re-run them. `irag tried` records dead ends, `irag topic`
+gives a page to a concept spanning several files, `irag brief` prints what
+is known about one file (wired to `PreToolUse`), `irag capture` drafts a
+lesson from a failed command, and `irag suggest` names the command that
+fixes the current state. Also `irag update --dry-run` and
+`irag resolve --undo`.
+
+### Fixed — `impact` claimed "change is contained" wrongly
+Dynamic `import()`, root-absolute specifiers and `<script src>`/`<link>`
+produced no edges, so `impact` answered "contained" for files the page
+depended on. It also now fails closed on a path it does not track.
+
+### Fixed — resolutions did not survive re-synthesis
+Dedup matched only open rows, so a dismissed contradiction was re-raised
+under a new id forever. Manual dismissals now suppress permanently; auto
+resolutions stay re-raisable.
+
 ## 4.40.1 — 2026-07-25
 
 ### Fixed — a source file that turns binary left a stale page behind

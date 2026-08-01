@@ -1645,6 +1645,24 @@ PYEOF
 [ $? -eq 0 ] || { echo "FAIL: CLI reference is missing commands"; exit 1; }
 echo "docs in sync + every command documented ok"
 
+# the README's command list is the first thing anyone reads; it drifted to
+# claiming 36 commands when there were 45, listing none of the new ones
+python3 - "$IRAG_SRC" << 'PYEOF'
+import re, subprocess, sys, pathlib
+readme = pathlib.Path(sys.argv[1], "README.md").read_text()
+out = subprocess.run([sys.executable, "-m", "irag", "--help"],
+                     capture_output=True, text=True).stdout
+cmds = [c for c in re.search(r"\{([a-z,\-]+)\}", out).group(1).split(",") if c]
+missing = [c for c in cmds if f"`{c}`" not in readme]
+assert not missing, f"commands missing from README: {missing}"
+claimed = re.search(r"## Commands \((\d+)\)", readme)
+assert claimed and int(claimed.group(1)) == len(cmds), (
+    f"README claims {claimed and claimed.group(1)} commands, there are "
+    f"{len(cmds)}")
+PYEOF
+[ $? -eq 0 ] || { echo "FAIL: README command list is stale"; exit 1; }
+echo "README command list matches the CLI ok"
+
 # --- secrets must never reach a prompt or the database ------------------
 # A symlink inside the repo pointing outside it was ingested as an ordinary
 # source file and its TARGET's bytes went into the synthesis prompt — on the

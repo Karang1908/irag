@@ -281,18 +281,37 @@ moment you close the terminal.
 
 The full version: [docs/STORY.md](docs/STORY.md).
 
-## Commands (36)
+## Commands (45)
 
 `init` · `claude-setup` · `doctor` — setup ·
 `sync` · `ingest-commit` · `scan` — detect ·
 `synthesize` · `update` · `lint` · `learn` · `record-decision` · `resolve` ·
-`rollback` — write ·
+`rollback` · `forget` — write ·
 `search` · `map` · `impact` · `stale` · `status` · `diff` ·
-`contradictions` · `asof` — read (SQL, zero tokens) ·
+`contradictions` · `asof` · `brief` · `suggest` · `facts` ·
+`candidates` — read (SQL, zero tokens) ·
 `ask` · `context` — read (AI) ·
+`tried` · `verify` · `topic` · `capture` — record what only you know ·
 `session-begin` · `session-end` · `sessions` · `transcript` · `recap` — diary ·
 `pin` · `unpin` · `export` · `check` · `backup` — admin ·
 `dashboard` · `obsidian` · `why` — views & provenance
+
+Four of these record what a summariser cannot infer:
+
+```bash
+irag learn  "argon2 rehash happens in place on verify" --module auth.py
+irag tried  "position:sticky" --because "only catches after you scroll past"
+irag topic  "root privilege" --files scanner.py,net.py,ui.html
+irag verify "scan aborts without root" --cmd "python3 -m scanner --probe" \
+            --expect QUITTING --module scanner.py
+```
+
+`tried` stores a **dead end**, so the next session doesn't re-derive it.
+`topic` gives a page to a concept that spans files sharing no folder.
+`verify` is **executable memory** — a claim that carries the command
+proving it, which `irag check` can re-run. And `irag brief <file>` prints
+everything known about one file; after `claude-setup` it fires
+automatically just before your agent edits it.
 
 Full reference: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
