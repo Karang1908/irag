@@ -79,6 +79,50 @@ CSS_IMPORT_RE = re.compile(
     r"""@import\s+(?:url\()?\s*['"]([^'"]+)['"]""")
 # `[...]` is the type-parameter list: without it every generic function
 # (Go 1.18+) went unindexed, because the name is not followed by `(`.
+# Methods inside a JS/TS class body. Python already emitted `Outer.method`
+# while JS emitted only the class name, so a page documenting `save()` on a
+# class had no structural grounding and `map`/`brief` under-reported the
+# interface. Same dotted convention as Python, which the linter already
+# matches (`name = ? OR name LIKE '%.sym'`).
+JS_METHOD_RE = re.compile(
+    r"^\s*(?:(?:public|private|protected|static|async|get|set|readonly"
+    r"|override|abstract|declare)\s+)*"
+    r"(?P<name>[A-Za-z_$][\w$]*)\s*"
+    r"(?:<[^>]*>)?\s*\([^)]*\)\s*(?::\s*[^{;=]+)?\s*\{", re.M)
+# words that share the shape of a method definition
+_JS_METHOD_SKIP = {"if", "for", "while", "switch", "catch", "function",
+                   "return", "do", "else", "try", "finally", "with",
+                   "typeof", "await", "new", "delete", "void", "yield"}
+
+
+def _js_class_methods(text: str):
+    """Yield (class_name, method_name, line) for each JS/TS class body.
+
+    Brace counting, not a parser: a brace inside a string or comment can
+    stretch or clip a class span. That errs toward indexing one symbol too
+    many or too few, which this module already accepts — an extra symbol
+    only softens a linter check, and the alternative is a JS parser.
+    """
+    for m in re.finditer(r"\bclass\s+([A-Za-z_$][\w$]*)[^{]*\{", text):
+        name = m.group(1)
+        depth, i, n = 0, m.end() - 1, len(text)
+        while i < n:                       # find the matching close brace
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        body = text[m.end():i]
+        for meth in JS_METHOD_RE.finditer(body):
+            mname = meth.group("name")
+            if mname in _JS_METHOD_SKIP:
+                continue
+            line = text[:m.end()].count("\n") + body[:meth.start()].count("\n") + 1
+            yield name, mname, line
+
+
 GO_SYMBOL_RE = re.compile(
     r"^func\s+(?:\([^)]*\)\s+)?(\w+)\s*(?:\[[^\]]*\]\s*)?\(", re.M)
 # Go declared no types at all: `type Server struct` and `type Handler
@@ -383,6 +427,8 @@ def _regex_parse(text: str, rel: str, suffix: str):
                     "type" if (g["iface"] or g["ty"]) else
                     "const" if g["var"] else "function")
             yield ("sym", name, kind, line_no)
+        for cls, meth, line_no in _js_class_methods(text):
+            yield ("sym", f"{cls}.{meth}", "method", line_no)
         for m in JS_IMPORT_RE.finditer(text):
             target = _web_spec(rel, m.group(1))
             if target:

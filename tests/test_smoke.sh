@@ -1902,4 +1902,59 @@ PYEOF
 rm -rf "$FN"
 echo "deleted pages withdrawn + dep staleness + nested py symbols ok"
 
+# --- js class methods, and touch-without-edit is not drift --------------
+# Python emitted `Outer.method` while JS emitted only the class name, so a
+# page documenting a method had no structural grounding. And `touch` with
+# no content change reported drift forever: nothing rewrites an unchanged
+# file, so its page timestamp never advances past the mtime.
+JM=$(mktemp -d)
+cat > "$JM/mod.ts" <<'TSEOF'
+export class Store {
+  constructor(x: number) {}
+  save(v: string): void {}
+  static create(): Store { return new Store(1); }
+  async load(): Promise<void> {}
+  private helper(): void { if (true) { doThing(); } }
+}
+export function topLevel() {}
+TSEOF
+printf 'def a(): return 1\n' > "$JM/app.py"
+( cd "$JM" && git init -q . && git add -A \
+  && git -c user.email=t@t -c user.name=t commit -qm i \
+  && python3 -m irag init >/dev/null 2>&1 \
+  && python3 -m irag scan >/dev/null 2>&1 )
+( cd "$JM" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db
+conn = db.connect(pathlib.Path(".irag/memory.db"))
+got = {r["name"] for r in conn.execute(
+    "SELECT name FROM symbols WHERE file='mod.ts'")}
+want = {"Store", "Store.save", "Store.create", "Store.load",
+        "Store.helper", "topLevel"}
+missing = want - got
+assert not missing, f"js class methods not indexed: {sorted(missing)}"
+bad = {n for n in got if n.endswith((".if", ".for", ".while", ".switch"))}
+assert not bad, f"control flow captured as methods: {sorted(bad)}"
+PYEOF
+) || { echo "FAIL: js class method extraction"; rm -rf "$JM"; exit 1; }
+python3 - "$IRAG_SRC" "$JM" << 'PYEOF'
+import sys, pathlib
+cfg = pathlib.Path(sys.argv[2], ".irag/config.toml"); t = cfg.read_text()
+cfg.write_text(t.replace(
+    'command = "claude -p"       # prompt on stdin, markdown on stdout',
+    f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"'))
+PYEOF
+( cd "$JM" && python3 -m irag update >/dev/null 2>&1 ) || true
+sleep 1
+touch "$JM/app.py"
+( cd "$JM" && python3 -m irag status 2>&1 | grep -q "changed since" ) \
+  && { echo "FAIL: touch with no edit was reported as drift"; rm -rf "$JM"; exit 1; }
+sleep 1
+printf 'def a(): return 999\ndef added(): pass\n' > "$JM/app.py"
+( cd "$JM" && python3 -m irag status 2>&1 | grep -q "changed since" ) \
+  || { echo "FAIL: a real edit stopped being reported as drift"; rm -rf "$JM"; exit 1; }
+rm -rf "$JM"
+echo "js class methods + touch-is-not-drift ok"
+
 echo "SMOKE TEST PASSED"

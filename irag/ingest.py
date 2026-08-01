@@ -459,7 +459,39 @@ def sync(conn: sqlite3.Connection, cfg: dict,
     # consumes all queued events for a subject at once.
     if mode != "git":
         total += snapshot(conn, cfg, repo, baseline_if_empty=True)
+    _backfill_fingerprints(conn, cfg, repo)
     return total
+
+
+def _backfill_fingerprints(conn, cfg: dict, repo: Path) -> None:
+    """Give pre-fingerprint pages a baseline so drift can be checked.
+
+    Pages synthesized before content_fingerprint existed have none, and
+    drift then falls back to mtime alone — so `touch` on such a file warns
+    forever, since nothing rewrites an unchanged file to store one. Sync
+    has just established that these files produced no event, i.e. their
+    content is what the page was written from, which makes recording the
+    current fingerprint safe rather than a guess.
+    """
+    from .synthesis import semantic_fingerprint
+    try:
+        rows = conn.execute(
+            "SELECT subject_id FROM pages WHERE page_type='file' "
+            "AND current_revision_id IS NOT NULL "
+            "AND COALESCE(content_fingerprint,'') = '' "
+            "AND COALESCE(deleted_at,'') = '' LIMIT 500").fetchall()
+    except sqlite3.OperationalError:
+        return
+    for row in rows:
+        sid = row["subject_id"]
+        if conn.execute("SELECT 1 FROM events WHERE subject_id=? AND "
+                        "status='queued' LIMIT 1", (sid,)).fetchone():
+            continue                  # a real change is pending; not a baseline
+        fp = semantic_fingerprint(repo / sid)
+        if fp:
+            conn.execute("UPDATE pages SET content_fingerprint=? "
+                         "WHERE subject_id=?", (fp, sid))
+    conn.commit()
 
 
 def _has_commits(repo: Path | None = None) -> bool:
@@ -542,9 +574,19 @@ def drifted_files(conn, cfg: dict, repo: Path, limit: int = 50) -> list[str]:
     edit), which is the safe direction — it says "run update", and update is
     a no-op when nothing really changed.
     """
-    pages = {r["subject_id"]: r["last_updated_at"] for r in conn.execute(
-        "SELECT subject_id, last_updated_at FROM pages "
-        "WHERE page_type='file' AND current_revision_id IS NOT NULL")}
+    try:
+        pages = {r["subject_id"]: (r["last_updated_at"],
+                                   r["content_fingerprint"])
+                 for r in conn.execute(
+                     "SELECT subject_id, last_updated_at, content_fingerprint "
+                     "FROM pages WHERE page_type='file' "
+                     "AND current_revision_id IS NOT NULL")}
+    except sqlite3.OperationalError:      # pre-fingerprint database
+        pages = {r["subject_id"]: (r["last_updated_at"], None)
+                 for r in conn.execute(
+                     "SELECT subject_id, last_updated_at FROM pages "
+                     "WHERE page_type='file' AND current_revision_id "
+                     "IS NOT NULL")}
     if not pages:
         return []
     out, count = [], 0
@@ -557,9 +599,10 @@ def drifted_files(conn, cfg: dict, repo: Path, limit: int = 50) -> list[str]:
         if is_ignored(rel, cfg, repo):
             continue
         count += 1
-        written = pages.get(rel)
-        if not written:
+        entry = pages.get(rel)
+        if not entry:
             continue
+        written, fingerprint = entry
         try:
             mtime = f.stat().st_mtime
         except OSError:
@@ -571,8 +614,18 @@ def drifted_files(conn, cfg: dict, repo: Path, limit: int = 50) -> list[str]:
                     tzinfo=datetime.timezone.utc).timestamp()
         except ValueError:
             continue
-        if mtime > page_ts + 1:      # 1s slack: page write and edit can race
-            out.append(rel)
+        if mtime <= page_ts + 1:     # 1s slack: page write and edit can race
+            continue
+        # `touch` with no edit made this warn forever: nothing rewrites the
+        # page, so its timestamp never advances past the mtime. Compare the
+        # content itself before claiming drift — and use the same
+        # comment-stripped fingerprint synthesis uses, so drift agrees with
+        # what an update would actually do.
+        if fingerprint:
+            from .synthesis import semantic_fingerprint
+            if semantic_fingerprint(f) == fingerprint:
+                continue
+        out.append(rel)
     return sorted(out)
 
 
