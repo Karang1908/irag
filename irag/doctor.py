@@ -9,7 +9,6 @@ from __future__ import annotations
 import shlex
 import shutil
 import sqlite3
-import subprocess
 from pathlib import Path
 
 from . import config as config_mod
@@ -66,7 +65,8 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
     if shutil.which("git"):
         ok("git on PATH")
     else:
-        fail("git on PATH", "irag cannot ingest without git")
+        warn("git on PATH", "not found — snapshot ingestion still works, "
+             "but commit history and Git hooks are unavailable")
 
     # Which copy of irag is actually running. With more than one clone on
     # disk, the `irag` on PATH has silently switched between them before,
@@ -175,22 +175,22 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
         ok("config sanity")
 
     # LLM command
-    llm_cmd = shlex.split(cfg["llm"]["command"])
+    try:
+        llm_cmd = shlex.split(cfg["llm"]["command"])
+    except ValueError as exc:
+        llm_cmd = []
+        fail("LLM command syntax", str(exc))
     if llm_cmd and shutil.which(llm_cmd[0]):
         ok("LLM command found", cfg["llm"]["command"])
         if probe_llm:
             try:
-                p = subprocess.run(
-                    llm_cmd, input="Reply with exactly: OK",
-                    capture_output=True, text=True, timeout=60)
-                if p.returncode == 0 and p.stdout.strip():
-                    ok("LLM probe", f"responded ({len(p.stdout)} chars)")
-                else:
-                    fail("LLM probe",
-                         f"exit {p.returncode}: {p.stderr.strip()[:120]}")
-            except (OSError, subprocess.TimeoutExpired) as exc:
+                from . import synthesis
+                answer = synthesis.run_llm(
+                    cfg, "Reply with exactly: OK", page_hint="doctor")
+                ok("LLM probe", f"responded ({len(answer)} chars)")
+            except (OSError, SystemExit) as exc:
                 fail("LLM probe", str(exc))
-    else:
+    elif llm_cmd:
         fail("LLM command found",
              f"{llm_cmd[0] if llm_cmd else '(empty)'} not on PATH — "
              "set [llm].command in .irag/config.toml")
@@ -200,7 +200,7 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
     # repo) have no hooks by design
     from .ingest import git_rooted
     if git_rooted(repo):
-        for hook in ("post-commit", "post-merge"):
+        for hook in ("post-commit", "post-merge", "post-checkout"):
             hp = repo / ".git" / "hooks" / hook
             if hp.exists() and HOOK_MARKER in hp.read_text(
                     encoding="utf-8", errors="replace"):
@@ -214,20 +214,16 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
         ok("git hooks n/a (snapshot-scoped project)")
 
     # scan freshness
-    head = ""
-    if git_rooted(repo):
-        try:
-            head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo,
-                                  capture_output=True,
-                                  text=True).stdout.strip()
-        except OSError:
-            head = ""
+    from . import structure
+    head = structure.scan_fingerprint(conn, repo)
     scanned = db.get_meta(conn, "last_scanned_head")
     if head and scanned == head:
         ok("structural map current")
     elif head:
-        warn("structural map", "stale vs HEAD — run 'irag scan' "
+        warn("structural map", "stale vs source tree — run 'irag scan' "
              "(auto-runs on context/map)")
+    else:
+        ok("structural map n/a", "no trackable source fingerprint yet")
 
     # queue health
     failed = conn.execute("SELECT COUNT(*) c FROM events "
