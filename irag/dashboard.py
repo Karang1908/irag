@@ -58,13 +58,47 @@ class _State:
     def __init__(self, root: Path):
         self.root = root
         self.cfg = config_mod.load(root)
+        self.config_error: str | None = None
+        self._config_lock = threading.Lock()
+        self._config_stamp = self._stamp()
         self._local = threading.local()
-        self._schema_ready = False
+        # Migrate once, before request threads can race each other through
+        # ensure_db().  Request connections only need the cheap connect path.
+        bootstrap = db.ensure_db(root / ".irag" / "memory.db")
+        bootstrap.close()
+        self._schema_ready = True
         self.lock = threading.Lock()          # serialize LLM-heavy operations
         self.update_lock = threading.Lock()   # atomic guard for update_running
         self.update_log: list[str] = []
         self.update_running = False
         self.last_live = 0.0
+
+    def _stamp(self):
+        path = config_mod.config_path(self.root)
+        try:
+            stat = path.stat()
+            return stat.st_mtime_ns, stat.st_size
+        except OSError:
+            return None
+
+    def refresh_config(self) -> str | None:
+        """Reload config edits without requiring a dashboard restart."""
+        stamp = self._stamp()
+        with self._config_lock:
+            if stamp == self._config_stamp:
+                return self.config_error
+            try:
+                fresh = config_mod.load(self.root)
+            except BaseException as exc:
+                # Keep the last known-good config for read-only views, but
+                # expose the error and refuse operations that would spend
+                # tokens or mutate derived state.
+                self.config_error = str(exc)
+            else:
+                self.cfg = fresh
+                self.config_error = None
+            self._config_stamp = stamp
+            return self.config_error
 
     def conn(self):
         """This request's connection.
@@ -88,8 +122,7 @@ class _State:
         if existing is not None:
             return existing
         path = self.root / ".irag" / "memory.db"
-        fresh = db.connect(path) if self._schema_ready else db.ensure_db(path)
-        self._schema_ready = True
+        fresh = db.connect(path)
         self._local.conn = fresh
         return fresh
 
@@ -131,7 +164,8 @@ def _run_op(op: str, conn, state) -> str | None:
     if op == "sync":
         from . import ingest
         n = ingest.sync(conn, cfg, root)
-        return (f"{n} event(s) queued — run Update to synthesize them"
+        return (f"{n} change event(s) recorded — run Update to synthesize "
+                "the live pages"
                 if n else "nothing changed since the last sync")
     if op == "scan":
         stats_ = structure.scan(conn, cfg, root, force=True)
@@ -146,7 +180,7 @@ def _run_op(op: str, conn, state) -> str | None:
         from . import check as check_mod
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            rc = check_mod.run(conn, cfg)
+            rc = check_mod.run(conn, cfg, repo=root)
         return buf.getvalue().strip() + (
             "\n\nexit 0 — CI would pass" if rc == 0
             else "\n\nexit 1 — CI would FAIL")
@@ -183,6 +217,7 @@ def make_handler(state: _State):
             self.send_response(code)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store, must-revalidate")
             self.end_headers()
             self.wfile.write(body)
 
@@ -199,13 +234,21 @@ def make_handler(state: _State):
             self.wfile.write(body)
 
         def _body(self) -> dict:
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                raise ValueError("invalid Content-Length") from None
+            if length < 0 or length > 1_000_000:
+                raise ValueError("request body must be at most 1 MB")
             if not length:
                 return {}
             try:
-                return json.loads(self.rfile.read(length))
+                value = json.loads(self.rfile.read(length))
             except json.JSONDecodeError:
-                return {}
+                raise ValueError("invalid JSON body") from None
+            if not isinstance(value, dict):
+                raise ValueError("JSON body must be an object")
+            return value
 
         def handle_one_request(self):
             # ThreadingHTTPServer runs one thread per request, so the
@@ -224,6 +267,7 @@ def make_handler(state: _State):
             try:
                 url = urlparse(self.path)
                 qs = parse_qs(url.query)
+                config_error = state.refresh_config()
                 conn = state.conn()
                 if url.path in ("/", "/index.html"):
                     page = (ASSETS / "dashboard.html").read_text(
@@ -233,6 +277,7 @@ def make_handler(state: _State):
                     s = stats.status_dict(conn, state.cfg, state.root)
                     s["project"] = state.root.name or str(state.root)
                     s["root"] = str(state.root)
+                    s["config_error"] = config_error
                     return self._json(s)
                 if url.path == "/api/tokens":
                     return self._json(stats.token_series(conn))
@@ -241,7 +286,8 @@ def make_handler(state: _State):
                 if url.path == "/api/stale":
                     rows = conn.execute(
                         "SELECT subject_id, page_type, staleness_score, "
-                        "pinned FROM pages ORDER BY staleness_score DESC "
+                        "pinned FROM pages WHERE COALESCE(deleted_at,'')='' "
+                        "ORDER BY staleness_score DESC "
                         "LIMIT 100").fetchall()
                     return self._json([dict(r) for r in rows])
                 if url.path == "/api/contradictions":
@@ -249,6 +295,7 @@ def make_handler(state: _State):
                         """SELECT c.*, p.subject_id FROM contradictions c
                            JOIN pages p ON p.page_id=c.page_id
                            WHERE c.resolved_at IS NULL
+                             AND COALESCE(p.deleted_at,'')=''
                            ORDER BY c.detected_at DESC""").fetchall()
                     return self._json([dict(r) for r in rows])
                 if url.path == "/api/map":
@@ -257,23 +304,44 @@ def make_handler(state: _State):
                     # working-tree fingerprint (no-ops when nothing changed),
                     # but throttle anyway so a large repo isn't hashed on
                     # every poll.
-                    if (qs.get("live") and
+                    if (qs.get("live") and not config_error and
                             time.monotonic() - state.last_live > 3.0):
                         state.last_live = time.monotonic()
-                        try:
-                            from . import ingest
-                            ingest.sync(conn, state.cfg, state.root)
-                            structure.scan(conn, state.cfg, state.root)
-                        except sqlite3.OperationalError:
-                            # another writer holds the DB; the next poll
-                            # picks it up. Never 500 the map for this.
-                            state.last_live = 0.0      # retry immediately
-                        except Exception:
-                            traceback.print_exc()      # never swallow silently
+                        # Do not compete with either this dashboard or a CLI
+                        # update/Stop hook.  A skipped poll catches up three
+                        # seconds later; serving the last complete map is
+                        # safer than racing a second sync/scan writer.
+                        from .locking import UpdateLock
+                        live_lock = UpdateLock(state.root)
+                        if live_lock.acquire():
+                            try:
+                                if state.lock.acquire(blocking=False):
+                                    try:
+                                        from . import ingest
+                                        ingest.sync(
+                                            conn, state.cfg, state.root)
+                                        structure.scan(
+                                            conn, state.cfg, state.root)
+                                    except sqlite3.OperationalError:
+                                        state.last_live = 0.0
+                                    except Exception:
+                                        traceback.print_exc()
+                                        state.last_live = 0.0
+                                    finally:
+                                        state.lock.release()
+                                else:
+                                    state.last_live = 0.0
+                            finally:
+                                live_lock.release()
+                        else:
                             state.last_live = 0.0
                     mods = conn.execute(
-                        "SELECT subject_id, COUNT(*) n FROM symbols "
-                        "GROUP BY subject_id ORDER BY subject_id"
+                        "SELECT p.subject_id, COUNT(s.symbol_id) n "
+                        "FROM pages p LEFT JOIN symbols s "
+                        "ON s.subject_id=p.subject_id "
+                        "WHERE p.page_type='file' "
+                        "AND COALESCE(p.deleted_at,'')='' "
+                        "GROUP BY p.subject_id ORDER BY p.subject_id"
                     ).fetchall()
                     deps = conn.execute(
                         "SELECT source_subject s, target_subject t, "
@@ -284,7 +352,8 @@ def make_handler(state: _State):
                 if url.path == "/api/page":
                     subject = (qs.get("subject") or [""])[0]
                     page = conn.execute(
-                        "SELECT * FROM pages WHERE subject_id=?",
+                        "SELECT * FROM pages WHERE subject_id=? "
+                        "AND COALESCE(deleted_at,'')=''",
                         (subject,)).fetchone()
                     if not page:
                         return self._json({"error": "no such page"}, 404)
@@ -360,6 +429,7 @@ def make_handler(state: _State):
                            FROM pages p
                            LEFT JOIN revisions r
                                   ON r.revision_id=p.current_revision_id
+                           WHERE COALESCE(p.deleted_at,'')=''
                            ORDER BY p.subject_id""").fetchall()
                     return self._json([dict(r) for r in rows])
                 if url.path == "/api/why":
@@ -370,6 +440,10 @@ def make_handler(state: _State):
                 if url.path == "/api/impact":
                     subject = (qs.get("subject") or [""])[0]
                     structure.scan(conn, state.cfg, state.root)
+                    if not structure.is_tracked(conn, subject):
+                        return self._json(
+                            {"error": f"{subject or '(empty)'} is not a live "
+                                      "file or folder irag tracks"}, 404)
                     hits = structure.impact(conn, subject)
                     return self._json(
                         [{"subject": s, "hop": h} for s, h in hits])
@@ -377,7 +451,8 @@ def make_handler(state: _State):
                     import difflib
                     subject = (qs.get("subject") or [""])[0]
                     page = conn.execute(
-                        "SELECT page_id FROM pages WHERE subject_id=?",
+                        "SELECT page_id FROM pages WHERE subject_id=? "
+                        "AND COALESCE(deleted_at,'')=''",
                         (subject,)).fetchone()
                     if not page:
                         return self._json({"error": "no such page"}, 404)
@@ -435,8 +510,8 @@ def make_handler(state: _State):
                         return self._json({"error": "need a date"}, 400)
                     try:
                         return self._json(provenance.asof_data(conn, date))
-                    except sqlite3.Error:
-                        return self._json({"error": "bad date"}, 400)
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
                 return self._json({"error": "not found"}, 404)
             except Exception:   # keep the dashboard alive
                 traceback.print_exc()
@@ -476,8 +551,14 @@ def make_handler(state: _State):
                 if self._csrf_rejected():
                     return
                 url = urlparse(self.path)
+                config_error = state.refresh_config()
                 data = self._body()
                 conn = state.conn()
+                if config_error and url.path in (
+                        "/api/chat", "/api/update", "/api/op"):
+                    return self._json(
+                        {"error": "config reload failed: " + config_error},
+                        400)
                 if url.path == "/api/chat":
                     question = str(data.get("message", "")).strip()
                     if not question:
@@ -510,51 +591,73 @@ def make_handler(state: _State):
                                                "error": str(exc)}, 502)
                     return self._json({"mode": "ai", "answer": answer})
                 if url.path == "/api/resolve":
-                    cid = int(data.get("id", 0))
-                    if data.get("undo"):
-                        row = linter.undo_resolve(conn, cid)
-                        return self._json({"ok": True, "undone": True,
-                                           "subject": row["subject_id"]})
-                    row = linter.resolve(conn, cid,
-                                         notes=data.get("notes") or
-                                         "dismissed from dashboard")
+                    try:
+                        cid = int(data.get("id", 0))
+                        if data.get("undo"):
+                            row = linter.undo_resolve(conn, cid)
+                            return self._json({"ok": True, "undone": True,
+                                               "subject": row["subject_id"]})
+                        row = linter.resolve(
+                            conn, cid, notes=data.get("notes") or
+                            "dismissed from dashboard")
+                    except (TypeError, ValueError, SystemExit) as exc:
+                        return self._json({"error": str(exc)}, 400)
                     # the caller shows this: dismissing marks the flag
                     # wrong, and never edits the page it was raised on
                     return self._json({"ok": True, "subject": row["subject_id"],
                                        "claim": row["claim"],
                                        "page_unchanged": True})
                 if url.path == "/api/update":
+                    from .locking import UpdateLock
+                    repo_lock = UpdateLock(state.root)
+                    if not repo_lock.acquire():
+                        return self._json(
+                            {"ok": False,
+                             "error": "another irag update is already "
+                                      "running in this repository"}, 409)
                     # atomic check-and-set: two rapid POSTs must not both
                     # start a worker (they'd run sync/scan concurrently)
                     with state.update_lock:
                         if state.update_running:
+                            repo_lock.release()
                             return self._json({"ok": False,
                                                "error": "already running"}, 409)
                         state.update_running = True
                         state.update_log = ["update started"]
+                    worker_cfg = state.cfg
 
                     def worker():
                         try:
                             wconn = state.conn()
-                            from . import ingest
-                            n = ingest.sync(wconn, state.cfg, state.root)
-                            state.update_log.append(f"sync: {n} event(s)")
-                            structure.scan(wconn, state.cfg, state.root)
                             with state.lock:
-                                done = synthesis.sweep(wconn, state.cfg,
-                                                       state.root)
-                            state.update_log.append(
-                                f"synthesized {done} page version(s)")
-                            added = linter.lint(wconn, state.cfg, state.root)
-                            state.update_log.append(
-                                f"lint: {added} new contradiction(s)")
+                                from . import ingest
+                                n = ingest.sync(wconn, worker_cfg, state.root)
+                                state.update_log.append(f"sync: {n} event(s)")
+                                structure.scan(wconn, worker_cfg, state.root)
+                                done = synthesis.sweep(
+                                    wconn, worker_cfg, state.root)
+                                state.update_log.append(
+                                    f"synthesized {done} page version(s)")
+                                added = linter.lint(
+                                    wconn, worker_cfg, state.root)
+                                state.update_log.append(
+                                    f"lint: {added} new contradiction(s)")
                             state.update_log.append("done")
                         except BaseException as exc:
                             state.update_log.append(f"ERROR: {exc}")
                         finally:
-                            state.update_running = False
+                            state.release()
+                            repo_lock.release()
+                            with state.update_lock:
+                                state.update_running = False
 
-                    threading.Thread(target=worker, daemon=True).start()
+                    try:
+                        threading.Thread(target=worker, daemon=True).start()
+                    except Exception:
+                        repo_lock.release()
+                        with state.update_lock:
+                            state.update_running = False
+                        raise
                     return self._json({"ok": True})
                 if url.path in ("/api/learn", "/api/record-decision"):
                     text = str(data.get("text", "")).strip()
@@ -594,14 +697,25 @@ def make_handler(state: _State):
                     # allowlist of Python callables — never a shell string,
                     # so a crafted request can't run anything else.
                     op = str(data.get("op", ""))
-                    out = _run_op(op, conn, state)
+                    from .locking import UpdateLock
+                    op_lock = UpdateLock(state.root)
+                    if not op_lock.acquire():
+                        return self._json(
+                            {"error": "an update is already running; wait "
+                                      "for it to finish"}, 409)
+                    try:
+                        with state.lock:
+                            out = _run_op(op, conn, state)
+                    finally:
+                        op_lock.release()
                     if out is None:
                         return self._json({"error": f"unknown op {op!r}"}, 400)
                     return self._json({"ok": True, "op": op, "output": out})
                 if url.path == "/api/backup":
                     import datetime
                     import sqlite3 as _sq
-                    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                    stamp = datetime.datetime.now().strftime(
+                        "%Y%m%d-%H%M%S-%f")
                     dest = (state.root / ".irag" / "backups"
                             / f"memory-{stamp}.db")
                     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -612,6 +726,10 @@ def make_handler(state: _State):
                     return self._json({"ok": True, "path": str(dest),
                                        "bytes": dest.stat().st_size})
                 return self._json({"error": "not found"}, 404)
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 400)
+            except SystemExit as exc:
+                return self._json({"error": str(exc)}, 400)
             except Exception:
                 traceback.print_exc()
                 return self._json({"error": "internal error — see the dashboard server console"}, 500)
@@ -628,6 +746,7 @@ def serve(root: Path, port: int = 7777, open_browser: bool = True) -> None:
         try:
             server = ThreadingHTTPServer(("127.0.0.1", candidate),
                                          make_handler(state))
+            server.daemon_threads = True
             port = candidate
             break
         except OSError:
@@ -650,3 +769,5 @@ def serve(root: Path, port: int = 7777, open_browser: bool = True) -> None:
         server.serve_forever()
     except KeyboardInterrupt:
         print("\nstopped", flush=True)
+    finally:
+        server.server_close()
