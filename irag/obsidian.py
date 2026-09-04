@@ -108,7 +108,9 @@ def export_vault(conn: sqlite3.Connection, cfg: dict, repo: Path,
         (vault / "_versions").mkdir()
 
     threshold = int(cfg["staleness"]["threshold"])
-    pages = conn.execute("SELECT * FROM pages ORDER BY subject_id").fetchall()
+    pages = conn.execute(
+        "SELECT * FROM pages WHERE COALESCE(deleted_at,'')='' "
+        "ORDER BY subject_id").fetchall()
     subjects = {p["subject_id"] for p in pages}
     # resolve note names before anything is written, so notes and the
     # wikilinks pointing at them agree
@@ -263,13 +265,16 @@ def export_vault(conn: sqlite3.Connection, cfg: dict, repo: Path,
     # ------------------------------------------------------------------
     totals = conn.execute(
         """SELECT
-             (SELECT COUNT(*) FROM pages)                                AS pages,
+             (SELECT COUNT(*) FROM pages
+               WHERE COALESCE(deleted_at,'')='')                         AS pages,
              (SELECT COUNT(*) FROM revisions)                            AS revisions,
              (SELECT COALESCE(SUM(tokens_used),0) FROM revisions)        AS tokens,
              (SELECT COUNT(*) FROM events)                               AS events,
              (SELECT COUNT(*) FROM events WHERE status='queued')         AS queued,
              (SELECT COUNT(*) FROM contradictions)                       AS contras,
-             (SELECT COUNT(*) FROM contradictions WHERE resolved_at IS NULL)
+             (SELECT COUNT(*) FROM contradictions c JOIN pages p
+               ON p.page_id=c.page_id WHERE c.resolved_at IS NULL
+               AND COALESCE(p.deleted_at,'')='')
                                                                          AS open_contras
         """).fetchone()
     stale_table = "\n".join(
