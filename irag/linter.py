@@ -348,7 +348,8 @@ def _insert(conn, page_id: int, revision_id: int, claim: str, truth: str,
 def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
          subject_id: str | None = None) -> int:
     """Run static checks on current page bodies. Returns contradictions added."""
-    where = "WHERE p.current_revision_id IS NOT NULL"
+    where = ("WHERE p.current_revision_id IS NOT NULL "
+             "AND COALESCE(p.deleted_at,'') = ''")
     params: tuple = ()
     if subject_id:
         where += " AND p.subject_id=?"
@@ -585,7 +586,8 @@ def lint_llm(conn: sqlite3.Connection, cfg: dict, repo: Path,
     with the file listing. Inserts ``llm_flagged`` contradictions."""
     from . import synthesis
 
-    where = "WHERE p.current_revision_id IS NOT NULL"
+    where = ("WHERE p.current_revision_id IS NOT NULL "
+             "AND COALESCE(p.deleted_at,'') = ''")
     params: tuple = ()
     if subject_id:
         where += " AND p.subject_id=?"
