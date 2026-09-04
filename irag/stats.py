@@ -2,21 +2,43 @@
 from __future__ import annotations
 
 import sqlite3
+import subprocess
 from pathlib import Path
 
-from . import db
+from . import db, ingest
+
+
+def dirty_count(root: Path) -> int:
+    """Count project-local Git changes; zero when Git is not the detector."""
+    if not ingest.git_rooted(root):
+        return 0
+    try:
+        out = subprocess.run(
+            ["git", "status", "--porcelain"], cwd=root,
+            capture_output=True, text=True).stdout
+    except OSError:
+        return 0
+    skip = (".irag/", ".claude/", "irag_vault/", "CLAUDE.md", "AGENTS.md")
+    return len([line for line in out.splitlines() if line.strip()
+                and not line[3:].startswith(skip)])
 
 
 def status_dict(conn: sqlite3.Connection, cfg: dict, root: Path,
-                dirty_files: int = 0) -> dict:
+                dirty_files: int | None = None) -> dict:
     threshold = int(cfg["staleness"]["threshold"])
-    return {
-        "pages": conn.execute("SELECT COUNT(*) c FROM pages").fetchone()["c"],
+    if dirty_files is None:
+        dirty_files = dirty_count(root)
+    result = {
+        "pages": conn.execute(
+            "SELECT COUNT(*) c FROM pages WHERE COALESCE(deleted_at,'')=''"
+        ).fetchone()["c"],
         "file_pages": conn.execute(
-            "SELECT COUNT(*) c FROM pages WHERE page_type='file'"
+            "SELECT COUNT(*) c FROM pages WHERE page_type='file' "
+            "AND COALESCE(deleted_at,'')=''"
         ).fetchone()["c"],
         "folder_pages": conn.execute(
-            "SELECT COUNT(*) c FROM pages WHERE page_type='folder'"
+            "SELECT COUNT(*) c FROM pages WHERE page_type='folder' "
+            "AND COALESCE(deleted_at,'')=''"
         ).fetchone()["c"],
         "revisions": conn.execute(
             "SELECT COUNT(*) c FROM revisions").fetchone()["c"],
@@ -31,11 +53,14 @@ def status_dict(conn: sqlite3.Connection, cfg: dict, root: Path,
             "SELECT COUNT(*) c FROM events WHERE status='failed'"
         ).fetchone()["c"],
         "open_contradictions": conn.execute(
-            "SELECT COUNT(*) c FROM contradictions WHERE resolved_at IS NULL"
+            "SELECT COUNT(*) c FROM contradictions c JOIN pages p "
+            "ON p.page_id=c.page_id WHERE c.resolved_at IS NULL "
+            "AND COALESCE(p.deleted_at,'')=''"
         ).fetchone()["c"],
         "pages_due": conn.execute(
             "SELECT COUNT(*) c FROM pages WHERE staleness_score >= ? "
-            "AND pinned=0", (threshold,)).fetchone()["c"],
+            "AND pinned=0 AND COALESCE(deleted_at,'')=''",
+            (threshold,)).fetchone()["c"],
         "est_tokens_spent": conn.execute(
             "SELECT COALESCE(SUM(tokens_used),0) c FROM revisions"
         ).fetchone()["c"],
@@ -44,6 +69,9 @@ def status_dict(conn: sqlite3.Connection, cfg: dict, root: Path,
         "dirty_files": dirty_files,
         "db_bytes": (root / ".irag" / "memory.db").stat().st_size,
     }
+    result["drifted_files"] = ingest.drifted_files(conn, cfg, root)
+    result["ingest_mode"] = ingest.active_mode(cfg, root)
+    return result
 
 
 def token_series(conn: sqlite3.Connection, limit: int = 300) -> list[dict]:
