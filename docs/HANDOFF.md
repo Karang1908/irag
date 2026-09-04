@@ -1,383 +1,734 @@
 # irag — Handoff Document
 
-**For: an AI coding agent (Claude Code or otherwise) picking up development
-on irag.** Read this fully before touching code. It tells you what irag
-is, why it's built the way it is, what's actually verified vs. assumed,
-and how to not break the things that make it work.
+**For: an AI coding agent picking up development on irag.** Read this
+fully before touching code. It tells you what irag is, how to work on it,
+which account to commit as, what is actually verified versus assumed, and
+which traps in this specific environment will waste your time if nobody
+warns you.
 
-This document is about **building irag**. If you're looking for how to
-*use* irag in a project, read `/CLAUDE.md` at the repo root instead —
-that's the operator manual for agents consuming irag's memory, not
-developing it.
+This document is about **building irag**. If you want to know how to *use*
+irag inside a project, read `/CLAUDE.md` at the repo root — that is the
+operator manual for agents consuming irag's memory, not developing it.
+
+Accurate as of **v4.45.0**, 2026-09-04. Every fact below was verified by
+running it on this machine on that date. Where something is inferred
+rather than observed, it says so.
 
 ---
 
-## 1. What this is, in one paragraph
+## 0. Orientation — read this before your first command
+
+### 0.1 Where the repository actually is
+
+```
+/Users/karangarg/Desktop/iRag/irag-4.1.1/          <- NOT the repo. NOT a git root.
+/Users/karangarg/Desktop/iRag/irag-4.1.1/irag/     <- THE REPO. cd here first.
+/Users/karangarg/Desktop/iRag/irag-4.1.1/irag/irag/ <- the Python package
+```
+
+A session may open with the working directory set to the **parent**
+(`irag-4.1.1`). That directory is not the project, and it is not
+repo-less either — which is the trap:
+
+```
+$ cd /Users/karangarg/Desktop/iRag/irag-4.1.1
+$ git rev-parse --show-toplevel
+/Users/karangarg/Desktop            <-- the owner's ENTIRE Desktop is a git repo
+```
+
+So `git status`, `git log`, `git push` run from the parent operate on the
+owner's personal Desktop repository, not on irag. This has already cost
+one session seven minutes of a CI-wait loop spinning on
+`failed to determine base repo`.
+
+**Rule: every git or `gh` command starts with an explicit
+`cd /Users/karangarg/Desktop/iRag/irag-4.1.1/irag`.** Do not rely on the
+inherited working directory. `cd` does not persist reliably between tool
+calls in this harness.
+
+### 0.2 Which Python
+
+There are two interpreters and they are not interchangeable:
+
+| | path | version | has irag? |
+|---|---|---|---|
+| Default `python3` | `/opt/homebrew/bin/python3` | 3.14.6 | **no** |
+| irag's interpreter | `/Library/Frameworks/Python.framework/Versions/3.13/bin/python3` | 3.13.0 | yes (editable) |
+
+The `irag` console script has that python.org 3.13 path in its shebang.
+So:
+
+- `irag ...` — always works.
+- `python3 -m irag ...` — works **only** from inside the repo root, where
+  the `irag/` package directory shadows the missing install. This is what
+  `tests/test_smoke.sh` relies on (it sets `PYTHONPATH="$IRAG_SRC"`).
+- `python3 -m pip show irag` — reports **not found**. That is expected,
+  not a broken install.
+- `python3 -m pyflakes irag/*.py` — fails; pyflakes is installed only
+  under 3.13. Use the full path (§3.3).
+
+### 0.3 Verifying which copy of irag you are editing
+
+There are several irag clones on this machine, and which one the `irag`
+command serves **has flipped before**. `import irag` from inside the repo
+root proves nothing — the package directory shadows the installed one.
+Always verify from a neutral directory:
+
+```bash
+cd ~ && /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 \
+  -m pip show irag | grep -E "^(Version|Editable project location)"
+```
+
+Expect `Editable project location: /Users/karangarg/Desktop/iRag/irag-4.1.1/irag`.
+If it points anywhere else, your edits are not what the `irag` command runs.
+
+**Note the version reported there is stale and that is normal.** pip
+records the version at the last `pip install -e .`; it currently says
+`4.40.1` while the code is `4.45.0`. `irag --version` reads
+`irag/__init__.py` and is authoritative. Only a reinstall refreshes pip's
+copy, and a reinstall is unnecessary for ordinary source edits — editable
+installs pick those up immediately.
+
+### 0.4 The shell is zsh, and it does not word-split
+
+This has produced **three separate false bug reports** in past sessions:
+
+```bash
+c="search store"
+irag $c            # zsh passes ONE argument: "search store"  -> exit 2
+```
+
+zsh has `SH_WORD_SPLIT` off by default. Unquoted parameter expansion is
+not split into words the way bash splits it. When looping over commands in
+a test harness, run the loop under `sh`, or use a real array. If a command
+mysteriously exits 2 in a loop but works when typed, this is why —
+irag is fine, the harness is wrong.
+
+Two related traps, both encountered for real:
+
+- **`for path in ...`** — `path` is a special zsh variable tied to `PATH`.
+  Assigning it destroys the shell's PATH mid-script and every subsequent
+  command fails with `command not found`. Use any other name.
+- **`$?` after a pipe** reports the *last* command's status, not the
+  interesting one. `cmd | tail -3; echo $?` gives you `tail`'s exit code.
+  zsh's array is `$pipestatus`, not bash's `$PIPESTATUS`.
+
+---
+
+## 1. Git, GitHub, and how to ship a change
+
+### 1.1 The account
+
+| | |
+|---|---|
+| GitHub account | **`Karang1908`** (the owner's only account here) |
+| Repo | `https://github.com/Karang1908/irag` |
+| Default branch | `main` — work happens directly on it |
+| Local `user.name` | `Karang1908` |
+| Local `user.email` | `70532241+Karang1908@users.noreply.github.com` |
+| Auth | `gh` CLI, token in the macOS keyring, HTTPS protocol |
+| Token scopes | `gist`, `read:org`, `repo`, `workflow` |
+
+The email is GitHub's privacy-preserving noreply address. **Do not
+"correct" it to a real address** — that is deliberate, and it is what
+attributes commits to the account.
+
+Verify auth before a push:
+
+```bash
+gh auth status          # expect: Logged in to github.com account Karang1908
+```
+
+There is a `plugin:github:github` MCP server configured that fails to
+connect (`Authorization header is badly formatted`). Ignore it — the `gh`
+CLI works and is what everything here uses. Do not conclude GitHub access
+is unavailable because that server is red.
+
+### 1.2 Committing
+
+The owner's global instructions say never to commit or push unless asked,
+and that being asked to commit on a default branch means branching first.
+**In this repository the established, repeatedly-confirmed practice is to
+commit straight to `main` and push** — the owner has asked for exactly
+that dozens of times, CI runs on `main`, and the docs site deploys from
+`main`. Follow that. Do not open branches or PRs unless asked.
+
+Commit style, matched from history:
+
+```
+<type>(<scope>): <imperative summary, lowercase, ~70 chars>
+
+Prose body explaining WHY, and what evidence supports it. Name the
+mechanism, not just the symptom. If a report's diagnosis was wrong,
+say so and give the real cause. Wrap at ~72 columns.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018PXCsrYEFBpt4vyFEAGAph
+```
+
+Types in use: `fix`, `feat`, `docs`, `perf`, `site`, `copy`. Scopes are
+module names (`structure`, `linter`, `facts`, `cli`, `synthesis`,
+`update`, `impact`, `resolve`) or omitted for cross-cutting changes.
+
+Bodies here are long and explanatory by house style — several paragraphs
+naming the defect, the mechanism, the fix and the verification. Match
+that; do not write one-line bodies.
+
+Use a heredoc so the body survives intact:
+
+```bash
+cd /Users/karangarg/Desktop/iRag/irag-4.1.1/irag
+git add -A && git commit -q -F - <<'EOF'
+fix(linter): one-line summary
+
+Body.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
+git push origin main
+```
+
+### 1.3 CI — what must be green
+
+`.github/workflows/ci.yml` runs on every push to `main` and every PR:
+
+1. **Lint** — `pyflakes irag/*.py`, must be silent.
+2. **Smoke test** — `sh tests/test_smoke.sh`, must print `SMOKE TEST PASSED`.
+3. **Package build** — `python -m build`.
+
+Matrix: Python **3.11, 3.12, 3.13**. It has caught real defects that
+passed locally — most recently an f-string with no placeholders, which
+lint rejects. **Run pyflakes locally before pushing** (§3.3); it is
+installed only under 3.13, so the bare `python3 -m pyflakes` will mislead
+you into thinking it is unavailable.
+
+`.github/workflows/pages.yml` ("Docs") builds and deploys the site. It has
+`workflow_dispatch`, so you can trigger it manually:
+
+```bash
+gh workflow run pages.yml --repo Karang1908/irag --ref main
+```
+
+### 1.4 The docs site, and the recurring private-repo cycle
+
+**Live URL: https://karang1908.github.io/irag/** — but as of 2026-09-04 it
+is **down (404), because the repo is private again.**
+
+This has now happened three times and will happen again, so understand the
+mechanism rather than re-diagnosing it:
+
+- On the free plan, GitHub Pages only serves **public** repos.
+- Making the repo private does not merely pause Pages — it **destroys the
+  Pages resource** (`has_pages: false`, `GET /repos/.../pages` → 404).
+- Making it public again does **not** bring it back, and the Pages
+  settings also revert to `build_type: legacy`, which would serve the repo
+  root instead of the built site.
+- The Docs workflow keeps *building* successfully throughout; only the
+  deploy step fails with `Ensure GitHub Pages has been enabled`.
+
+So a red "Docs" workflow while the repo is private is expected and is not
+a code defect. **Do not go looking for a bug in `site/build.py`.**
+
+Recovery, once the owner has made the repo public again (only they can do
+that — do not change repository visibility yourself):
+
+```bash
+gh api -X POST repos/Karang1908/irag/pages -f build_type=workflow
+gh workflow run pages.yml --repo Karang1908/irag --ref main
+# then verify every page returns 200, not just the root
+```
+
+---
+
+## 2. What irag is
 
 irag is a local, dependency-free knowledge base that gives AI coding
 agents persistent, verified memory of a codebase. Every file and folder
-gets an LLM-written summary page, versioned on every change (append-only,
-v1/v2/v3...), mechanically fact-checked against the actual code (wrong
-claims become queryable "contradiction" rows, not silent lies), and
-served to agents through a CLI, a generated CLAUDE.md, a live dashboard,
-and an Obsidian graph. A conversation logger records every coding session
-as a database row — what changed, what was decided, an LLM narrative —
-so a brand-new chat can resume a project for ~150 tokens instead of
-thousands of tokens of re-exploration. Everything lives in one SQLite
-file (`.irag/memory.db`) that any agent, on any machine, can mount.
+gets an LLM-written summary page, versioned append-only on every change,
+mechanically fact-checked against the actual code (wrong claims become
+queryable *contradiction* rows rather than silent lies), and served to
+agents through a CLI, a generated `CLAUDE.md`, a live dashboard, and an
+Obsidian graph. A conversation logger records each coding session as a
+row — what changed, what was decided, an LLM narrative — so a fresh chat
+resumes a project for a few hundred tokens instead of thousands of tokens
+of re-exploration. Everything lives in one SQLite file
+(`.irag/memory.db`) that any agent on any machine can mount.
 
-Current version: **4.24.0**. ~4,600 lines of Python, zero runtime
-dependencies (stdlib only — `sqlite3`, `http.server`, `ast`, `tomllib`).
-Package name `irag`, console command `irag`, config dir `.irag/`.
+**v4.45.0. ~8,300 lines of Python. Zero runtime dependencies** — stdlib
+only (`sqlite3`, `http.server`, `ast`, `tomllib`, `subprocess`). Package
+`irag`, console command `irag`, config dir `.irag/`, **45 commands**.
 
-## 2. The one sentence that explains every design decision
+### 2.1 The one sentence that explains every design decision
 
 **"The model never does bookkeeping."** Locating, counting, dating,
 diffing, scheduling, verifying — all SQL. The LLM's only job is writing
-prose (page synthesis) and, optionally, comparing prose to fact (the
-`lint --llm` tier). Every time you're tempted to have the LLM decide
-something structural (is this file important? has this changed enough?
-what should I summarize next?), stop — that decision almost certainly
-belongs in a SQL query or a parser, not a prompt. This is why the linter,
-the staleness scoring, the retrieval ranking, the session windowing, and
-the dependency graph are all deterministic code with zero LLM calls.
+prose (page synthesis) and optionally comparing prose to fact (the
+`lint --llm` tier). Whenever you are tempted to have the LLM decide
+something structural — is this file important, has it changed enough,
+what should I summarise next — stop: that belongs in a query or a parser.
+This is why the linter, staleness scoring, retrieval ranking, session
+windowing and the dependency graph are deterministic and free.
 
 The second principle: **memory is data with a prose projection, not
-prose**. CLAUDE.md, the dashboard, the Obsidian vault — all of these are
-*read-only views* generated from the database. Nothing is ever the
-source of truth except `.irag/memory.db`. Never let a generated artifact
-become authoritative, and never let the LLM write directly into a table
-that isn't `revisions` (i.e., never skip the queue/versioning machinery
-"just this once" for convenience).
+prose.** `CLAUDE.md`, the dashboard and the Obsidian vault are read-only
+views generated from the database. Nothing is ever the source of truth
+except `.irag/memory.db`. Never let a generated artifact become
+authoritative, and never let the LLM write into a table that is not
+`revisions`.
 
-## 3. Architecture — the four layers
+The third, learned the hard way this year: **a confident wrong answer is
+worse than no answer.** Three separate bugs were all the same shape —
+`impact` saying "change is contained" about a file that was depended on,
+`check` reporting "2/2 verified" with a disproved claim, `update` printing
+"update done" while a page was permanently stuck. Each *looked* like
+success. When a code path cannot know, it must say so and exit non-zero.
 
+### 2.2 Module map
+
+| Module | LOC | Owns |
+|---|---:|---|
+| `cli.py` | 1740 | every command, argument parsing, the update lock |
+| `synthesis.py` | 984 | prompts, LLM invocation, page writing, injection scrubbing |
+| `structure.py` | 720 | symbol + dependency extraction for 10 languages |
+| `ingest.py` | 700 | change detection, ignoring, secrets, event queue |
+| `dashboard.py` | 652 | stdlib HTTP server, JSON API, CSRF guard |
+| `linter.py` | 651 | fact-checking pages against code; contradictions |
+| `sessions.py` | 458 | the conversation diary and attribution |
+| `db.py` | 422 | schema, triggers, additive migrations |
+| `obsidian.py` | 352 | vault projection |
+| `retrieval.py` | 322 | ranking, tiering, budget, FTS search |
+| `doctor.py` | 285 | self-diagnosis |
+| `provenance.py` | 222 | `why` / `asof` / `diff` |
+| `facts.py` | 204 | executable memory |
+| `config.py` | 138 | defaults, TOML merge |
+| `check.py` | 129 | the CI gate |
+| `hooks.py` | 108 | git + Claude Code hook wiring |
+| `stats.py` `tokens.py` `export.py` | 228 | shared metrics, token estimation, guide install |
+
+### 2.3 Subsystems added in the 4.41–4.45 line
+
+These are recent and less battle-tested than the core:
+
+- **Executable memory** (`facts.py`, `irag verify`) — a claim stored with
+  the shell command that proves it. `irag check` can re-run them. This is
+  the only memory irag can *re-establish* rather than trust.
+- **Concept pages** (`irag topic`) — a page for something that spans files
+  sharing no folder. The one page type irag will not infer; membership is
+  curated by hand.
+- **Anti-facts** (`irag tried`) — dead ends, so the next session does not
+  re-derive them.
+- **Just-in-time context** (`irag brief`) — everything known about one
+  file, wired to the `PreToolUse` hook so it lands immediately before an
+  edit rather than at session start.
+- **Auto-capture** (`irag capture`, `irag candidates`) — drafts a
+  candidate lesson when a Bash command fails, via `PostToolUse`.
+- **Withdrawal** (`irag forget`) — drops a page from live serving while
+  keeping its history.
+
+### 2.4 Hooks that `irag claude-setup` installs
+
+| Event | Command | Purpose |
+|---|---|---|
+| `SessionStart` | `irag session-begin` + `irag context --budget 3000` | memory in |
+| `Stop` | `irag update --limit 50` | memory out, after every turn |
+| `SessionEnd` | `irag session-end` | diary |
+| `PreToolUse` (Edit\|Write\|NotebookEdit) | `irag brief -` | just-in-time |
+| `PostToolUse` (Bash) | `irag capture --quiet` | draft a lesson on failure |
+
+All are `|| true` and silent — a hook must never block the user's tool
+call. That is also why hook-path failures are invisible, which is why
+`doctor` now self-tests the payload parser.
+
+---
+
+## 3. Development workflow
+
+### 3.1 The loop
+
+1. Read the module(s) fully before editing. Most are 100–700 lines and
+   self-contained.
+2. **Reproduce the bug before fixing it.** Non-negotiable here — several
+   reported bugs in this project did not reproduce, and the real cause was
+   elsewhere. Fixing an unreproduced report means changing working code.
+3. Make the smallest correct change.
+4. Lint, test, falsify (below).
+5. Update docs **and** their shipped copies (§3.5).
+6. Bump the version in **both** `irag/__init__.py` and `pyproject.toml`.
+7. Commit and push (§1.2).
+
+### 3.2 Testing against the mock LLM — never a real key
+
+`tests/mock_llm.py` reads a prompt on stdin and returns fixed-shape fake
+pages. It deliberately hallucinates a nonexistent `src/ghost.py`, so the
+fact-checker is *proven* to catch it rather than assumed to. Point a
+scratch project at it:
+
+```bash
+python3 - "$IRAG_SRC" <<'EOF'
+import sys, pathlib
+cfg = pathlib.Path(".irag/config.toml"); t = cfg.read_text()
+cfg.write_text(t.replace(
+    'command = "claude -p"       # prompt on stdin, markdown on stdout',
+    f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"'))
+EOF
 ```
-Layer 1  GROUND TRUTH     the repo: files, git (or working-tree fingerprints), manifests
-            │  ingest.py: sync() → events, one per changed FILE
-            ▼
-Layer 3  AUDIT            events (queue) ──► contradictions (linter output)
-            │  synthesis.py: sweep()              ▲
-            ▼                                     │  linter.py: lint()
-Layer 2  SYNTHESIS        pages ──► revisions (append-only, v1/v2/v3...)
-            │  files first, then folders bottom-up (fixpoint loop)
-            ▼
-Layer 4  EPISODIC         sessions (conversation diary) ──► recap
-            │  sessions.py: begin()/end(), narrated by the LLM
-            ▼
-         irag context / irag ask / CLAUDE.md / dashboard / Obsidian
+
+**The mock ignores instructions.** It returns the same template whatever
+you ask, so it cannot verify prompt-following. A test that depends on the
+model obeying (for example "writes a tombstone when the file is gone")
+will appear to fail when the product is fine. One session nearly
+"fixed" a non-bug this way. Assert on database state and exit codes, not
+on model prose.
+
+### 3.3 The three checks before any commit
+
+```bash
+cd /Users/karangarg/Desktop/iRag/irag-4.1.1/irag
+PY=/Library/Frameworks/Python.framework/Versions/3.13/bin/python3
+
+python3 -m compileall -q irag/          # syntax
+$PY -m pyflakes irag/*.py               # lint — MUST use the 3.13 path
+sh tests/test_smoke.sh                  # must print SMOKE TEST PASSED
 ```
 
-Layer 1→3: `irag sync` (or the git hooks) turns file changes into
-`events` rows. Every tracked **file** is its own subject; every
-**folder** (including root `.`) is a subject whose page rolls up its
-children. Ignoring is `[modules].ignore` + `.iragignore` (gitignore-style
-patterns) + hidden paths + binary extensions — see `ingest.is_ignored`.
+The suite is `tests/test_smoke.sh`: ~1,980 lines, **40 guard blocks**, the
+only persisted regression test. It runs entirely on the mock — costs
+nothing, takes a couple of minutes. It uses `set -e`, which has two
+consequences worth knowing:
 
-Layer 3→2: `irag synthesize` (or `irag update`, which also runs sync +
-lint + export) processes queued events into new page revisions. Two
-prompt templates in `synthesis.py`: `FILE_INSTRUCTION` (summarizes one
-file from its capped content + parsed structural facts + the **real**
-blast-radius list of dependents) and `FOLDER_INSTRUCTION` (rolls up
-direct children's summaries). Folders synthesize in a **fixpoint loop**
-— deepest-eligible-first, repeated until nothing changes — so a whole
-tree can go from root to leaves in one `update` call. `_unready_child_folder`
-prevents a folder from rolling up before its child folders have revisions.
+- A block that fails **silently aborts the whole run** with no `FAIL:`
+  line. If the suite exits non-zero but printed no failure, that is why.
+  Always check `$?`, not just the tail of the output.
+- A command substitution that exits non-zero aborts the script. Anything
+  expected to fail (`irag check` on a fresh project exits 1) needs
+  `|| true` inside the capture.
 
-Layer 2 vs Layer 1: `irag lint` extracts checkable claims from page
-bodies (backticked paths, version pins, backticked `symbol()` calls) and
-verifies them against the filesystem, dependency manifests, and the
-`symbols` table. Failures become `contradictions` rows with severity.
-Static contradictions that stop reproducing on a later lint pass
-**auto-resolve** (see `linter.lint`, the `failing` set logic) — this was
-a deliberate fix for a dead-end where fixing a page could never clear
-`irag check`.
+If the dashboard JS was touched, syntax-check it too — a broken script
+silently kills the whole SPA:
 
-Layer 4: `sessions.py`. A session is opened (`begin`), tracks its
-"ownership" of events/revisions by **database ID high-water marks** (not
-timestamps — same-second sessions must not steal each other's rows), and
-is closed (`end`) with a deterministic digest, optionally re-narrated by
-the LLM into 2-5 sentences. `recap_block()` renders the last N sessions
-as markdown and is injected at the top of every `irag context` call.
+```bash
+python3 - <<'PY' > /tmp/d.js
+import pathlib, re
+h = pathlib.Path("irag/assets/dashboard.html").read_text()
+print("\n".join(re.findall(r"<script[^>]*>(.*?)</script>", h, re.S)))
+PY
+node --check /tmp/d.js
+```
 
-## 4. Schema (SQLite, WAL mode, foreign keys on)
+### 3.4 Falsify every guard you add — this is the house rule
 
-Defined in `db.py::SCHEMA`. Do not modify without a migration story —
-there is currently **no migration system**; schema changes require users
-to delete `.irag/memory.db` and rebuild. If you add a migration system,
-it should live in `db.py::ensure_db` and be additive/idempotent
-(`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ... ADD COLUMN` guarded by a
-`PRAGMA table_info` check).
+**A regression test that passes against the broken code is worse than no
+test**, because it certifies a fix that isn't there. This has happened
+**four times** in this project. The discipline:
 
-- `meta` — key/value (`last_synced` commit hash, `last_scanned_head`,
-  `snap_seq`)
-- `pages` — one row per subject. `subject_type` ∈ {file, folder, log}.
-  `page_type` ∈ {file, folder, decisions, lessons}. `UNIQUE(subject_type,
-  subject_id)`. `current_revision_id` is moved **only** by the
-  `revisions_advance` trigger — never in Python.
-- `revisions` — append-only. Never UPDATE or DELETE a row here except in
-  the (currently unbuilt) compaction path — see §8.
-- `links` — page-to-page edges; `link_type='imports'` rows are rebuilt
-  wholesale by `structure.scan()` on every run, `'related'` rows are
-  manual/permanent.
-- `events` — the queue. `status` ∈ {queued, processing, completed,
-  failed, skipped}. `event_type` ∈ {commit, snapshot, decision, session,
-  rollback, sweep, manual}.
-- `contradictions` — linter output. `resolved_at IS NULL` = open.
-- `symbols`, `deps` — the deterministic structural map, rebuilt by
-  `structure.scan()`, gated on a **working-tree content fingerprint**
-  (not git HEAD — this was a bug fix; git-HEAD gating missed uncommitted
-  edits, which is how coding agents actually work).
-- `tree_state` — path→sha1 fingerprints for snapshot-mode ingestion and
-  for gating `structure.scan()`.
-- `sessions` — the conversation diary. `start_event_id` /
-  `start_revision_id` are the ownership high-water marks. `changes_detail`
-  (added 4.1.2, additive column — see the `ensure_db` guard) holds the
-  full per-file `{subject_id, version_number, change_summary}` list for
-  every revision written in the session's window, deliberately redundant
-  with `revisions` so `irag sessions --json` / the dashboard's Sessions
-  tab never need a join to show exactly what a past conversation changed.
+1. Add the guard; watch it pass.
+2. **Revert the fix** (edit the source, don't just imagine it).
+3. Re-run the suite and watch the guard **fail, for the stated reason**.
+4. Restore the fix; confirm green.
 
-Three triggers do all pointer/index bookkeeping:
-`revisions_advance` (moves `current_revision_id`, resets staleness),
-`revisions_ai`/`revisions_ad` (keep `revisions_fts` — an FTS5
-external-content table — in sync). **Never** move `current_revision_id`
-or write to `revisions_fts` directly in Python; always go through
-`INSERT INTO revisions`.
+If the guard still passes with the fix removed, it is testing nothing.
+Two real examples of how subtly this goes wrong:
 
-## 5. Module map (what owns what)
+- A guard asserted on the *open contradiction set*, which a connect-time
+  cleanup repaired — so it passed with the suppression logic deleted.
+- A guard for the facts-execution vulnerability flipped the `DEFAULTS`
+  dict, but the fixture's `config.toml` set the value explicitly and
+  overrode it. The vulnerable default was never exercised. The fix was to
+  strip the key entirely so the built-in default decides — which is also
+  the real-world case, since a project created before that release has no
+  such key.
 
-| File | Responsibility |
+When you neuter a multi-part fix, neuter **each part separately**; the
+first assertion to fire masks the rest.
+
+### 3.5 Documentation has three copies and nothing syncs them
+
+| Location | Consumed by |
 |---|---|
-| `db.py` | schema, triggers, `ensure_db`, small shared helpers (`get_or_create_page`, `current_body`, `fts_sanitize`) |
-| `config.py` | defaults + `.irag/config.toml` deep-merge (stdlib `tomllib`) |
-| `ingest.py` | change detection: git commits OR working-tree snapshots → per-**file** events; ancestor folders bumped at half weight; `.iragignore`/ignore-list handling; `purge_ignored` (removes pages for paths newly added to ignore); hybrid sync (git commits *and* fingerprint diff, always — see §8 gotcha #1) |
-| `structure.py` | deterministic code map: `ast` for Python, regex for JS/TS/Go/Rust; `symbols`/`deps` tables; `impact()` (BFS blast radius); `facts_block()` (compact prompt-ready summary) |
-| `synthesis.py` | prompt building (file + folder templates), `run_llm()` (stdin / `{prompt}` / `{promptfile}` delivery, ANSI stripping, empty-output guard), the fixpoint sweep, auto-requeue of failed/stuck events |
-| `linter.py` | static contradiction checks (path/version/symbol) + optional LLM audit tier; auto-resolve logic |
-| `retrieval.py` | zero-token relevance scoring (open-file match, dependency neighbors, FTS, recency, staleness/contradiction penalties, project-log boost, root-overview boost) + tiered FULL/DIGEST/INDEX serving under a token budget |
-| `provenance.py` | `why` (claim → revision → event), `asof` (time travel), `rollback` (non-destructive — inserts old body as new revision), `pin`/`unpin` |
-| `sessions.py` | the conversation logger described in §3 |
-| `export.py` | db → generated `CLAUDE.md` **and** `AGENTS.md` (identical content; the latter is the cross-tool convention read by Codex/Antigravity — folder/log pages only, file-level detail stays in `map`/`context`) with an agent-instruction footer; both are in `ingest.SELF_ARTIFACTS` so the export never feeds irag's own queue |
-| `stats.py` | shared metric builders (`status_dict`, `token_series`, `activity`) used by both the CLI and the dashboard — **don't duplicate this logic in cli.py or dashboard.py, always route through here** |
-| `check.py` | the CI gate: exit 1 on open contradictions or staleness over max |
-| `doctor.py` | full install diagnosis (env, db/FTS integrity, config types, LLM probe, hooks, queue health) |
-| `hooks.py` | git hook installer (post-commit/post-merge/post-checkout); never clobbers a foreign hook |
-| `obsidian.py` | db → Obsidian vault projection (wipe-and-rebuild behind a `.irag-vault` marker guard) |
-| `dashboard.py` + `assets/dashboard.html` | stdlib `http.server` + a single hand-written SPA; `/api/chat` implements the SQL-vs-AI auto-router (`route_query`) |
-| `cli.py` | argparse wiring; every command resolves the project root then opens `.irag/memory.db`. Root resolution is DIRECTORY-WISE (`ingest.repo_root`): nearest ancestor with `.irag`, else cwd — the enclosing git repo is never consulted (see gotcha #9) |
+| `docs/*.md` | the website (`site/build.py`) |
+| `irag/assets/docs/*.md` | the dashboard's **Docs** tab |
+| `README.md` | GitHub |
 
-## 6. Command inventory (34 commands, current as of 4.1.1)
+They drift silently — a whole "Visualize" section once existed in one copy
+and not the other. After any doc change:
 
-```
-Setup:      init  claude-setup  doctor
-Detect:     sync  ingest-commit  scan
-Write:      synthesize  update  learn  record-decision  resolve  rollback
-Read (SQL): search  map  impact  stale  status  diff  contradictions  asof
-Read (AI):  ask  context
-Sessions:   session-begin  session-end  sessions  recap
-Admin:      pin  unpin  export  check  backup
-Views:      dashboard  obsidian
+```bash
+cp docs/{ARCHITECTURE,CLI_REFERENCE,COMPARISON,SETUP,STORY}.md irag/assets/docs/
+python3 site/build.py
 ```
 
-`irag update` is the composite command (sync → synthesize → lint →
-export) and is what the Claude Code Stop hook runs. `irag synthesize` is
-the lower-level primitive if you need finer control (`--dry-run`,
-`--subject`, `--limit`).
+Guards now enforce three things and will fail CI if you forget: the two
+copies must be byte-identical, **every** CLI command must appear in
+`docs/CLI_REFERENCE.md`, and `README.md`'s command list and its
+`## Commands (N)` count must match the CLI. Add a command, and the suite
+fails until it is documented in both places — deliberately.
 
-## 7. What is and isn't verified
+`docs/HANDOFF.md` (this file) and `irag/assets/docs/{README,QUICKSTART}.md`
+are **not** part of that sync set. HANDOFF is deliberately excluded from
+the published site (see the comment in `site/build.py`) because it is
+internal.
 
-**Heavily tested** (see `tests/test_smoke.sh` and the ad-hoc batteries
-run during development — there is no permanent pytest suite, tests were
-written inline during each feature pass and are not preserved as files
-except the smoke test): the full file/folder synthesis cascade including
-fixpoint ordering; the sync dedupe matrix (first/idle/edit/commit-same —
-must be 3/0/3/0/3 versions written respectively); snapshot mode with no
-git; `.iragignore` including late-added patterns and purge; the linter's
-symbol/path/version checks and auto-resolve; session ownership boundaries
-including same-second and crash-recovery cases; the dashboard's REST API
-and SQL/AI chat routing; agy-style `{prompt}` argv delivery and ANSI
-stripping; the three git hooks; ID-based (not timestamp-based) session
-windows.
+---
 
-**Not verified — assumed correct, needs real-world testing:**
-- **Summary quality.** Every test used a deterministic mock LLM
-  (`tests/mock_llm.py`) that emits fixed-shape fake pages. Nobody has
-  evaluated whether a real LLM's summaries are actually *useful*, only
-  that the plumbing around them works. This is the single biggest
-  unknown in the whole project — see the rating discussion in the chat
-  history if available, or just: the linter catches *factual* lies, not
-  *low-value-but-true* summaries.
-- **Cost at real scale.** Threshold defaults to 1 (every change gets a
-  new version), which was an explicit user choice, but nobody has run
-  `irag update` on a 1,000+ file repo and measured wall-clock or dollar
-  cost.
-- **The `agy` CLI integration** was tested against a hand-written fake
-  binary that mimics the documented `-p` argument behavior, not the real
-  `agy` tool. If real `agy` behaves differently (different flag names,
-  different empty-output conditions), `docs/SETUP.md`'s Antigravity
-  section may need correction.
-- **Multi-user / concurrent-agent scenarios.** SQLite WAL + a 5s busy
-  timeout should handle two `irag` processes writing at once, but this
-  was never stress-tested with genuine concurrency (e.g., two Claude Code
-  sessions on the same repo simultaneously).
+## 4. The security model — understand before you relax anything
 
-## 8. Known gotchas — read before you "fix" these
+irag reads source files, sends them to an LLM, and stores the result in a
+database **that is meant to be committed and shared**. That combination
+produced four real vulnerabilities in 2026. Each fix is load-bearing; none
+is paranoia.
 
-1. **`sync` vs `update` is a real UX trap.** `irag sync` only *detects*
-   changes (queues events); it never writes a new page version. Users
-   naturally expect "I ran sync, why didn't the page update" — this has
-   already confused a real user. `irag update` is sync+synthesize+lint+
-   export in one call and is what should be recommended everywhere.
-   Consider: (a) renaming `sync` to something less version-implying, (b)
-   having `sync` print "N event(s) queued — run `irag update` to
-   synthesize them" instead of just a count, or (c) accepting the
-   two-step model but auditing every doc/dashboard surface for clarity.
-   **Fixed in 4.1.2** via option (b): `cmd_sync` now prints a second
-   line pointing at `irag update` whenever events were queued (silent
-   when idle). The command wasn't renamed and the two-step model itself
-   is unchanged — this only closes the "ran sync, nothing happened,
-   why" confusion at the point it occurs.
-2. **Structural scan must gate on the tree fingerprint, not git HEAD.**
-   This was a real bug: gating on `git rev-parse HEAD` meant uncommitted
-   edits (the normal state of a coding agent's working tree) never
-   refreshed `symbols`/`deps`, which fed stale "ground truth" into
-   synthesis prompts and made the linter flag real new symbols as
-   missing. Fixed in `structure.scan()` by hashing `tree_state` instead.
-   If you touch scan-gating logic again, re-verify with: edit a file
-   without committing, run `irag map <file>`, confirm new symbols appear
-   *without* running `update` first (map/context/impact/ask all call
-   `ingest.sync()` before reading).
-3. **`sync()` is now hybrid even inside git repos**: it processes git
-   commits (for provenance/commit-message richness) *and* runs the
-   fingerprint diff on every call, so uncommitted edits are never
-   invisible. This doubles the walk-the-tree cost of every sync — if
-   that becomes a performance problem on huge repos, the fix is NOT to
-   remove the fingerprint pass (see gotcha #2) but to make `_tree_hashes`
-   cheaper (e.g., mtime pre-filter before hashing).
-4. **Commit-content dedupe requires `repo` to be passed through.** There
-   was a bug where `irag ingest-commit` (what the post-commit git hook
-   actually calls) didn't pass the repo root to `ingest_commit`, so
-   `_content_already_known` silently no-opped and commits re-triggered
-   synthesis even when a snapshot had already captured identical
-   content. Fixed — but this is the kind of bug that hides for a long
-   time because both paths "work," one is just wasteful. If you add a
-   new call site for `ingest_commit`, make sure `repo` is threaded
-   through.
-5. **BrokenPipeError on `irag search ... | head`.** Fixed with a
-   top-level catch in `cli.main()`. Any new command that can produce
-   long stdout should be assumed to get piped into `head`/`less`.
-6. **The root folder page (`.`) must always clear the retrieval floor.**
-   Without an explicit boost, a project with no open files could get a
-   near-empty SessionStart injection (a real measured bug: 309 chars of
-   nothing). Fixed with a `+40` "project overview" boost in
-   `retrieval.score()`. Don't remove this without re-measuring what a
-   cold SessionStart injection looks like.
-7. **`.iragignore` additions after `init` don't retroactively remove
-   pages unless `purge_ignored()` runs**, which it now does on every
-   `sync()`. If you refactor `sync()`, keep the purge call — otherwise
-   secrets/generated files that get ignored *after* first synthesis stay
-   searchable forever.
-8. **No compaction/pruning exists**, and per explicit user decision this
-   is **not wanted** — unbounded version history is treated as the
-   product, not a liability. Do not add automatic pruning. If a manual
-   `irag compact` is ever requested, it must never delete v1, the current
-   revision, or any revision referenced by a rollback/resolved
-   contradiction (provenance endpoints), and it must be opt-in only.
-9. **Root resolution must stay directory-wise — never git-toplevel-first.**
-   Real incident (fixed in 4.2.0): the owner's entire `~/Desktop` is a
-   git repository, so the old `git rev-parse --show-toplevel`-first
-   resolution made `irag init` from any Desktop subfolder silently adopt
-   the whole Desktop as one project — 1,376 pages, hooks installed into
-   the personal repo, dashboard showing every file the user owns. The
-   invariant now: `repo_root()` = nearest ancestor with `.irag`, else
-   cwd; `init` roots at cwd, period; git-based ingestion, hook install,
-   doctor's hook checks, and the dirty count all gate on
-   `ingest.git_rooted(root)` (root == that repo's toplevel), because
-   git's paths are toplevel-relative and would corrupt subjects in a
-   nested project. If you touch root resolution, re-verify with the
-   smoke test's nested-scoping block AND manually: init in a subdir of
-   a bigger repo, confirm `.irag` lands there, parent gets no hooks,
-   and pages are subject-relative to the subdir.
+### 4.1 Executable facts are opt-in (`[check].fail_on_facts = false`)
 
-## 9. Development workflow
+`irag verify` stores a shell command in `.irag/memory.db`. When that file
+is committed — which the design encourages — `git clone && irag check`
+would execute whatever a contributor registered. This was demonstrated
+end-to-end: a committed fact wrote a file on a fresh clone. So the default
+is **off**, and the opt-in path prints every command before running it.
 
-1. Read the relevant module(s) fully before editing — most files are
-   short (100–400 lines) and self-contained.
-2. Make your change.
-3. `python3 -m pyflakes irag/*.py` — must be clean (no unused
-   imports/vars) before every commit-equivalent.
-4. Test against the mock LLM, never a real API key, for anything
-   automated: `tests/mock_llm.py` reads a prompt on stdin and returns
-   fixed-shape fake pages; point `.irag/config.toml`'s `[llm].command`
-   at `python3 <path>/tests/mock_llm.py` in a scratch project.
-5. Run `sh tests/test_smoke.sh` — must print `SMOKE TEST PASSED`. This
-   is the only persisted regression test; it exercises init, sync,
-   synthesize, lint, check (both fail and pass paths), context, why,
-   export, resolve, rollback, record-decision, sync-after-commit, scan,
-   map, impact, learn, claude-setup, obsidian, status, diff, backup,
-   doctor, and a live dashboard boot. If you add a feature, add a line
-   to this script.
-6. For anything involving hooks, sessions, or the dashboard, write a
-   throwaway Python battery (see the pattern used throughout
-   development: spin up a `tempfile.mkdtemp()` project, drive it via
-   `subprocess.run([sys.executable, "-m", "irag", ...])`, assert on
-   stdout/exit codes/sqlite state). These were never preserved as files;
-   consider promoting the best of them into `tests/` as real pytest
-   files if you have the ability to add a test dependency (currently
-   zero deps, so this would need to stay stdlib `unittest` or be an
-   optional dev-only dependency).
-7. Keep `irag/assets/docs/*.md` in sync with `docs/*.md` and `README.md`
-   — the dashboard's Docs tab serves the `irag/assets/docs/` copies, and
-   they drift silently if you edit only one side. There's no build step
-   that copies them automatically; do it manually (`cp docs/*.md
-   irag/assets/docs/`) as part of any doc change.
-8. Bump `__version__` in `irag/__init__.py` **and** `version` in
-   `pyproject.toml` together — nothing enforces they match, but the
-   `doctor`/`status` output implicitly assumes they do.
-9. Never introduce a runtime dependency without a strong reason — the
-   zero-dependency property is load-bearing for the "any agent on any
-   machine" pluggability story. If you must (e.g., a real MCP server
-   needs the `mcp` package), gate it behind an optional extra exactly
-   like the historical `pkb[mcp]` pattern (see git-adjacent history /
-   docs/DEVELOPMENT.md) and guard the import so the core stays
-   installable with zero deps.
+Do not "improve the ergonomics" by defaulting it on. The guard strips the
+key entirely so the built-in default decides, which is the case that
+matters for projects created before the fix.
 
-## 10. Explicitly deferred (roadmap, do not build unless asked)
+### 4.2 Three classes of file are never read
 
-- **MCP server.** Everything is shaped to make this easy — `stats.py`,
-  `retrieval.serve()`, `sessions.recap_block()`, etc. are already
-  pure-Python functions with no CLI coupling, so an MCP tool layer is
-  mostly argument marshaling. Five obvious tools: `get_context`,
-  `search`, `ask`, `why`, `record_decision`/`learn`. Gate behind an
-  `irag[mcp]` extra.
-- **Compaction/pruning** — see gotcha #8. Explicitly not wanted by
-  default; build only as an opt-in command if asked, never automatic.
-- **A real (non-mock) evaluation of summary quality** — this is
-  arguably higher priority than any new feature. If you have the
-  ability to run real LLM calls, the highest-value next step is running
-  `irag update` on a real multi-week-old project and manually grading
-  whether the pages are worth reading, not just factually correct.
-- **Migration system for schema changes** — currently none; see §4.
-- **Confidence scoring from lint history** (pages that have been
-  wrong before get a lower `pages.confidence`, surfaced in retrieval).
-- **CI webhooks** (post contradictions to a PR as a comment).
+Enforced in `ingest.is_ignored()`, regardless of any ignore file:
 
-## 11. Non-negotiables — do not regress these under any refactor
+- **Dotfiles and dot-directories.**
+- **Credential-shaped names** — `id_rsa`, `*.pem`, `*.key`, `*.p12`,
+  `secrets.*`, `credentials*`, `service-account*.json`, `*.env`.
+- **Symlinks whose target escapes the project.** A link to `~/.ssh/id_rsa`
+  was otherwise read as ordinary source and its bytes went into the prompt
+  and the database. `update` is the automatic path, so one symlink in a PR
+  was enough.
 
-- Revisions are append-only. Never `UPDATE`/`DELETE` a `revisions` row
-  (rollback inserts a *new* row with old content — it never rewrites).
+`.gitignore` is honoured **in both git and snapshot mode**. Snapshot mode
+walks the tree directly and is the mode for *every project that is not its
+own git root*, so without this an ignored `id_rsa` was ingested. Negated
+patterns (`!foo`) are skipped, which can only over-ignore.
+
+### 4.3 Source files are untrusted input
+
+File content is fenced with explicit `BEGIN/END UNTRUSTED FILE CONTENT`
+markers, labelled as data rather than instructions, and the output
+contract is **restated after** it so the last word is irag's. Any
+instruction-shaped line surviving into a page (`ignore previous
+instructions`, `curl … | sh`, a fake `<system>` block) is stripped before
+the page is stored.
+
+This matters because pages are injected into agents automatically — at
+session start and by `PreToolUse` right before the file is edited. It is
+memory poisoning with a delivery mechanism, and the linter cannot see it
+because the payload is prose, not a path or a symbol.
+
+`scrub_injection()` is a regex, not a semantic filter. It catches crude
+shapes; the fencing and restated contract are the real defence.
+
+### 4.4 The dashboard refuses cross-origin writes
+
+Every mutating endpoint requires `Content-Type: application/json` — not a
+CORS "simple" content type, so the browser must preflight and the
+same-origin policy blocks it — and rejects a non-localhost `Origin`.
+Before this, any page open in the same browser could POST to
+`127.0.0.1` and force an `update` (real spend), a `rollback` (silent
+memory corruption an agent then reads as truth), or unbounded backups.
+
+**If you add a POST endpoint or a UI fetch, it must send that header.**
+One existing UI call did not and had to be fixed alongside the guard.
+
+### 4.5 Note for a public repo
+
+`.irag/memory.db` is committable by design. When the repo is public, the
+memory database is public with it — page summaries and any registered
+facts included. Nothing sensitive is in this one, but it is worth a
+conscious decision rather than a surprise.
+
+---
+
+## 5. Known gotchas — read before you "fix" these
+
+1. **`sync` detects, `update` writes.** `irag sync` only queues events; it
+   never writes a page version. `sync` prints a pointer to `update`
+   whenever it queues anything. Recommend `update` everywhere.
+2. **The structural scan gates on a tree fingerprint, not git HEAD.**
+   Gating on HEAD meant uncommitted edits — a coding agent's normal state
+   — never refreshed `symbols`/`deps`, feeding stale "ground truth" into
+   prompts and making the linter flag real new symbols as missing.
+3. **`sync()` is hybrid even inside git repos** — commits *and* a
+   fingerprint diff every call, so uncommitted edits are never invisible.
+   If that becomes slow on huge repos, make `_tree_hashes` cheaper; do not
+   remove the fingerprint pass.
+4. **Root resolution is directory-wise, never git-toplevel-first.** The
+   owner's entire `~/Desktop` is a git repo; the old resolution made
+   `irag init` in any Desktop subfolder adopt the whole Desktop — 1,376
+   pages, hooks installed into the personal repo. `repo_root()` = nearest
+   ancestor with `.irag`, else cwd. Git ingestion, hook install and the
+   dirty count all gate on `ingest.git_rooted(root)`.
+5. **No compaction or pruning, by explicit decision.** Unbounded history
+   is the product, not a liability. Do not add automatic pruning. A manual
+   `irag compact`, if ever requested, must never delete v1, the current
+   revision, or anything a rollback or resolved contradiction references.
+6. **`irag resolve` dismisses a FLAG; it never edits the page.** And since
+   a manual dismissal now suppresses that claim permanently, dismissing a
+   *genuine* error silences it forever with the wrong text still live.
+   That is why `--undo` exists and why the dashboard button says "dismiss
+   flag" with an inline Undo. Auto-resolutions stay re-raisable — a
+   recurrence there is a real regression.
+7. **`synthesize --subject` is an explicit force.** The trivial-change
+   skip must not short-circuit it, or irag recommends an escape hatch that
+   then refuses to act. That regression happened once already.
+8. **Deleted pages are withdrawn, not destroyed.** `deleted_at` excludes a
+   page from search, context and folder rollups while `asof`/`why` keep
+   the history. A rename is a delete plus an add, which is why this
+   matters more than it sounds.
+9. **`[staleness].dependency` propagates to importers** through the `deps`
+   table, one hop — not just to manifest files, which is all it used to
+   do. Page bodies deliberately record cross-file claims, so a
+   neighbour's interface change invalidates them.
+10. **Symbol extraction under-reports rather than invents.** The table is
+    handed to the model as "STRUCTURAL FACTS (ground truth)", so a missing
+    symbol weakens a check while an invented one causes a false
+    contradiction. When in doubt, over-capture. Python and JS both emit
+    `Owner.method`; the linter matches `name = ? OR name LIKE '%.sym'`.
+11. **`irag check` runs `--skip-facts`-able shell commands only when
+    opted in** — see §4.1. Of the three fact outcomes only `fail` gates;
+    `error` (a tool missing on this machine) says nothing about the claim
+    and must never break CI.
+12. **A `touch` with no content change is not drift.** Nothing rewrites an
+    unchanged file, so its page timestamp never advances and the warning
+    could never be cleared. Drift compares the comment-stripped
+    fingerprint, and `sync` backfills a baseline for pages predating that
+    column.
+
+---
+
+## 6. Non-negotiables — do not regress these under any refactor
+
+- **Revisions are append-only.** Never `UPDATE`/`DELETE` a `revisions`
+  row. Rollback inserts a *new* row with the old content.
 - `pages.current_revision_id` moves only via the `revisions_advance`
   trigger.
-- The database is the only source of truth. CLAUDE.md, the dashboard,
-  and the Obsidian vault are always regeneratable from it and never the
-  reverse.
-- Zero runtime dependencies for the core package.
-- Every LLM call must have a non-LLM fallback path where the product
-  still functions (e.g., session narration falls back to a deterministic
-  digest if the LLM is unavailable; nothing in the read path — search,
-  map, impact, why, asof — ever requires an LLM).
-- `irag doctor` must stay accurate — it's the self-service diagnostic
-  the operator manual (`/CLAUDE.md`) tells agents to run first when
-  anything misbehaves. If you add a new failure mode anywhere in the
-  system, add a corresponding check to `doctor.py`.
+- **The database is the only source of truth.** `CLAUDE.md`, the
+  dashboard and the vault are regeneratable from it, never the reverse.
+- **Zero runtime dependencies** for the core package. This is load-bearing
+  for the "any agent, any machine" story. Anything else goes behind an
+  optional extra with a guarded import.
+- **Nothing on the read path calls a model.** `search`, `map`, `impact`,
+  `context`, `recap`, `why`, `asof`, `brief`, `suggest` are SQL and
+  parsing. This was verified with a sentinel LLM command that touches a
+  file when invoked: the six read commands never fired it, `irag ask`
+  did, and irag's own meter read `est. LLM tokens spent : 0`. That
+  property is the product's headline claim — do not put a model call on
+  that path.
+- Every LLM call needs a non-LLM fallback where the product still works.
+- **`irag doctor` must stay accurate.** It is what `/CLAUDE.md` tells
+  agents to run first. New failure mode anywhere ⇒ new check in
+  `doctor.py`.
+- **A path irag does not track gets an error, not a verdict.** `impact`
+  exits 2 and says so rather than answering "change is contained".
+
+---
+
+## 7. What is verified, and what is not
+
+**Verified by running it**, repeatedly, on this machine:
+
+- The full smoke suite: 40 guard blocks, every one falsified against a
+  neutered build before being kept.
+- Zero-token read path (sentinel test, §6).
+- Parallel synthesis produces byte-identical results to sequential — same
+  page count, revision count, no duplicate versions — and a failing model
+  marks every event failed and self-heals on the next run.
+- Concurrency: `update` under ten simultaneous dashboard requests, zero
+  lock errors, zero tracebacks.
+- Schema migration from a database with every added column and table
+  stripped out, including a pre-upgrade human resolution correctly
+  backfilled.
+- All 45 commands respond; the dashboard serves all ten endpoints the UI
+  calls.
+
+**Not verified, and you should not claim otherwise:**
+
+- **Summary quality with a real LLM.** Everything automated runs on the
+  mock. The pipeline, the fact-checker and the gates are proven; whether
+  the prose is *good* on a real codebase is untested here. This remains
+  the highest-value next step.
+- **The dashboard's appearance.** The Chrome extension was disconnected
+  for every session that touched it. HTTP status, JSON payloads, HTML
+  content and JS syntax are checked; nobody has looked at it rendering.
+  The toast and the "dismiss flag" buttons in particular are verified as
+  correct markup, not correct pixels.
+- **`[llm].parallel > 1` against a real LLM CLI.** Correct against the
+  mock; left defaulting to 1 because whether a given CLI tolerates
+  concurrent invocations is unknown.
+
+---
+
+## 8. Deferred — do not build unless asked
+
+- **MCP server.** The shape is ready: `stats.py`, `retrieval.serve()`,
+  `sessions.recap_block()` are pure functions with no CLI coupling.
+  Obvious tools: `get_context`, `search`, `ask`, `why`, `learn`. Gate
+  behind an `irag[mcp]` extra.
+- **Compaction** — see gotcha #5. Opt-in only, if ever.
+- **A real-LLM evaluation of summary quality** — arguably higher priority
+  than any new feature.
+- **A schema migration system.** Currently additive column guards only,
+  in `db.ensure_db()`; they are exercised and work, but there is no
+  mechanism for a destructive or renaming migration.
+- **Confidence scoring from lint history** (`pages.confidence` exists and
+  is unused).
+- **CI webhooks** posting contradictions onto a PR.
+
+---
+
+## 9. Open items handed to you
+
+1. **The docs site is down** because the repo is private (§1.4). Recovery
+   is two commands once the owner makes it public. Only they can flip
+   visibility.
+2. **`irag/assets/docs/README.md`** is a third copy of the README, stale
+   relative to the root one. It is the in-app landing blurb rather than a
+   mirror, so it is deliberately outside the sync guard — but somebody
+   should decide whether it tracks the root README or stays its own thing.
+3. **One candidate lesson** is parked in the owner's
+   `ultimatenetworkscan` project: `nmap -O 127.0.0.1 exited 1 —
+   QUITTING!` on `scanner.py`. That is a genuine finding, not debris —
+   promote it with `irag learn` or discard it with
+   `irag candidates --discard 37`. The owner's call; leave it alone
+   otherwise.
+4. **Java bodiless-declaration extraction** covers interface, `abstract`
+   and `native` methods, but was written against synthetic fixtures. A
+   real Java project would be a better test.
+
+---
+
+## 10. If you read nothing else
+
+```bash
+# 1. get into the actual repo — the parent is the owner's Desktop repo
+cd /Users/karangarg/Desktop/iRag/irag-4.1.1/irag
+
+# 2. before any commit
+python3 -m compileall -q irag/
+/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 -m pyflakes irag/*.py
+sh tests/test_smoke.sh        # must print SMOKE TEST PASSED
+
+# 3. commit to main as Karang1908, long explanatory body
+git add -A && git commit -q -F - <<'EOF'
+fix(scope): what changed
+
+Why, and the mechanism.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+EOF
+git push origin main
+```
+
+And the three habits that matter more than any of the above:
+
+1. **Reproduce before you fix.** Several reported bugs here did not
+   reproduce, and the real cause was somewhere else entirely.
+2. **Falsify every guard you write** by reverting the fix and watching it
+   fail. Four guards in this project passed against broken code.
+3. **When a path cannot know, make it say so.** Most of the worst defects
+   in this codebase were confident wrong answers, not crashes.
