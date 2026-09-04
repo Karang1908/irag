@@ -38,13 +38,16 @@ def why_data(conn: sqlite3.Connection, claim: str) -> dict | None:
     # "yes, here it is" from a superseded revision, with no hint it is
     # historical, is a wrong answer to that question. Say which it is.
     cur = conn.execute(
-        "SELECT current_revision_id FROM pages WHERE page_id=?",
+        "SELECT current_revision_id, deleted_at FROM pages WHERE page_id=?",
         (row["page_id"],)).fetchone()
     current_rev = cur["current_revision_id"] if cur else None
-    is_current = current_rev is not None and current_rev == row["revision_id"]
+    is_deleted = bool(cur and cur["deleted_at"])
+    is_current = (current_rev is not None
+                  and current_rev == row["revision_id"]
+                  and not cur["deleted_at"])
     still_holds = is_current
     current_version = row["version_number"]
-    if not is_current and current_rev is not None:
+    if not is_current and current_rev is not None and not is_deleted:
         # does the claim survive into the current revision at all?
         still = conn.execute(
             "SELECT 1 FROM revisions_fts WHERE rowid=? AND revisions_fts "
@@ -60,7 +63,7 @@ def why_data(conn: sqlite3.Connection, claim: str) -> dict | None:
            "llm_model_used": row["llm_model_used"],
            "change_summary": row["change_summary"], "event": None,
            "is_current": is_current, "still_holds": still_holds,
-           "current_version": current_version}
+           "current_version": current_version, "withdrawn": is_deleted}
     ev_id = row["triggered_by_event_id"]
     if not ev_id:
         return out
@@ -89,7 +92,9 @@ def why(conn: sqlite3.Connection, claim: str) -> None:
         return
     print(f"claim matches page  : {row['title']} ({row['subject_id']})")
     note = ""
-    if not row.get("is_current"):
+    if row.get("withdrawn"):
+        note = "  [withdrawn — the source page is deleted]"
+    elif not row.get("is_current"):
         cv = row.get("current_version")
         note = (f"  [superseded; current is v{cv}, claim still present]"
                 if row.get("still_holds")
@@ -115,14 +120,35 @@ def why(conn: sqlite3.Connection, claim: str) -> None:
         print(f"text                : {ev['text']}")
 
 
+def normalize_date(raw: str) -> str:
+    """Validate and canonicalise a date used for lexical SQLite compares."""
+    from datetime import datetime
+    text = (raw or "").strip()
+    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S",
+                "%Y/%m/%d", "%Y%m%d"):
+        try:
+            parsed = datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+        if fmt in ("%Y-%m-%d", "%Y/%m/%d", "%Y%m%d"):
+            return parsed.strftime("%Y-%m-%d")
+        return parsed.strftime("%Y-%m-%d %H:%M:%S")
+    raise ValueError(
+        f"{raw!r} is not a comparable date; use YYYY-MM-DD, optionally "
+        "with HH:MM:SS")
+
+
+def _asof_bound(raw: str) -> str:
+    date = normalize_date(raw)
+    return date + " 23:59:59" if len(date) == 10 else date
+
+
 def asof_data(conn: sqlite3.Connection, date: str) -> list[dict]:
     """The wiki state as of a date, structured — one row per page with the
     latest revision at or before that moment. Shared by the CLI `asof` and
     the dashboard's time-travel view. A bare YYYY-MM-DD covers the whole
     day."""
-    import re as _re
-    if _re.fullmatch(r"\d{4}-\d{2}-\d{2}", date.strip()):
-        date = date.strip() + " 23:59:59"
+    date = _asof_bound(date)
     rows = conn.execute(
         """SELECT p.subject_id, p.title, r.version_number, r.created_at
            FROM pages p
@@ -140,9 +166,7 @@ def asof(conn: sqlite3.Connection, date: str, show: str | None = None) -> None:
     """Print the wiki state as of a date (per page, latest revision <= date).
 
     A bare YYYY-MM-DD is inclusive of that whole day."""
-    import re as _re
-    if _re.fullmatch(r"\d{4}-\d{2}-\d{2}", date.strip()):
-        date = date.strip() + " 23:59:59"
+    date = _asof_bound(date)
     rows = conn.execute(
         """SELECT p.subject_id, p.title, r.version_number, r.created_at,
                   r.body_markdown
@@ -187,9 +211,9 @@ def rollback(conn: sqlite3.Connection, subject: str, version: int) -> None:
         raise SystemExit(f"irag: {subject} has no version {version}")
     conn.execute(
         "INSERT INTO events(event_type, source_ref, subject_id, payload, "
-        "status, processed_at) "
-        "VALUES('rollback', NULL, ?, ?, 'completed', datetime('now'))",
-        (subject, json.dumps({"to_version": version})),
+        "status, processed_at, session_key) "
+        "VALUES('rollback', NULL, ?, ?, 'completed', datetime('now'), ?)",
+        (subject, json.dumps({"to_version": version}), db.active_key()),
     )
     event_id = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
     # version_number computed in-INSERT (atomic under the write lock) so a
