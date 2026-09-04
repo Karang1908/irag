@@ -518,6 +518,30 @@ def _regex_parse(text: str, rel: str, suffix: str):
             yield ("imp", _rel_to_repo(rel, m.group(1)))
 
 
+def scan_fingerprint(conn: sqlite3.Connection, repo: Path) -> str:
+    """Return the exact source-state fingerprint used to gate ``scan``.
+
+    This is deliberately shared with doctor.  Doctor previously compared
+    ``last_scanned_head`` (a tree-state SHA-1) with Git HEAD, so it warned
+    that a scan performed seconds earlier was stale whenever fingerprints
+    existed -- which is the normal hybrid/snapshot case.
+    """
+    import hashlib
+    state = conn.execute(
+        "SELECT path, hash FROM tree_state ORDER BY path").fetchall()
+    if state:
+        return hashlib.sha1(
+            "".join(r["path"] + r["hash"] for r in state).encode()
+        ).hexdigest()
+    try:
+        import subprocess
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True,
+            text=True).stdout.strip()
+    except OSError:
+        return ""
+
+
 def scan(conn: sqlite3.Connection, cfg: dict, repo: Path,
          force: bool = False) -> dict:
     """(Re)build the symbols and deps tables. Skips when HEAD is unchanged
@@ -525,21 +549,7 @@ def scan(conn: sqlite3.Connection, cfg: dict, repo: Path,
     # gate on the working-tree fingerprint (kept fresh by sync), so
     # UNCOMMITTED edits refresh the map too; fall back to git HEAD only
     # when no fingerprints exist yet
-    import hashlib
-    state = conn.execute(
-        "SELECT path, hash FROM tree_state ORDER BY path").fetchall()
-    if state:
-        head = hashlib.sha1(
-            "".join(r["path"] + r["hash"] for r in state).encode()
-        ).hexdigest()
-    else:
-        try:
-            import subprocess
-            head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo,
-                                  capture_output=True,
-                                  text=True).stdout.strip()
-        except OSError:
-            head = ""
+    head = scan_fingerprint(conn, repo)
     if not force and head and db.get_meta(conn, "last_scanned_head") == head:
         return {"skipped": True,
                 "symbols": conn.execute(
@@ -575,31 +585,38 @@ def scan(conn: sqlite3.Connection, cfg: dict, repo: Path,
             key = (source_subject, target)
             edge_counts[key] = edge_counts.get(key, 0) + 1
 
-    conn.execute("DELETE FROM symbols")
-    conn.executemany(
-        "INSERT INTO symbols(subject_id, file, name, kind, line) "
-        "VALUES(?,?,?,?,?)", sym_rows)
-    conn.execute("DELETE FROM deps")
-    conn.executemany(
-        "INSERT INTO deps(source_subject, target_subject, import_count) "
-        "VALUES(?,?,?)",
-        [(s, t, n) for (s, t), n in edge_counts.items()])
+    try:
+        conn.execute("DELETE FROM symbols")
+        conn.executemany(
+            "INSERT INTO symbols(subject_id, file, name, kind, line) "
+            "VALUES(?,?,?,?,?)", sym_rows)
+        conn.execute("DELETE FROM deps")
+        conn.executemany(
+            "INSERT INTO deps(source_subject, target_subject, import_count) "
+            "VALUES(?,?,?)",
+            [(s, t, n) for (s, t), n in edge_counts.items()])
 
-    # project dep edges into the links table (drives retrieval link-hop
-    # and the Obsidian graph); manual 'related' links are left untouched
-    conn.execute("DELETE FROM links WHERE link_type='imports'")
-    for (s, t) in edge_counts:
-        sp = db.get_or_create_page(conn, s, subject_type="file",
-                                   page_type="file")
-        tp = db.get_or_create_page(conn, t, subject_type="file",
-                                   page_type="file")
-        conn.execute(
-            "INSERT OR IGNORE INTO links(source_page_id, target_page_id, "
-            "link_type) VALUES(?,?, 'imports')",
-            (sp["page_id"], tp["page_id"]))
-    if head:
-        db.set_meta(conn, "last_scanned_head", head)
-    conn.commit()
+        # project dep edges into the links table (drives retrieval link-hop
+        # and the Obsidian graph); manual 'related' links are left untouched
+        conn.execute("DELETE FROM links WHERE link_type='imports'")
+        for (s, t) in edge_counts:
+            sp = db.get_or_create_page(conn, s, subject_type="file",
+                                       page_type="file")
+            tp = db.get_or_create_page(conn, t, subject_type="file",
+                                       page_type="file")
+            conn.execute(
+                "INSERT OR IGNORE INTO links(source_page_id, target_page_id, "
+                "link_type) VALUES(?,?, 'imports')",
+                (sp["page_id"], tp["page_id"]))
+        if head:
+            conn.execute(
+                "INSERT INTO meta(key,value) VALUES('last_scanned_head',?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (head,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     return {"skipped": False, "symbols": len(sym_rows),
             "deps": len(edge_counts)}
 
@@ -698,6 +715,20 @@ def impact(conn: sqlite3.Connection, subject: str) -> list[tuple[str, int]]:
                     nxt.append(dependent)
         frontier = nxt
     return result
+
+
+def is_tracked(conn: sqlite3.Connection, subject: str) -> bool:
+    """Whether ``subject`` is a live file/folder known to the map.
+
+    Callers must check this before interpreting an empty impact result as a
+    contained change.  A typo and a truly dependency-free file otherwise
+    produce the same empty list.
+    """
+    return conn.execute(
+        "SELECT 1 FROM pages WHERE subject_id=? "
+        "AND page_type IN ('file','folder') "
+        "AND COALESCE(deleted_at,'')='' LIMIT 1", (subject,)).fetchone() \
+        is not None
 
 
 def overview(conn: sqlite3.Connection) -> str:
