@@ -4,6 +4,98 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.46.0 — 2026-09-05
+
+Completes the page-withdrawal work started in 4.44.0, and closes three
+concurrency defects — two of which could lose data.
+
+### Fixed — a concurrent `learn` could silently discard the other's entry
+`_append_log` is a read-modify-write: it reads the log page's body, appends
+a line, and writes a new revision. The version number was computed
+atomically, which was not enough — two writers could read the same body and
+produce vN and vN+1 where the later one silently omitted the earlier
+entry. It now runs under `BEGIN IMMEDIATE` with a rollback on failure, so a
+concurrent `learn` and `record-decision` both survive.
+
+### Fixed — `get_or_create_page` committed the caller's transaction
+The helper committed unconditionally, so every caller that combined page
+creation with an event, a revision, or a full structural-map rebuild had
+its work committed halfway through. A later error left the database holding
+half an operation, and `scan`'s DELETE/INSERT replacement was observably
+non-atomic to a concurrent reader. It is now `INSERT OR IGNORE` with no
+commit; committing is the caller's decision, because only the caller knows
+what a complete operation is.
+
+### Fixed — the dashboard and the CLI could both start the same sweep
+The CLI held a file lock and the dashboard a process-local mutex, so
+neither could see the other: a "Run update" click and a Stop hook firing
+together still selected the same stale pages and paid for them twice. Both
+now take one flock-backed lock from `irag/locking.py`, with an `msvcrt`
+branch so the guarantee holds on Windows rather than silently degrading.
+
+### Fixed — withdrawn pages were still visible to most of the product
+4.44.0 stopped serving a deleted file's page from `search` and `context`,
+but every other reader still saw it. `check` gated the build on its
+contradictions, `lint` re-flagged it against a file that is gone, synthesis
+could select it and spend a model call on it, `obsidian` wrote it into the
+vault, `stale` and `impact`'s did-you-mean still offered it, and `status`
+counted it. `why` reported its last revision as current; it now says
+`[withdrawn — the source page is deleted]`.
+
+### Fixed — folder pages outlived their files
+Deleting a directory's last file left a folder page describing children
+that no longer existed, and nothing could remove it. Folder liveness is now
+recomputed from the live file set on every sync — withdrawn when empty,
+revived when a file returns. The root stays live even for an empty project,
+because it is the project roll-up rather than a directory summary.
+
+### Fixed — a session's diary reported another conversation's work
+`_window_facts` had been scoped to the session key for `files_changed` and
+`versions_written`, but the decision, lesson and commit-message queries
+beside them still selected on `event_id` alone — so the exact
+cross-attribution the keying exists to prevent survived in the three
+queries that were never converted.
+
+### Fixed — `doctor` failed on a missing git, and crashed on a bad config
+"irag cannot ingest without git" was untrue: snapshot mode fingerprints the
+working tree and is the mode for every project that is not its own git
+root. It is now a WARN naming what is actually lost. An unparsable
+`[llm].command` also raised out of `shlex.split` and took the whole
+diagnostic down — the one command meant to explain a broken setup crashed
+on the most likely way to break it.
+
+### Fixed — concurrent backups overwrote each other
+`irag backup` named its file to the second, so a CLI and dashboard backup
+in the same second produced one file, not two.
+
+### Changed — the dashboard reloads config and reports errors as JSON
+Config was read once at boot, so editing `[llm].command` required a
+restart and an invalid edit surfaced as an opaque failure. The server now
+restats the file, reloads on change, and exposes `config_error`; error
+responses carry a JSON body the client can display instead of a bare
+status code; responses are explicitly `no-store` so an upgraded
+`dashboard.html` is never served from cache.
+
+### Changed — shared helpers instead of second copies
+`dirty_count`, date normalisation, the tracked-subject test and the scan
+fingerprint moved to the modules that own them (`stats`, `provenance`,
+`structure`), and the CLI now calls those rather than keeping its own
+implementations.
+
+### Fixed — the in-app README still described 34 commands
+The copy the dashboard shows on first open had been left behind, so `lint`,
+`forget`, `brief`, `suggest`, `facts`, `candidates`, `tried`, `verify`,
+`topic` and `capture` were invisible to anyone meeting irag through the
+dashboard rather than GitHub. `docs/ARCHITECTURE.md` also claimed the
+structural map is rebuilt "only when HEAD changes" (the gate is the
+working-tree fingerprint — gating on HEAD was a fixed bug) and that files
+are hashed over the "first 1MB" (the whole file is streamed).
+
+### Build
+`pyproject.toml` moves to the PEP 639 license string, dropping the
+deprecated license table plus `License ::` classifier pair, and sets
+`include-package-data = false`.
+
 ## 4.45.0 — 2026-08-01
 
 ### Fixed — JS/TS class methods were never indexed
