@@ -106,7 +106,12 @@ grep -q "manage this project's memory with irag" CLAUDE.md || { echo "FAIL: agen
 
 python3 -m irag status
 python3 -m irag status --json | python3 -c "import json,sys; json.load(sys.stdin)"
-python3 -m irag doctor || { echo "FAIL: doctor should pass"; exit 1; }
+doctor_out="$(python3 -m irag doctor)" || {
+  echo "$doctor_out"; echo "FAIL: doctor should pass"; exit 1; }
+echo "$doctor_out" | grep -q "structural map current" \
+  || { echo "$doctor_out"; echo "FAIL: doctor disagrees with a fresh scan"; exit 1; }
+python3 -m irag doctor --probe-llm | grep -q "LLM probe" \
+  || { echo "FAIL: doctor LLM probe did not use the configured provider"; exit 1; }
 python3 -m irag diff src/auth/login.py
 python3 -m irag backup
 python3 -m irag map --json | python3 -c "import json,sys; json.load(sys.stdin)"
@@ -125,14 +130,17 @@ python3 -m irag status --json | python3 -c "import json,sys; assert json.load(sy
 python3 -m irag unpin src/auth/login.py
 
 python3 - << 'DASHEOF'
-import threading, time, json, urllib.request, sys, pathlib
+import threading, time, json, urllib.request, urllib.error, sys, pathlib
 sys.path.insert(0, "")
 from irag import dashboard
 threading.Thread(target=dashboard.serve, args=(pathlib.Path.cwd(),),
                  kwargs={"port": 7911, "open_browser": False}, daemon=True).start()
 time.sleep(0.7)
 with urllib.request.urlopen("http://127.0.0.1:7911/api/status") as r:
-    assert json.load(r)["pages"] > 0
+    status = json.load(r)
+    assert status["pages"] > 0
+    assert "drifted_files" in status and "ingest_mode" in status, status
+    assert "no-store" in r.headers.get("Cache-Control", ""), r.headers
 with urllib.request.urlopen("http://127.0.0.1:7911/") as r:
     assert b"irag" in r.read()
 with urllib.request.urlopen("http://127.0.0.1:7911/api/sessions") as r:
@@ -153,7 +161,54 @@ miss = chat({"message": "zzznomatch", "mode": "sql"})
 assert miss["mode"] == "sql" and miss["results"] == [], f"forced-sql miss leaked to AI: {miss}"
 hit = chat({"message": "login", "mode": "sql"})
 assert hit["mode"] == "sql" and hit["results"], f"forced-sql hit returned nothing: {hit}"
-print("dashboard smoke ok (chat forced-sql honored)")
+
+def expect_http(path, code, data=None):
+    req = urllib.request.Request("http://127.0.0.1:7911" + path,
+        data=data, headers={"Content-Type": "application/json"} if data is not None else {})
+    try:
+        urllib.request.urlopen(req)
+        raise AssertionError(f"{path} should return HTTP {code}")
+    except urllib.error.HTTPError as exc:
+        assert exc.code == code, (path, exc.code, exc.read())
+        payload = json.load(exc)
+        assert payload.get("error"), payload
+
+# Unknown impact must fail closed; malformed history dates and JSON must not
+# turn into plausible-looking current state or an internal-error response.
+expect_http("/api/impact?subject=src/does-not-exist.py", 404)
+expect_http("/api/asof?date=yesterday", 400)
+expect_http("/api/learn", 400, b"{")
+
+# The web button and CLI/Stop hook share the same repo lock.
+from irag.locking import UpdateLock
+lock = UpdateLock(pathlib.Path.cwd()); assert lock.acquire()
+try:
+    expect_http("/api/update", 409, b"{}")
+    # The live map is also a writer (sync + scan). While the CLI lock is
+    # held it must serve the last complete map, not ingest concurrently.
+    probe = pathlib.Path("dashboard-lock-probe.py")
+    probe.write_text("def probe(): pass\n")
+    with urllib.request.urlopen("http://127.0.0.1:7911/api/map?live=1") as r:
+        mapped = json.load(r)
+    assert probe.as_posix() not in {f["subject_id"] for f in mapped["files"]}, \
+        "live map ignored the repository update lock"
+    probe.unlink()
+finally:
+    lock.release()
+
+# Config edits are noticed by a running dashboard. Invalid config is visible
+# in status and blocks a model-spending action until the file is repaired.
+cfg_path = pathlib.Path(".irag/config.toml"); original = cfg_path.read_text()
+try:
+    cfg_path.write_text("[broken\n")
+    with urllib.request.urlopen("http://127.0.0.1:7911/api/status") as r:
+        assert json.load(r)["config_error"], "bad config was silently ignored"
+    expect_http("/api/update", 400, b"{}")
+finally:
+    cfg_path.write_text(original)
+with urllib.request.urlopen("http://127.0.0.1:7911/api/status") as r:
+    assert json.load(r)["config_error"] is None, "fixed config was not reloaded"
+print("dashboard smoke ok (HTTP errors, locking, config reload, forced SQL)")
 DASHEOF
 
 python3 -m irag obsidian
@@ -474,9 +529,10 @@ echo "symbol precision round 3 + check gate ok"
 
 # --- concurrent sessions + map kinds (regression guard) --------------------
 python3 - << 'PYEOF' || { echo "FAIL: concurrent sessions / map kinds"; exit 1; }
-import pathlib, sqlite3, subprocess, sys, tempfile
+import pathlib, sqlite3, subprocess, sys, tempfile, threading
 sys.path.insert(0, str(pathlib.Path.cwd()))
 from irag import db, config, sessions, structure, retrieval
+from irag.cli import _append_log
 
 # two agents on one repo: begin() force-closed the other's live session and
 # end() closed whichever row was open, so one agent's work was narrated into
@@ -493,6 +549,27 @@ assert rb and rb["session_id"] == b, "agent B's session was never closed"
 rows = conn.execute("SELECT status FROM sessions ORDER BY session_id").fetchall()
 assert all(r["status"] == "closed" for r in rows), \
     f"a live session was force-interrupted: {[r['status'] for r in rows]}"
+
+# Human logs are read-modify-write pages. Concurrent appends must retain both
+# entries, not merely allocate two distinct version numbers.
+logp = pathlib.Path(tempfile.mkdtemp()) / ".irag" / "memory.db"
+db.ensure_db(logp).close(); gate = threading.Barrier(2); errors = []
+def append(text):
+    try:
+        own = db.connect(logp); gate.wait()
+        _append_log(own, "lessons", "lessons", "Lessons", "session", text, None)
+        own.close()
+    except Exception as exc:
+        errors.append(exc)
+threads = [threading.Thread(target=append, args=(text,))
+           for text in ("first concurrent lesson", "second concurrent lesson")]
+for thread in threads: thread.start()
+for thread in threads: thread.join()
+assert not errors, errors
+lc = db.connect(logp)
+lp = lc.execute("SELECT page_id FROM pages WHERE subject_id='lessons'").fetchone()
+body = db.current_body(lc, lp["page_id"])
+assert "first concurrent lesson" in body and "second concurrent lesson" in body, body
 
 # irag map labelled every const/let/var "function", including numbers,
 # objects and arrays - and CLAUDE.md tells agents to trust that map
@@ -530,18 +607,24 @@ echo "concurrent sessions + map kinds ok"
 python3 - << 'PYEOF' || { echo "FAIL: asof / attribution"; exit 1; }
 import json, pathlib, sys, tempfile
 sys.path.insert(0, str(pathlib.Path.cwd()))
-from irag import db, config, sessions
+from irag import db, config, sessions, provenance
 from irag.cli import _iso_date
 
 # the date is compared lexically in SQL, so an unvalidated string returned the
 # PRESENT state under a historical banner instead of failing
 assert _iso_date("2026-06-01") == "2026-06-01"
 assert _iso_date("2026-6-1") == "2026-06-01", "unpadded date must normalise"
+probe_conn = db.connect(pathlib.Path(tempfile.mkdtemp()) / "probe.db")
 for bad in ("June 1 2026", "yesterday", "src/store.ts", ""):
     try:
         _iso_date(bad)
         raise AssertionError(f"{bad!r} accepted as a date")
     except SystemExit:
+        pass
+    try:
+        provenance.asof_data(probe_conn, bad)
+        raise AssertionError(f"asof_data accepted {bad!r}")
+    except ValueError:
         pass
 
 # ownership fixed WHO owns a session; this covers WHICH events were theirs.
@@ -560,6 +643,15 @@ conn.execute("INSERT INTO events(event_type,source_ref,subject_id,payload,"
 conn.execute("INSERT INTO revisions(page_id,version_number,body_markdown,"
              "change_summary,session_key) VALUES(?,1,'b','changed','conv-B')",
              (c.lastrowid,))
+conn.execute("INSERT INTO events(event_type,subject_id,payload,session_key) "
+             "VALUES('decision','b_only.py',?, 'conv-B')",
+             (json.dumps({'text': 'B chose blue'}),))
+conn.execute("INSERT INTO events(event_type,subject_id,payload,session_key) "
+             "VALUES('session','b_only.py',?, 'conv-B')",
+             (json.dumps({'text': 'B learned beta'}),))
+conn.execute("INSERT INTO events(event_type,subject_id,payload,session_key) "
+             "VALUES('decision','a_only.py',?, 'conv-A')",
+             (json.dumps({'text': 'A chose amber'}),))
 conn.commit()
 ra = sessions.end(conn, cfg, narrate=False, key="conv-A")
 rb = sessions.end(conn, cfg, narrate=False, key="conv-B")
@@ -571,6 +663,13 @@ b_files = json.loads(conn.execute(
     (rb["session_id"],)).fetchone()[0] or "[]")
 assert "b_only.py" not in a_files, f"A claimed B's work: {a_files}"
 assert "b_only.py" in b_files, f"B lost its own work: {b_files}"
+a_summary = conn.execute("SELECT summary FROM sessions WHERE session_id=?",
+                         (ra["session_id"],)).fetchone()[0]
+b_summary = conn.execute("SELECT summary FROM sessions WHERE session_id=?",
+                         (rb["session_id"],)).fetchone()[0]
+assert "A chose amber" in a_summary and "B chose blue" not in a_summary, a_summary
+assert "B chose blue" in b_summary and "B learned beta" in b_summary, b_summary
+assert "A chose amber" not in b_summary, b_summary
 PYEOF
 echo "asof validation + attribution ok"
 
@@ -1649,16 +1748,19 @@ echo "docs in sync + every command documented ok"
 # claiming 36 commands when there were 45, listing none of the new ones
 python3 - "$IRAG_SRC" << 'PYEOF'
 import re, subprocess, sys, pathlib
-readme = pathlib.Path(sys.argv[1], "README.md").read_text()
+root = pathlib.Path(sys.argv[1])
+readmes = [root.joinpath("README.md").read_text(),
+           root.joinpath("irag/assets/docs/README.md").read_text()]
 out = subprocess.run([sys.executable, "-m", "irag", "--help"],
                      capture_output=True, text=True).stdout
 cmds = [c for c in re.search(r"\{([a-z,\-]+)\}", out).group(1).split(",") if c]
-missing = [c for c in cmds if f"`{c}`" not in readme]
-assert not missing, f"commands missing from README: {missing}"
-claimed = re.search(r"## Commands \((\d+)\)", readme)
-assert claimed and int(claimed.group(1)) == len(cmds), (
-    f"README claims {claimed and claimed.group(1)} commands, there are "
-    f"{len(cmds)}")
+for readme in readmes:
+    missing = [c for c in cmds if f"`{c}`" not in readme]
+    assert not missing, f"commands missing from README: {missing}"
+    claimed = re.search(r"## Commands \((\d+)\)", readme)
+    assert claimed and int(claimed.group(1)) == len(cmds), (
+        f"README claims {claimed and claimed.group(1)} commands, there are "
+        f"{len(cmds)}")
 PYEOF
 [ $? -eq 0 ] || { echo "FAIL: README command list is stale"; exit 1; }
 echo "README command list matches the CLI ok"
@@ -1808,9 +1910,11 @@ echo "concurrent updates serialised ok"
 # page claiming "calls helper() from lib.py" was never rewritten when
 # lib.py's interface changed.
 FN=$(mktemp -d)
+mkdir -p "$FN/solo"
 printf 'def helper():\n    return 1\n' > "$FN/lib.py"
 printf 'from lib import helper\ndef main():\n    return helper()\n' > "$FN/app.py"
 printf 'def run():\n    return 1\n' > "$FN/oldname.py"
+printf 'def only():\n    return 1\n' > "$FN/solo/only.py"
 cat > "$FN/nested.py" <<'PYSRC'
 import sys
 class User:
@@ -1838,6 +1942,9 @@ cfg.write_text(t.replace(
     f'command = "python3 {sys.argv[1]}/tests/mock_llm.py"'))
 PYEOF
 ( cd "$FN" && python3 -m irag update >/dev/null 2>&1 ) || true
+# Topic pages are derived from member pages and must age when a member moves.
+( cd "$FN" && python3 -m irag topic core-flow --files lib.py,app.py \
+  >/dev/null 2>&1 && python3 -m irag update >/dev/null 2>&1 ) || true
 # F-3: nested classes and conditionally-defined functions
 ( cd "$FN" && python3 - << 'PYEOF'
 import pathlib, sys
@@ -1866,20 +1973,74 @@ from irag import db
 conn = db.connect(pathlib.Path(".irag/memory.db"))
 app = conn.execute("SELECT staleness_score s FROM pages WHERE subject_id="
                    "'app.py'").fetchone()["s"]
+topic = conn.execute("SELECT staleness_score s FROM pages WHERE subject_id="
+                     "'core-flow'").fetchone()["s"]
 assert app > 0, (
     "app.py imports lib.py and its page names lib.py's symbols, but a "
     "change to lib.py left it at staleness 0 — it will never be rewritten")
+assert topic > 0, "a topic member changed but its concept page stayed fresh"
 PYEOF
 ) || { echo "FAIL: dependency staleness propagation"; rm -rf "$FN"; exit 1; }
+( cd "$FN" && python3 -m irag synthesize --subject core-flow >/dev/null 2>&1 ) \
+  || { echo "FAIL: stale topic did not re-synthesize"; rm -rf "$FN"; exit 1; }
+
+# Deleting the only file below a folder withdraws both current pages, records
+# a completed audit event (no pointless LLM tombstone), and keeps history.
+( cd "$FN" && git rm -q solo/only.py \
+  && git -c user.email=t@t -c user.name=t commit -qm delete-solo \
+  && python3 -m irag sync >/dev/null 2>&1 )
+( cd "$FN" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import config, db, stats, structure, synthesis
+root = pathlib.Path.cwd(); conn = db.connect(root / ".irag/memory.db")
+cfg = config.load(root)
+for sid in ("solo/only.py", "solo"):
+    row = conn.execute("SELECT deleted_at FROM pages WHERE subject_id=?",
+                       (sid,)).fetchone()
+    assert row and row["deleted_at"], f"{sid} remained a live page"
+assert not structure.is_tracked(conn, "solo/only.py")
+assert "solo/only.py" not in {p["subject_id"] for p in
+                              synthesis.pending_file_pages(conn, cfg)}
+event = conn.execute("SELECT status FROM events WHERE subject_id="
+                     "'solo/only.py' ORDER BY event_id DESC").fetchone()
+assert event and event["status"] == "completed", event
+s = stats.status_dict(conn, cfg, root)
+live = conn.execute("SELECT COUNT(*) c FROM pages WHERE page_type='file' "
+                    "AND COALESCE(deleted_at,'')='' ").fetchone()["c"]
+assert s["file_pages"] == live
+PYEOF
+) || { echo "FAIL: deletion lifecycle"; rm -rf "$FN"; exit 1; }
+set +e
+( cd "$FN" && python3 -m irag impact solo/only.py >/dev/null 2>&1 )
+impact_rc=$?
+set -e
+[ "$impact_rc" -eq 2 ] \
+  || { echo "FAIL: impact did not fail closed for a deleted page"; rm -rf "$FN"; exit 1; }
+( cd "$FN" && python3 -m irag obsidian --out live-vault >/dev/null 2>&1 )
+[ ! -f "$FN/live-vault/Modules/solo.md" ] \
+  || { echo "FAIL: deleted folder exported as a live Obsidian note"; rm -rf "$FN"; exit 1; }
 # F-1: a renamed-away file must stop being served
 ( cd "$FN" && git mv oldname.py newname.py \
   && git -c user.email=t@t -c user.name=t commit -qm rename >/dev/null 2>&1 \
   && python3 -m irag update >/dev/null 2>&1 ) || true
 ( cd "$FN" && python3 -m irag synthesize --subject . >/dev/null 2>&1 ) || true
-( cd "$FN" && python3 -m irag search Mock 2>&1 | grep -q "oldname" ) \
-  && { echo "FAIL: a deleted file is still served by search"; rm -rf "$FN"; exit 1; }
-( cd "$FN" && python3 -m irag context 2>&1 | grep -q "oldname" ) \
-  && { echo "FAIL: a deleted file is still served in context"; rm -rf "$FN"; exit 1; }
+( cd "$FN" && python3 - << 'PYEOF'
+import pathlib, sys
+sys.path.insert(0, str(pathlib.Path.cwd()))
+from irag import db, retrieval
+conn = db.connect(pathlib.Path(".irag/memory.db"))
+subjects = {hit["subject"] for hit in retrieval.search(conn, "Mock")}
+assert "oldname.py" not in subjects, subjects
+PYEOF
+) || { echo "FAIL: a deleted file is still served by search"; rm -rf "$FN"; exit 1; }
+( cd "$FN" && python3 -m irag context --json | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+subjects = {r["subject"] for tier in ("full", "digest", "index")
+            for r in d[tier]}
+assert "oldname.py" not in subjects, subjects
+' ) || { echo "FAIL: a deleted file is still served in context"; rm -rf "$FN"; exit 1; }
 # history must survive
 ( cd "$FN" && python3 - << 'PYEOF'
 import pathlib, sys
