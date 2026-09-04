@@ -266,8 +266,9 @@ def _queue_file_event(conn, cfg, subject: str, ref: str, payload: dict,
         (ref, subject)).fetchone()
     if exists:
         return False
-    db.get_or_create_page(conn, subject, subject_type="file",
-                          page_type="file")
+    page = db.get_or_create_page(conn, subject, subject_type="file",
+                                 page_type="file")
+    was_deleted = bool(page["deleted_at"])
     # Mark whether the file still exists. A deleted file kept a live page
     # that search and context went on serving as current, and a rename is a
     # delete plus an add — so every rename left one behind permanently, with
@@ -281,17 +282,30 @@ def _queue_file_event(conn, cfg, subject: str, ref: str, payload: dict,
         "UPDATE pages SET deleted_at = CASE WHEN ? THEN datetime('now') "
         "ELSE NULL END WHERE subject_type='file' AND subject_id=?",
         (1 if gone else 0, subject))
+    # A deleted page is immediately withdrawn from every live read path.  It
+    # needs an audit event, but asking the model to summarize a file that no
+    # longer exists wastes a call and produces a misleading tombstone as the
+    # "current" page.  Mark that event complete at ingestion time.
+    status = "completed" if gone else "queued"
     conn.execute(
         "INSERT INTO events(event_type, source_ref, subject_id, payload, "
-        "session_key) VALUES(?, ?, ?, ?, ?)",
-        (event_type, ref, subject, json.dumps(payload), db.active_key()))
+        "session_key, status, processed_at) VALUES(?, ?, ?, ?, ?, ?, "
+        "CASE WHEN ?='completed' THEN datetime('now') ELSE NULL END)",
+        (event_type, ref, subject, json.dumps(payload), db.active_key(),
+         status, status))
     bump = int(cfg["staleness"]["commit"])
     dep_bump = int(cfg["staleness"]["dependency"])
+    threshold = int(cfg["staleness"]["threshold"])
     if Path(subject).name in MANIFEST_FILES:
         bump += dep_bump
     conn.execute(
         "UPDATE pages SET staleness_score = staleness_score + ? "
         "WHERE subject_type='file' AND subject_id=?", (bump, subject))
+    if was_deleted and not gone:
+        conn.execute(
+            "UPDATE pages SET staleness_score=MAX(staleness_score, ?) "
+            "WHERE subject_type='file' AND subject_id=?",
+            (threshold, subject))
     # Propagate to importers. The page template deliberately records
     # cross-file claims ("## Connections & blast radius — who imports it and
     # for what"), so a neighbour's interface change invalidates THIS page —
@@ -309,14 +323,62 @@ def _queue_file_event(conn, cfg, subject: str, ref: str, payload: dict,
                 (dep_bump, subject))
         except sqlite3.OperationalError:
             pass                      # pre-deps database
+    # Hand-curated topic pages are derived from member summaries just as
+    # folder pages are derived from children.  Without this propagation a
+    # topic stayed "fresh" forever while every file underneath it changed.
+    try:
+        if gone or was_deleted:
+            conn.execute(
+                "UPDATE pages SET staleness_score=MAX(staleness_score, ?) "
+                "WHERE page_type='topic' AND COALESCE(deleted_at,'')='' "
+                "AND subject_id IN (SELECT topic FROM topic_members "
+                "WHERE subject_id=?)", (threshold, subject))
+        else:
+            conn.execute(
+                "UPDATE pages SET staleness_score = staleness_score + ? "
+                "WHERE page_type='topic' AND COALESCE(deleted_at,'')='' "
+                "AND subject_id IN (SELECT topic FROM topic_members "
+                "WHERE subject_id=?)", (bump, subject))
+    except sqlite3.OperationalError:
+        pass                          # pre-topic database
     for folder in ancestors(subject):
+        folder_page = db.get_or_create_page(
+            conn, folder, subject_type="folder", page_type="folder")
+        if gone or folder_page["deleted_at"]:
+            conn.execute(
+                "UPDATE pages SET staleness_score=MAX(staleness_score, ?), "
+                "deleted_at=NULL WHERE subject_type='folder' "
+                "AND subject_id=?", (threshold, folder))
+        else:
+            conn.execute(
+                "UPDATE pages SET staleness_score = staleness_score + ?, "
+                "deleted_at=NULL WHERE subject_type='folder' "
+                "AND subject_id=?", (max(bump // 2, 1), folder))
+    return True
+
+
+def _reconcile_folder_liveness(conn: sqlite3.Connection) -> None:
+    """Withdraw folders with no live file below them; revive backed ones."""
+    live_files = [r["subject_id"] for r in conn.execute(
+        "SELECT subject_id FROM pages WHERE page_type='file' "
+        "AND COALESCE(deleted_at,'')='' ").fetchall()]
+    live_folders = {folder for sid in live_files for folder in ancestors(sid)}
+    # Root remains the project roll-up even for an empty project.
+    live_folders.add(".")
+    for folder in live_folders:
         db.get_or_create_page(conn, folder, subject_type="folder",
                               page_type="folder")
-        conn.execute(
-            "UPDATE pages SET staleness_score = staleness_score + ? "
-            "WHERE subject_type='folder' AND subject_id=?",
-            (max(bump // 2, 1), folder))
-    return True
+    rows = conn.execute(
+        "SELECT page_id, subject_id FROM pages WHERE page_type='folder'"
+    ).fetchall()
+    for row in rows:
+        if row["subject_id"] in live_folders:
+            conn.execute("UPDATE pages SET deleted_at=NULL WHERE page_id=?",
+                         (row["page_id"],))
+        else:
+            conn.execute(
+                "UPDATE pages SET deleted_at=COALESCE(deleted_at, "
+                "datetime('now')) WHERE page_id=?", (row["page_id"],))
 
 
 def ingest_commit(conn: sqlite3.Connection, cfg: dict, ref: str,
@@ -402,6 +464,21 @@ def purge_ignored(conn: sqlite3.Connection, cfg: dict, repo: Path) -> int:
         if not _no_longer_source(sid, row["subject_type"], cfg, repo):
             continue
         pid = row["page_id"]
+        if row["subject_type"] == "file":
+            threshold = int(cfg["staleness"]["threshold"])
+            try:
+                conn.execute(
+                    "UPDATE pages SET staleness_score=MAX(staleness_score, ?) "
+                    "WHERE page_type='topic' AND subject_id IN "
+                    "(SELECT topic FROM topic_members WHERE subject_id=?)",
+                    (threshold, sid))
+            except sqlite3.OperationalError:
+                pass
+            for folder in ancestors(sid):
+                conn.execute(
+                    "UPDATE pages SET staleness_score=MAX(staleness_score, ?) "
+                    "WHERE page_type='folder' AND subject_id=?",
+                    (threshold, folder))
         conn.execute("DELETE FROM contradictions WHERE page_id=?", (pid,))
         conn.execute("DELETE FROM links WHERE source_page_id=? "
                      "OR target_page_id=?", (pid, pid))
@@ -417,6 +494,7 @@ def purge_ignored(conn: sqlite3.Connection, cfg: dict, repo: Path) -> int:
         conn.execute("DELETE FROM tree_state WHERE path=?", (sid,))
         removed += 1
     if removed:
+        _reconcile_folder_liveness(conn)
         conn.commit()
     return removed
 
@@ -460,6 +538,8 @@ def sync(conn: sqlite3.Connection, cfg: dict,
     if mode != "git":
         total += snapshot(conn, cfg, repo, baseline_if_empty=True)
     _backfill_fingerprints(conn, cfg, repo)
+    _reconcile_folder_liveness(conn)
+    conn.commit()
     return total
 
 
@@ -580,13 +660,14 @@ def drifted_files(conn, cfg: dict, repo: Path, limit: int = 50) -> list[str]:
                  for r in conn.execute(
                      "SELECT subject_id, last_updated_at, content_fingerprint "
                      "FROM pages WHERE page_type='file' "
-                     "AND current_revision_id IS NOT NULL")}
+                     "AND current_revision_id IS NOT NULL "
+                     "AND COALESCE(deleted_at,'')=''")}
     except sqlite3.OperationalError:      # pre-fingerprint database
         pages = {r["subject_id"]: (r["last_updated_at"], None)
                  for r in conn.execute(
                      "SELECT subject_id, last_updated_at FROM pages "
                      "WHERE page_type='file' AND current_revision_id "
-                     "IS NOT NULL")}
+                     "IS NOT NULL AND COALESCE(deleted_at,'')=''")}
     if not pages:
         return []
     out, count = [], 0
@@ -696,5 +777,6 @@ def snapshot(conn: sqlite3.Connection, cfg: dict, repo: Path,
     conn.execute("DELETE FROM tree_state")
     conn.executemany("INSERT INTO tree_state(path, hash) VALUES(?,?)",
                      list(current.items()))
+    _reconcile_folder_liveness(conn)
     conn.commit()
     return inserted
