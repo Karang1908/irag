@@ -23,14 +23,18 @@ def run(conn: sqlite3.Connection, cfg: dict, repo=None,
     fail_on_unsynth = bool(cfg["check"].get("fail_on_unsynthesized", True))
 
     open_contras = conn.execute(
-        "SELECT COUNT(*) c FROM contradictions WHERE resolved_at IS NULL"
+        "SELECT COUNT(*) c FROM contradictions c JOIN pages p "
+        "ON p.page_id=c.page_id WHERE c.resolved_at IS NULL "
+        "AND COALESCE(p.deleted_at,'')=''"
     ).fetchone()["c"]
     over_stale = conn.execute(
-        "SELECT COUNT(*) c FROM pages WHERE staleness_score > ?",
+        "SELECT COUNT(*) c FROM pages WHERE staleness_score > ? "
+        "AND COALESCE(deleted_at,'')=''",
         (max_staleness,),
     ).fetchone()["c"]
     never_synth = conn.execute(
-        "SELECT COUNT(*) c FROM pages WHERE current_revision_id IS NULL"
+        "SELECT COUNT(*) c FROM pages WHERE current_revision_id IS NULL "
+        "AND COALESCE(deleted_at,'')=''"
     ).fetchone()["c"]
 
     fact_failures = []
