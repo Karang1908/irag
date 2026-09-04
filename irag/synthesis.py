@@ -157,6 +157,7 @@ def pending_file_pages(conn, cfg) -> list[sqlite3.Row]:
     return conn.execute(
         """SELECT p.* FROM pages p
            WHERE p.pinned = 0 AND p.page_type = 'file'
+             AND COALESCE(p.deleted_at,'') = ''
              AND ((p.current_revision_id IS NULL AND EXISTS (
                      SELECT 1 FROM events e
                      WHERE e.subject_id = p.subject_id
@@ -175,6 +176,7 @@ def pending_topic_pages(conn, cfg) -> list[sqlite3.Row]:
         return conn.execute(
             """SELECT p.* FROM pages p
                WHERE p.pinned = 0 AND p.page_type = 'topic'
+                 AND COALESCE(p.deleted_at,'') = ''
                  AND (p.current_revision_id IS NULL
                       OR p.staleness_score >= ?)
                ORDER BY p.staleness_score DESC""",
@@ -190,6 +192,7 @@ def pending_folder_pages(conn, cfg) -> list[sqlite3.Row]:
     rows = conn.execute(
         """SELECT p.* FROM pages p
            WHERE p.pinned = 0 AND p.page_type = 'folder'
+             AND COALESCE(p.deleted_at,'') = ''
              AND (p.current_revision_id IS NULL
                   OR p.staleness_score >= ?)""",
         (threshold,),
@@ -219,7 +222,8 @@ def _unready_child_folder(conn, folder: str) -> bool:
     return conn.execute(
         f"""SELECT 1 FROM pages WHERE {cond}
             AND page_type='folder' AND current_revision_id IS NULL
-            AND pinned=0 LIMIT 1""", params).fetchone() is not None
+            AND pinned=0 AND COALESCE(deleted_at,'')='' LIMIT 1""",
+        params).fetchone() is not None
 
 
 def _children(conn, folder: str) -> list[sqlite3.Row]:
@@ -433,11 +437,15 @@ def build_topic_prompt(conn, cfg, page, repo: Path):
              "MEMBER FILES AND THEIR SUMMARIES:"]
     for subject in members:
         row = conn.execute(
-            "SELECT r.body_markdown b FROM pages p "
+            "SELECT r.body_markdown b, p.deleted_at FROM pages p "
             "LEFT JOIN revisions r ON r.revision_id = p.current_revision_id "
-            "WHERE p.subject_id=?", (subject,)).fetchone()
-        body = (row["b"] if row and row["b"] else "").strip()
-        if body:
+            "WHERE p.subject_id=?",
+            (subject,)).fetchone()
+        body = (row["b"] if row and not row["deleted_at"] and row["b"]
+                else "").strip()
+        if row and row["deleted_at"]:
+            gist = "(member removed from the live project)"
+        elif body:
             gist = " ".join(body.splitlines()[1:6])[:600]
         else:
             gist = "(no summary yet — run 'irag update')"
@@ -859,7 +867,8 @@ def sweep(conn, cfg, repo: Path, dry_run: bool = False,
         print(f"requeued {requeued} previously failed/stuck event(s)")
     if subject:
         page = conn.execute(
-            "SELECT * FROM pages WHERE subject_id=?", (subject,)).fetchone()
+            "SELECT * FROM pages WHERE subject_id=? "
+            "AND COALESCE(deleted_at,'')=''", (subject,)).fetchone()
         if not page:
             raise SystemExit(f"irag: no page for subject {subject!r}")
         pages = [page]
@@ -946,6 +955,7 @@ def stalled_subjects(conn) -> list[str]:
         "SELECT DISTINCT e.subject_id FROM events e "
         "JOIN pages p ON p.subject_id = e.subject_id "
         "WHERE e.status='queued' AND p.pinned=0 AND p.staleness_score=0 "
+        "AND COALESCE(p.deleted_at,'')='' "
         "ORDER BY e.subject_id")]
 
 
