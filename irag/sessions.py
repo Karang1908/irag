@@ -176,18 +176,18 @@ def _window_facts(conn, row) -> dict:
                 WHERE {rv_where} ORDER BY r.revision_id""",
             rv_args).fetchall()]
     decisions = [json.loads(r["payload"]).get("text", "") for r in
-                 conn.execute("SELECT payload FROM events WHERE "
-                              "event_id > ? AND event_type='decision'",
-                              (ev0,)).fetchall()]
+                 conn.execute(f"SELECT payload FROM events WHERE "
+                              f"{ev_where} AND event_type='decision'",
+                              ev_args).fetchall()]
     lessons = [json.loads(r["payload"]).get("text", "") for r in
-               conn.execute("SELECT payload FROM events WHERE "
-                            "event_id > ? AND event_type='session'",
-                            (ev0,)).fetchall()]
+               conn.execute(f"SELECT payload FROM events WHERE "
+                            f"{ev_where} AND event_type='session'",
+                            ev_args).fetchall()]
     messages = []
     for r in conn.execute(
-            """SELECT payload FROM events WHERE event_id > ?
-               AND event_type='commit' ORDER BY event_id""",
-            (ev0,)).fetchall():
+            f"""SELECT payload FROM events WHERE {ev_where}
+                 AND event_type='commit' ORDER BY event_id""",
+            ev_args).fetchall():
         try:
             m = json.loads(r["payload"]).get("message")
             if m and m not in messages:
