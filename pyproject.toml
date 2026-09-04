@@ -8,14 +8,13 @@ version = "4.45.0"
 description = "Project Knowledge Base — relational memory for AI coding agents"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "Karan Garg" }]
 keywords = ["ai", "coding-agents", "memory", "sqlite", "context", "claude", "rag"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -38,6 +37,7 @@ irag = "irag.cli:main"
 
 [tool.setuptools]
 packages = ["irag"]
+include-package-data = false
 
 [tool.setuptools.package-data]
 irag = ["assets/*.html", "assets/*.md", "assets/docs/*.md"]
