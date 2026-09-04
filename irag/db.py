@@ -367,23 +367,16 @@ def set_meta(conn, key, value):
 
 def get_or_create_page(conn, subject_id: str, subject_type: str = "module",
                        page_type: str = "module", title: str | None = None) -> sqlite3.Row:
-    row = conn.execute(
-        "SELECT * FROM pages WHERE subject_type=? AND subject_id=?",
-        (subject_type, subject_id),
-    ).fetchone()
-    if row:
-        return row
-    try:
-        conn.execute(
-            "INSERT INTO pages(page_type, title, subject_type, subject_id) "
-            "VALUES(?,?,?,?)",
-            (page_type, title or subject_id, subject_type, subject_id),
-        )
-        conn.commit()
-    except sqlite3.IntegrityError:
-        # another writer created the same subject between our SELECT and
-        # INSERT (UNIQUE(subject_type, subject_id)) — just read theirs
-        conn.rollback()
+    # Never commit inside a helper: callers combine page creation with an
+    # event, revision, or full structural-map replacement.  The old commit
+    # exposed half-written operations after a later error and made scan's
+    # DELETE/INSERT rebuild observably non-atomic.  INSERT OR IGNORE also
+    # handles a racing creator without rolling back the caller's work.
+    conn.execute(
+        "INSERT OR IGNORE INTO pages(page_type, title, subject_type, "
+        "subject_id) VALUES(?,?,?,?)",
+        (page_type, title or subject_id, subject_type, subject_id),
+    )
     return conn.execute(
         "SELECT * FROM pages WHERE subject_type=? AND subject_id=?",
         (subject_type, subject_id),
