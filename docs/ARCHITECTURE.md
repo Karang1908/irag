@@ -111,7 +111,8 @@ pointers or resets staleness — the invariant lives in the database.
 `irag.structure.scan` parses source into two relations — ``symbols`` (name,
 kind, file:line per module) and ``deps`` (module→module import edges,
 counted) — Python via `ast`, and JS/TS, Go, Rust, Java, C#, Ruby, PHP,
-and C/C++ via regex, rebuilt only when HEAD changes. Import edges resolve
+and C/C++ via regex, rebuilt only when the working-tree fingerprint changes
+(falling back to Git HEAD before fingerprints exist). Import edges resolve
 for file-relative imports (Ruby `require_relative`, C `#include "..."`,
 relative JS/PHP); Java and C# yield symbols but not edges (package-path
 imports need source roots). It is pure parsing: deterministic, local,
@@ -140,7 +141,7 @@ extensions.
 
 Two triggers, one queue. **Git mode:** `git show --name-only` per commit.
 **Snapshot mode** (plain folders, or forced via config): every file is
-content-hashed (SHA-1, first 1MB) into `tree_state`; sync diffs current
+content-hashed (SHA-1, streamed across the entire file) into `tree_state`; sync diffs current
 vs stored fingerprints and emits per-module `snapshot` events (with
 add/edit/delete lists) under a monotonic `snap:N` ref. The page revision
 chain (v1, v2, ...) is the memory's own version control either way — the
