@@ -14,6 +14,7 @@ from pathlib import Path
 
 from . import (check, config, db, export as export_mod, hooks, ingest,
                linter, provenance, retrieval, synthesis)
+from .locking import UpdateLock as _UpdateLock
 
 
 def _open(require_init: bool = True) -> tuple[sqlite3.Connection, dict, Path]:
@@ -154,21 +155,8 @@ def cmd_synthesize(args) -> int:
 
 
 def _dirty_count(root: Path) -> int:
-    # only meaningful when the project root IS a git toplevel — for a
-    # snapshot-scoped project inside a larger repo, git status would
-    # report the whole enclosing repo's noise
-    if not ingest.git_rooted(root):
-        return 0
-    import subprocess
-    try:
-        out = subprocess.run(["git", "status", "--porcelain"], cwd=root,
-                             capture_output=True, text=True).stdout
-        skip = (".irag/", ".claude/", "irag_vault/", "CLAUDE.md",
-                "AGENTS.md")
-        return len([ln for ln in out.splitlines() if ln.strip()
-                    and not ln[3:].startswith(skip)])
-    except OSError:
-        return 0
+    from . import stats
+    return stats.dirty_count(root)
 
 
 def cmd_context(args) -> int:
@@ -206,12 +194,11 @@ def cmd_status(args) -> int:
     # status reads the DB, so edits made since the last sync are invisible
     # here. CLAUDE.md tells agents to read pages_due and decide whether to
     # update; without this they read 0 and skip, leaving memory stale.
-    drifted = ingest.drifted_files(conn, cfg, root)
+    drifted = s["drifted_files"]
     s["drifted_files"] = drifted
     # which change-detection mode is live, so --json consumers and the
     # human view report the same thing doctor does
-    minfo = ingest.active_mode(cfg, root)
-    s["ingest_mode"] = minfo
+    minfo = s["ingest_mode"]
     if args.json:
         print(json.dumps(s, indent=2, default=str))
         return 0
@@ -285,7 +272,10 @@ def cmd_backup(args) -> int:
     if args.path:
         dest = Path(args.path).expanduser()
     else:
-        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        # Backups can be requested concurrently by the CLI and dashboard.
+        # Include microseconds so both operations get distinct destinations
+        # instead of one connection silently replacing the other's file.
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
         dest = root / ".irag" / "backups" / f"memory-{stamp}.db"
     dest.parent.mkdir(parents=True, exist_ok=True)
     import sqlite3 as _sq
@@ -368,15 +358,12 @@ def cmd_impact(args) -> int:
         # case-insensitive volume `SRC/A.PY` "exists" while being a subject
         # irag has never indexed, so an existence test alone still answers
         # "contained" for a path the user got wrong.
-        known = conn.execute(
-            "SELECT 1 FROM pages WHERE subject_id=? UNION ALL "
-            "SELECT 1 FROM symbols WHERE file=? LIMIT 1",
-            (args.subject, args.subject)).fetchone()
-        if not known:
+        if not structure.is_tracked(conn, args.subject):
             print(f"irag: {args.subject} is not a file irag tracks — no "
                   "blast radius can be computed for it.")
             near = conn.execute(
                 "SELECT subject_id FROM pages WHERE page_type='file' "
+                "AND COALESCE(deleted_at,'')='' "
                 "AND (lower(subject_id) = lower(?) "
                 "     OR lower(subject_id) LIKE ?) LIMIT 5",
                 (args.subject, f"%{Path(args.subject).name.lower()}%")
@@ -441,29 +428,38 @@ def cmd_claude_setup(args) -> int:
 
 def _append_log(conn, page_subject: str, page_type: str, title: str,
                 event_type: str, text: str, module: str | None) -> None:
-    conn.execute(
-        "INSERT INTO events(event_type, subject_id, payload, status, "
-        "processed_at) VALUES(?, ?, ?, 'completed', datetime('now'))",
-        (event_type, module or "", json.dumps({"text": text})),
-    )
-    event_id = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
-    page = db.get_or_create_page(conn, page_subject, subject_type="log",
-                                 page_type=page_type, title=title)
-    body = db.current_body(conn, page["page_id"]) or f"# {title}\n"
-    entry = f"\n- {text}"
-    if module:
-        entry += f" _(module: {module})_"
-    # version_number computed in-INSERT (atomic under the write lock) so a
-    # concurrent writer can't collide on the same (page_id, version_number)
-    conn.execute(
-        "INSERT INTO revisions(page_id, version_number, body_markdown, "
-        "change_summary, triggered_by_event_id, llm_model_used, session_key) "
-        "VALUES(?, (SELECT COALESCE(MAX(version_number),0)+1 FROM revisions "
-        "WHERE page_id=?), ?,?,?, 'human', ?)",
-        (page["page_id"], page["page_id"], body + entry,
-         f"{event_type} recorded", event_id, db.active_key()),
-    )
-    conn.commit()
+    # This is a read-modify-write append.  Serialise before reading the old
+    # body; merely making the version number atomic still allowed two writers
+    # to create vN/vN+1 where the latter silently omitted the former's entry.
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        conn.execute(
+            "INSERT INTO events(event_type, subject_id, payload, status, "
+            "processed_at, session_key) VALUES(?, ?, ?, 'completed', "
+            "datetime('now'), ?)",
+            (event_type, module or "", json.dumps({"text": text}),
+             db.active_key()),
+        )
+        event_id = conn.execute(
+            "SELECT last_insert_rowid() id").fetchone()["id"]
+        page = db.get_or_create_page(conn, page_subject, subject_type="log",
+                                     page_type=page_type, title=title)
+        body = db.current_body(conn, page["page_id"]) or f"# {title}\n"
+        entry = f"\n- {text}"
+        if module:
+            entry += f" _(module: {module})_"
+        conn.execute(
+            "INSERT INTO revisions(page_id, version_number, body_markdown, "
+            "change_summary, triggered_by_event_id, llm_model_used, "
+            "session_key) VALUES(?, (SELECT COALESCE(MAX(version_number),0)"
+            "+1 FROM revisions WHERE page_id=?), ?,?,?, 'human', ?)",
+            (page["page_id"], page["page_id"], body + entry,
+             f"{event_type} recorded", event_id, db.active_key()),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 
 def cmd_search(args) -> int:
@@ -538,6 +534,7 @@ def cmd_stale(args) -> int:
     threshold = int(cfg["staleness"]["threshold"])
     rows = conn.execute(
         "SELECT subject_id, staleness_score, pinned FROM pages "
+        "WHERE COALESCE(deleted_at,'')='' "
         "ORDER BY staleness_score DESC").fetchall()
     if not rows:
         print("no pages yet")
@@ -572,23 +569,14 @@ def _iso_date(raw: str) -> str:
     sort above a real ISO date and yield the present state labelled as
     history. Confidently wrong is the worst outcome for a time-travel audit.
     """
-    from datetime import datetime
-    text = (raw or "").strip()
-    for fmt in ("%Y-%m-%d", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S",
-                "%Y/%m/%d", "%Y%m%d"):
-        try:
-            parsed = datetime.strptime(text, fmt)
-        except ValueError:
-            continue
-        return (parsed.strftime("%Y-%m-%d") if fmt in ("%Y-%m-%d", "%Y/%m/%d",
-                                                       "%Y%m%d")
-                else parsed.strftime("%Y-%m-%d %H:%M:%S"))
-    raise SystemExit(
-        f"irag: {raw!r} is not a date irag can compare against. Use "
-        "YYYY-MM-DD (e.g. 2026-06-01), optionally with HH:MM:SS; "
-        "YYYY/MM/DD, YYYYMMDD and unpadded months/days are accepted and "
-        "normalised. Phrases like 'yesterday' are refused because they would "
-        "silently return the present state as if it were history.")
+    try:
+        return provenance.normalize_date(raw)
+    except ValueError as exc:
+        raise SystemExit(
+            f"irag: {exc}. YYYY/MM/DD, YYYYMMDD and unpadded months/days "
+            "are accepted and normalised. Phrases like 'yesterday' are "
+            "refused because they would silently return the present state "
+            "as if it were history.") from None
 
 
 def cmd_asof(args) -> int:
@@ -645,48 +633,6 @@ def cmd_obsidian(args) -> int:
     print("open it in Obsidian: File -> Open Vault -> Open folder as vault")
     print("graph setup: see _meta/graph_settings.md inside the vault")
     return 0
-
-
-class _UpdateLock:
-    """Whole-repo lock around a synthesis sweep.
-
-    `pending_file_pages` selects on staleness, and events are only marked
-    'processing' after selection — so two sweeps starting together choose
-    the same pages and each pays for them. The Stop hook runs `irag update`
-    at the end of every agent turn and the docs support two agents on one
-    repo, so simultaneous finishes are expected, not exotic. The dashboard
-    already guarded its own path with a mutex; the CLI had nothing.
-
-    Advisory and non-blocking: the second run says so and exits 0 rather
-    than queueing, because its work is exactly what the first is doing.
-    """
-
-    def __init__(self, root: Path):
-        self.path = root / ".irag" / "update.lock"
-        self.fh = None
-
-    def __enter__(self):
-        import fcntl
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.fh = open(self.path, "w")
-        try:
-            fcntl.flock(self.fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            self.fh.close()
-            self.fh = None
-            return False
-        self.fh.write(str(__import__("os").getpid()))
-        self.fh.flush()
-        return True
-
-    def __exit__(self, *exc):
-        if self.fh:
-            import fcntl
-            try:
-                fcntl.flock(self.fh, fcntl.LOCK_UN)
-            finally:
-                self.fh.close()
-        return False
 
 
 def cmd_update(args) -> int:
@@ -856,6 +802,7 @@ def cmd_suggest(args) -> int:
     contras = conn.execute(
         "SELECT p.subject_id, COUNT(*) n FROM contradictions c "
         "JOIN pages p ON p.page_id=c.page_id WHERE c.resolved_at IS NULL "
+        "AND COALESCE(p.deleted_at,'')='' "
         "GROUP BY p.subject_id ORDER BY n DESC LIMIT 3").fetchall()
     for c in contras:
         out.append(f"{c['n']} contradiction(s) on {c['subject_id']} → "
@@ -868,7 +815,8 @@ def cmd_suggest(args) -> int:
         out.append(f"{len(broken)} behavioural claim(s) no longer hold → "
                    "irag verify")
     never = conn.execute(
-        "SELECT COUNT(*) c FROM pages WHERE current_revision_id IS NULL"
+        "SELECT COUNT(*) c FROM pages WHERE current_revision_id IS NULL "
+        "AND COALESCE(deleted_at,'')=''"
     ).fetchone()["c"]
     if never:
         out.append(f"{never} page(s) never synthesized → irag update")
