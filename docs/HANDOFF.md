@@ -10,9 +10,61 @@ This document is about **building irag**. If you want to know how to *use*
 irag inside a project, read `/CLAUDE.md` at the repo root — that is the
 operator manual for agents consuming irag's memory, not developing it.
 
-Accurate as of **v4.45.0**, 2026-09-04. Every fact below was verified by
+Accurate as of **v4.45.0**, 2026-09-05. Every fact below was verified by
 running it on this machine on that date. Where something is inferred
 rather than observed, it says so.
+
+---
+
+## Current working tree — reliability audit (uncommitted)
+
+The broad CLI/backend/dashboard audit completed on 2026-09-05 is present
+in the working tree but has **not** been committed or pushed. Preserve it.
+It fixes the failure modes reported from real use, rather than changing the
+append-only memory model:
+
+- CLI updates, dashboard updates, live-map refreshes, and dashboard
+  maintenance operations now share one cross-platform repository lock. Two
+  writers cannot run sync/scan/synthesize/lint work over each other.
+- Page creation and structural-map replacement participate in their caller's
+  transaction. The scanner records the same working-tree fingerprint that
+  `doctor` compares, eliminating both partial map swaps and the false
+  "structural map stale vs HEAD" warning after a fresh scan.
+- Deleted files and newly empty folders are withdrawn from every live read
+  surface while their revisions remain queryable as history. Delete events
+  complete without an LLM tombstone; revival and topic-member changes force
+  the affected derived pages due. `impact` now fails closed for unknown or
+  deleted subjects.
+- Concurrent lesson/decision appends use an immediate transaction, and all
+  session recap inputs (decisions, lessons, commits, events, revisions) are
+  filtered by the owning session key. Overlapping agents no longer lose log
+  entries or inherit each other's diary.
+- The dashboard reloads config safely, reports an invalid live config instead
+  of continuing with stale assumptions, serializes mutating operations,
+  returns clean 4xx JSON for bad requests, marks API responses `no-store`,
+  and exposes the same drift/mode/status facts as the CLI.
+- The frontend distinguishes HTTP application errors from an offline server,
+  prevents overlapping poll responses from rewinding the UI, stops idle graph
+  animation, safely renders toast text, and has accessible controls. Its
+  responsive grids were corrected so all nine tabs fit without body overflow
+  at 390 px; only the tab strip scrolls and the brand remains visible.
+- Backup names include microseconds, date inputs are validated consistently,
+  packaged docs match the root command list, and package metadata uses current
+  SPDX/data-discovery syntax.
+
+Verification on the finished tree:
+
+```text
+sh tests/test_smoke.sh                                  SMOKE TEST PASSED
+Python 3.13 py_compile + pyflakes                       passed (silent)
+node --check (dashboard script) + sh -n + diff --check passed
+dashboard: 9 tabs × desktop/mobile Chromium            no JS errors/overflow
+sdist + wheel build; wheel install/import on Python 3.13 passed
+```
+
+The frontend audit used the repository's existing visual system and made
+narrow reliability/accessibility corrections; it did not redesign the
+product. The detector's sole finding (a colored status-dot glow) was removed.
 
 ---
 
