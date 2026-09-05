@@ -329,6 +329,10 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
   main{padding:var(--sp-4)}.topbar{padding:10px var(--sp-4);top:61px}
   .grid-cards{grid-template-columns:1fr 1fr}
   .grid-cards .card:first-child{grid-column:1/-1}
+  /* Data tables keep their real column widths, but scroll inside the card.
+     Without this boundary, long contradiction claims widened the entire
+     Health view (475px of table in a 390px viewport). */
+  .panel>table{display:block;max-width:100%;overflow-x:auto}
 }
 @media (pointer:coarse){
   button.mini,.ghost-btn{min-height:44px}
