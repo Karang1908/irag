@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 SITE = Path(__file__).resolve().parent
 
 GITHUB = "https://github.com/Karang1908/irag"
+BUILD_MARKER = ".irag-site-build"
 
 
 def _version() -> str:
@@ -252,7 +253,8 @@ def md_to_html(src: str, rel: str) -> tuple[str, list, str]:
                 body.append(lines[i])
                 i += 1
             i += 1
-            close_lists(); close_quote()
+            close_lists()
+            close_quote()
             label = f'<span class="code-lang">{lang}</span>' if lang else ""
             out.append(
                 f'<div class="code-block">{label}'
@@ -268,7 +270,8 @@ def md_to_html(src: str, rel: str) -> tuple[str, list, str]:
             while i < n and re.match(r"^\|.*\|\s*$", lines[i]):
                 rows.append(lines[i].strip())
                 i += 1
-            close_lists(); close_quote()
+            close_lists()
+            close_quote()
             html_rows = []
             header_done = False
             for r in rows:
@@ -289,7 +292,8 @@ def md_to_html(src: str, rel: str) -> tuple[str, list, str]:
         # heading
         m = re.match(r"^(#{1,4})\s+(.*)$", ln)
         if m:
-            close_lists(); close_quote()
+            close_lists()
+            close_quote()
             level = len(m.group(1))
             text = m.group(2).strip()
             anchor = slugify(re.sub(r"[`*]", "", text), used)
@@ -305,7 +309,8 @@ def md_to_html(src: str, rel: str) -> tuple[str, list, str]:
 
         # hr
         if re.match(r"^---+\s*$", ln):
-            close_lists(); close_quote()
+            close_lists()
+            close_quote()
             out.append("<hr>")
             i += 1
             continue
@@ -371,7 +376,8 @@ def md_to_html(src: str, rel: str) -> tuple[str, list, str]:
         plain.append(text)
         i = j
 
-    close_lists(); close_quote()
+    close_lists()
+    close_quote()
     return "\n".join(out), toc, " ".join(plain)
 
 
@@ -576,7 +582,7 @@ fact-checked against your real code so it can never quietly lie.</p>
 <a class="btn primary" href="docs/quickstart/">Get started</a>
 <a class="btn ghost" href="{GITHUB}" target="_blank" rel="noopener">GitHub ↗</a>
 </div>
-<div class="install"><code>pip install -e ./irag && irag init</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
+<div class="install"><code>pip install irag &amp;&amp; irag init</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
 </div>
 <figure class="hero-graph" aria-hidden="true">
 {hero_graph()}
@@ -693,18 +699,18 @@ optional.</p></li>
 </section>
 <section class="sec" id="proof">
 <h2 class="sec-t">Measured, not claimed.</h2>
-<p class="lede">Run on irag's own source: 20 modules, 5,144 lines. The read
+<p class="lede">Run on irag's own source: 22 modules, 9,056 lines. The read
 path costs nothing because nothing on it calls a model, which is a
 property of the architecture rather than a benchmark you have to trust.</p>
 <div class="proof">
-<div class="pf"><b>155 symbols · 70 edges</b><span>full structural scan
-in 0.08s, zero tokens</span></div>
+<div class="pf"><b>259 symbols · 83 edges</b><span>full structural scan
+in 0.12s, zero tokens</span></div>
 <div class="pf"><b>13 modules</b><span>blast radius of one file,
 transitive, parsed from the code</span></div>
 <div class="pf"><b>~87 tokens</b><span>to resume a past conversation with
 its per-file changes</span></div>
 <div class="pf"><b>0 dependencies</b><span>stdlib only, one SQLite file,
-pyflakes clean</span></div>
+Ruff + mypy clean</span></div>
 </div>
 <p class="lede">One command runs the whole lifecycle end-to-end: ingest,
 synthesize, fact-check, CI gate, rollback, sessions, dashboard API,
@@ -742,7 +748,7 @@ with a database attached."</blockquote>
 <a class="btn primary" href="docs/quickstart/">Get started</a>
 <a class="btn ghost" href="docs/architecture/">Read the architecture</a>
 </div>
-<div class="install"><code>pip install -e ./irag && irag init</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
+<div class="install"><code>pip install irag &amp;&amp; irag init</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
 </section>
 <footer class="foot land">
 <span>MIT · <a href="{GITHUB}" target="_blank"
@@ -762,9 +768,29 @@ rel="noopener">Karang1908/irag</a></span>
 # build
 # ---------------------------------------------------------------------
 def build(out: Path) -> int:
+    # Path.exists() is false for a broken symlink. Check links first so a
+    # stale link never falls through to mkdir() as an opaque FileExistsError
+    # (or gets followed if its target later reappears).
+    if out.is_symlink():
+        raise SystemExit(
+            f"refusing to replace {out}: output must be a real directory")
     if out.exists():
+        if not out.is_dir():
+            raise SystemExit(
+                f"refusing to replace {out}: output must be a real directory")
+        generated = (out / BUILD_MARKER).is_file() or all(
+            (out / name).is_file()
+            for name in (".nojekyll", "index.html", "search-index.json"))
+        if any(out.iterdir()) and not generated:
+            raise SystemExit(
+                f"refusing to replace {out}: it is not an irag-generated "
+                f"site directory (missing {BUILD_MARKER})")
         shutil.rmtree(out)
-    (out / "docs").mkdir(parents=True)
+    out.mkdir(parents=True)
+    # Written before the rest so an interrupted build remains safely
+    # rebuildable rather than becoming an unrecognized half-built directory.
+    (out / BUILD_MARKER).write_text("generated by site/build.py\n")
+    (out / "docs").mkdir()
     (out / "assets").mkdir()
 
     for asset in (ROOT / "docs" / "assets").glob("*"):
