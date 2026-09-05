@@ -121,7 +121,8 @@ scribe never weakens the trust layer. Verify your command once with
 ## Quickstart
 
 ```bash
-pip install irag            # zero dependencies, Python 3.11+
+pip install git+https://github.com/Karang1908/irag.git
+# (not on PyPI yet)
 # or, from a source checkout: pip install -e .
 cd your-project
 irag init                   # works with or without git

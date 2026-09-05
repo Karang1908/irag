@@ -10,10 +10,11 @@
 
 ## Install
 
-From PyPI (when published) or from source:
+Not on PyPI yet — install straight from the public repository, or
+from a checkout:
 
 ```bash
-pip install irag
+pip install git+https://github.com/Karang1908/irag.git
 # or, from a checkout:
 pip install -e /path/to/irag
 ```
@@ -329,7 +330,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - run: pip install irag
+      - run: pip install git+https://github.com/Karang1908/irag.git
       - run: irag lint && irag check
 ```
 
