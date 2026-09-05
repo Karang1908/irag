@@ -8,9 +8,10 @@ the FTS5 inverted index in sync.
 from __future__ import annotations
 
 import sqlite3
+import datetime as _datetime
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 6
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -19,6 +20,15 @@ PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
   value TEXT
+);
+
+-- An ordered, inspectable migration ledger. ``meta.schema_version`` is the
+-- fast current pointer; this table is the audit trail that explains how a
+-- database reached it.
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version     INTEGER PRIMARY KEY,
+  name        TEXT NOT NULL,
+  applied_at  TEXT DEFAULT (datetime('now'))
 );
 
 -- ---------------------------------------------------------------
@@ -48,6 +58,7 @@ CREATE TABLE IF NOT EXISTS revisions (
   triggered_by_event_id INTEGER REFERENCES events(event_id),
   llm_model_used        TEXT,
   tokens_used           INTEGER DEFAULT 0,
+  session_key          TEXT,
   created_at            TEXT DEFAULT (datetime('now'))
 );
 -- UNIQUE so a racing duplicate (page_id, version_number) fails loudly with
@@ -75,6 +86,7 @@ CREATE TABLE IF NOT EXISTS events (
   payload     TEXT,                       -- JSON details (changed files, message, ...)
   status      TEXT NOT NULL DEFAULT 'queued',  -- queued|processing|completed|failed|skipped
   tokens_used INTEGER DEFAULT 0,
+  session_key TEXT,
   created_at  TEXT DEFAULT (datetime('now')),
   processed_at TEXT
 );
@@ -146,9 +158,12 @@ CREATE TABLE IF NOT EXISTS sessions (
   lessons          INTEGER DEFAULT 0,
   start_event_id    INTEGER DEFAULT 0,   -- high-water marks: the session
   start_revision_id INTEGER DEFAULT 0,   -- owns only rows created after
-  changes_detail    TEXT                 -- JSON [{subject_id,version_number,
+  changes_detail    TEXT,                -- JSON [{subject_id,version_number,
                                           -- change_summary}, ...] for every
                                           -- revision written this session
+  session_key       TEXT,
+  critical_context  TEXT                 -- lossless JSON decisions, lessons,
+                                          -- commits, files, revision details
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_time ON sessions(started_at);
 
@@ -195,6 +210,47 @@ CREATE TABLE IF NOT EXISTS deps (
   import_count   INTEGER NOT NULL DEFAULT 1,
   UNIQUE(source_subject, target_subject)
 );
+
+-- Per-file parser fingerprints make content-only structural refreshes
+-- incremental. Topology changes still intentionally trigger a full pass so
+-- newly resolvable imports cannot be missed.
+CREATE TABLE IF NOT EXISTS scan_state (
+  path TEXT PRIMARY KEY,
+  hash TEXT NOT NULL
+);
+
+-- Dashboard work survives page reloads and server restarts. Logs are JSON
+-- arrays because they are short, ordered, and replaced atomically.
+CREATE TABLE IF NOT EXISTS jobs (
+  job_id       TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  status       TEXT NOT NULL,       -- queued | running | completed | failed
+  progress     INTEGER NOT NULL DEFAULT 0,
+  log_json     TEXT NOT NULL DEFAULT '[]',
+  error        TEXT,
+  created_at   TEXT DEFAULT (datetime('now')),
+  started_at   TEXT,
+  finished_at  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
+
+-- Provider-neutral model accounting. Rates are user-supplied, so cost stays
+-- NULL instead of pretending a hard-coded price is timeless or exact.
+CREATE TABLE IF NOT EXISTS llm_runs (
+  run_id              INTEGER PRIMARY KEY,
+  provider            TEXT NOT NULL,
+  model               TEXT,
+  purpose             TEXT,
+  status               TEXT NOT NULL,
+  input_tokens         INTEGER NOT NULL DEFAULT 0,
+  output_tokens        INTEGER NOT NULL DEFAULT 0,
+  estimated_cost_usd   REAL,
+  duration_ms          INTEGER NOT NULL DEFAULT 0,
+  attempt_count        INTEGER NOT NULL DEFAULT 1,
+  error                TEXT,
+  created_at           TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_llm_runs_created ON llm_runs(created_at DESC);
 
 -- ---------------------------------------------------------------
 -- Inverted index: FTS5 over revision bodies (external-content table)
@@ -264,12 +320,40 @@ def active_key() -> str | None:
     return _ACTIVE_KEY
 
 
+def replace_active_key(key: str | None) -> str | None:
+    """Set even a null key and return the previous value for scoped callers.
+
+    ``set_active_key`` intentionally ignores nulls because one-shot CLI
+    commands resolve attribution before their handler runs. Long-lived MCP
+    servers need stronger isolation: after one session ends, the next call
+    must not inherit that session merely because it shares a Python process.
+    """
+    global _ACTIVE_KEY
+    previous = _ACTIVE_KEY
+    _ACTIVE_KEY = key
+    return previous
+
+
 def ensure_db(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = connect(db_path)
+    had_schema = _database_has_schema(conn)
+    old_version = _stored_schema_version(conn)
+    if old_version > SCHEMA_VERSION:
+        conn.close()
+        raise SystemExit(
+            f"irag: this database uses schema v{old_version}, but this "
+            f"irag only understands through v{SCHEMA_VERSION}. Refusing to "
+            "open it because that would be an unsafe downgrade.")
+    # Back up before *any* compatibility DDL touches an existing database.
+    # A failed migration is therefore recoverable even if SQLite or the
+    # process is interrupted between the idempotent schema pass and a data
+    # backfill step.
+    if had_schema and old_version < SCHEMA_VERSION:
+        _backup_before_migration(conn, db_path, old_version, SCHEMA_VERSION)
     conn.executescript(SCHEMA)
     conn.commit()
-    if _stored_schema_version(conn) >= SCHEMA_VERSION:
+    if _stored_schema_version(conn) == SCHEMA_VERSION:
         return conn
     # Upgrade the entire schema under one reserved write lock.  Otherwise two
     # processes opening an old database can both observe a missing column and
@@ -279,12 +363,23 @@ def ensure_db(db_path: Path) -> sqlite3.Connection:
         conn.execute("BEGIN IMMEDIATE")
         # A second opener may have completed the upgrade while this connection
         # waited for the reserved lock, so check again inside the transaction.
-        if _stored_schema_version(conn) < SCHEMA_VERSION:
-            _migrate_schema(conn)
+        current = _stored_schema_version(conn)
+        if current > SCHEMA_VERSION:
+            raise SystemExit(
+                f"irag: database schema v{current} is newer than supported "
+                f"v{SCHEMA_VERSION}; refusing unsafe downgrade")
+        for version, name, migrate in MIGRATIONS:
+            if version <= current:
+                continue
+            migrate(conn)
+            conn.execute(
+                "INSERT OR REPLACE INTO schema_migrations(version,name) "
+                "VALUES(?,?)", (version, name))
             conn.execute(
                 "INSERT INTO meta(key,value) VALUES('schema_version',?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-                (str(SCHEMA_VERSION),))
+                (str(version),))
+            current = version
         conn.commit()
     except BaseException:
         conn.rollback()
@@ -294,16 +389,46 @@ def ensure_db(db_path: Path) -> sqlite3.Connection:
 
 
 def _stored_schema_version(conn: sqlite3.Connection) -> int:
-    row = conn.execute(
-        "SELECT value FROM meta WHERE key='schema_version'").fetchone()
+    try:
+        row = conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'").fetchone()
+    except sqlite3.OperationalError:
+        return 0
     try:
         return int(row["value"]) if row is not None else 0
     except (TypeError, ValueError):
         return 0
 
 
-def _migrate_schema(conn: sqlite3.Connection) -> None:
-    """Apply all additive/backfill migrations inside the caller's transaction."""
+def _database_has_schema(conn: sqlite3.Connection) -> bool:
+    return conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type IN ('table','view') "
+        "AND name NOT LIKE 'sqlite_%' LIMIT 1").fetchone() is not None
+
+
+def _backup_before_migration(conn: sqlite3.Connection, db_path: Path,
+                             old: int, new: int) -> Path:
+    """Create a consistent SQLite backup before an automatic upgrade."""
+    stamp = _datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    dest = (db_path.parent / "backups" /
+            f"pre-migration-v{old}-to-v{new}-{stamp}.db")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    target = sqlite3.connect(dest)
+    try:
+        conn.backup(target)
+    except BaseException:
+        target.close()
+        try:
+            dest.unlink()
+        except OSError:
+            pass
+        raise
+    target.close()
+    return dest
+
+
+def _migration_1_legacy_columns(conn: sqlite3.Connection) -> None:
+    """Add columns introduced before the migration ledger existed."""
     _add_column_if_missing(conn, "sessions", "changes_detail", "TEXT")
     # who owns this session: two agents on one repo (Claude Code + agy) each
     # ran bare `session-begin`/`session-end`, and without an identity the
@@ -324,6 +449,10 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
     # so every rename left one behind permanently. History is kept so
     # `asof` and `why` still work; only serving is affected.
     _add_column_if_missing(conn, "pages", "deleted_at", "TEXT")
+
+
+def _migration_2_resolution_integrity(conn: sqlite3.Connection) -> None:
+    """Preserve manual contradiction judgements and close old duplicates."""
     # Backfill resolutions made before the column existed, so upgrading does
     # not silently discard every judgement a human already made. The auto
     # paths write a fixed sentinel note; anything else was a person typing.
@@ -344,7 +473,56 @@ def _migrate_schema(conn: sqlite3.Connection) -> None:
         "  SELECT 1 FROM contradictions d WHERE d.page_id=contradictions.page_id"
         "    AND d.claim=contradictions.claim AND d.ctype=contradictions.ctype"
         "    AND d.resolved_at IS NOT NULL AND d.resolution_kind='manual')")
+
+
+def _migration_3_unique_revisions(conn: sqlite3.Connection) -> None:
+    """Promote legacy revision indexes when their data permits it."""
     _ensure_unique_revisions_index(conn)
+
+
+def _migration_4_runtime_contracts(conn: sqlite3.Connection) -> None:
+    """Install durable jobs, provider telemetry, and scan fingerprints.
+
+    The current SCHEMA creates these tables before the ordered data pass. This
+    explicit step is intentionally idempotent and gives the ledger a truthful
+    boundary for databases upgrading from the v1 era.
+    """
+    conn.execute("UPDATE jobs SET status='failed', progress=100, "
+                 "error=COALESCE(error,'dashboard stopped before completion'), "
+                 "finished_at=COALESCE(finished_at,datetime('now')) "
+                 "WHERE status IN ('queued','running')")
+
+
+def _migration_5_contradiction_uniqueness(conn: sqlite3.Connection) -> None:
+    """Make the open contradiction set race-safe across dashboard/CLI lint."""
+    # Preserve the oldest open row as the stable id and close later duplicate
+    # rows before adding the partial uniqueness constraint.
+    conn.execute(
+        "UPDATE contradictions SET resolved_at=datetime('now'), "
+        "resolution_kind='auto', resolution_notes='auto-closed on upgrade: "
+        "duplicate open contradiction' WHERE resolved_at IS NULL AND EXISTS ("
+        "SELECT 1 FROM contradictions older WHERE older.page_id="
+        "contradictions.page_id AND older.claim=contradictions.claim "
+        "AND older.ctype=contradictions.ctype AND older.resolved_at IS NULL "
+        "AND older.contradiction_id < contradictions.contradiction_id)")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_contradictions_unique_open "
+        "ON contradictions(page_id, claim, ctype) WHERE resolved_at IS NULL")
+
+
+def _migration_6_lossless_session_context(conn: sqlite3.Connection) -> None:
+    """Keep the evidence underneath every prose session summary."""
+    _add_column_if_missing(conn, "sessions", "critical_context", "TEXT")
+
+
+MIGRATIONS = (
+    (1, "legacy columns", _migration_1_legacy_columns),
+    (2, "contradiction integrity", _migration_2_resolution_integrity),
+    (3, "unique revision versions", _migration_3_unique_revisions),
+    (4, "durable jobs and incremental scans", _migration_4_runtime_contracts),
+    (5, "race-safe open contradictions", _migration_5_contradiction_uniqueness),
+    (6, "lossless session critical context", _migration_6_lossless_session_context),
+)
 
 
 def _ensure_unique_revisions_index(conn: sqlite3.Connection) -> None:
@@ -445,3 +623,23 @@ def like_escape(s: str) -> str:
     r"""Escape LIKE metacharacters so a literal path/name (which routinely
     contains `_`) can't act as a wildcard. Use with `LIKE ? ESCAPE '\'`."""
     return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def json_object(value: object) -> dict:
+    """Decode a JSON object from an untrusted/legacy database boundary."""
+    import json
+    try:
+        decoded = json.loads(value) if isinstance(value, (str, bytes)) else value
+    except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+        return {}
+    return decoded if isinstance(decoded, dict) else {}
+
+
+def json_list(value: object) -> list:
+    """Decode a JSON array without allowing one corrupt row to break a view."""
+    import json
+    try:
+        decoded = json.loads(value) if isinstance(value, (str, bytes)) else value
+    except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+        return []
+    return decoded if isinstance(decoded, list) else []
