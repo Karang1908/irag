@@ -10,6 +10,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+SCHEMA_VERSION = 1
+
 SCHEMA = """
 PRAGMA journal_mode=WAL;
 PRAGMA foreign_keys=ON;
@@ -267,6 +269,41 @@ def ensure_db(db_path: Path) -> sqlite3.Connection:
     conn = connect(db_path)
     conn.executescript(SCHEMA)
     conn.commit()
+    if _stored_schema_version(conn) >= SCHEMA_VERSION:
+        return conn
+    # Upgrade the entire schema under one reserved write lock.  Otherwise two
+    # processes opening an old database can both observe a missing column and
+    # race the same ALTER TABLE; per-column commits also leave partial schemas
+    # behind when a process is interrupted.
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        # A second opener may have completed the upgrade while this connection
+        # waited for the reserved lock, so check again inside the transaction.
+        if _stored_schema_version(conn) < SCHEMA_VERSION:
+            _migrate_schema(conn)
+            conn.execute(
+                "INSERT INTO meta(key,value) VALUES('schema_version',?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                (str(SCHEMA_VERSION),))
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        conn.close()
+        raise
+    return conn
+
+
+def _stored_schema_version(conn: sqlite3.Connection) -> int:
+    row = conn.execute(
+        "SELECT value FROM meta WHERE key='schema_version'").fetchone()
+    try:
+        return int(row["value"]) if row is not None else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _migrate_schema(conn: sqlite3.Connection) -> None:
+    """Apply all additive/backfill migrations inside the caller's transaction."""
     _add_column_if_missing(conn, "sessions", "changes_detail", "TEXT")
     # who owns this session: two agents on one repo (Claude Code + agy) each
     # ran bare `session-begin`/`session-end`, and without an identity the
@@ -307,9 +344,7 @@ def ensure_db(db_path: Path) -> sqlite3.Connection:
         "  SELECT 1 FROM contradictions d WHERE d.page_id=contradictions.page_id"
         "    AND d.claim=contradictions.claim AND d.ctype=contradictions.ctype"
         "    AND d.resolved_at IS NOT NULL AND d.resolution_kind='manual')")
-    conn.commit()
     _ensure_unique_revisions_index(conn)
-    return conn
 
 
 def _ensure_unique_revisions_index(conn: sqlite3.Connection) -> None:
@@ -325,16 +360,14 @@ def _ensure_unique_revisions_index(conn: sqlite3.Connection) -> None:
         "WHERE name='idx_revisions_page'").fetchone()
     if row is None or row["u"]:
         return
-    try:
-        conn.execute("DROP INDEX idx_revisions_page")
-        conn.execute("CREATE UNIQUE INDEX idx_revisions_page "
-                     "ON revisions(page_id, version_number)")
-        conn.commit()
-    except sqlite3.IntegrityError:
-        conn.rollback()
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_revisions_page "
-                     "ON revisions(page_id, version_number)")
-        conn.commit()
+    duplicate = conn.execute(
+        "SELECT 1 FROM revisions GROUP BY page_id, version_number "
+        "HAVING COUNT(*) > 1 LIMIT 1").fetchone()
+    if duplicate is not None:
+        return
+    conn.execute("DROP INDEX idx_revisions_page")
+    conn.execute("CREATE UNIQUE INDEX idx_revisions_page "
+                 "ON revisions(page_id, version_number)")
 
 
 def _add_column_if_missing(conn: sqlite3.Connection, table: str,
@@ -345,7 +378,6 @@ def _add_column_if_missing(conn: sqlite3.Connection, table: str,
     cols = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
     if column not in cols:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
-        conn.commit()
 
 
 # -----------------------------------------------------------------
