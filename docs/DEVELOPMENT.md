@@ -8,8 +8,8 @@ A standalone CLI tool that replaces flat agent-memory files (CLAUDE.md,
 .cursorrules) with a SQLite database in the target repo. Git commits feed
 an event queue; an LLM synthesizes per-module context pages as append-only
 revisions; a static linter records contradictions between page claims and
-the actual code; retrieval serves tiered, token-budgeted context; `irag
-export` projects the database back into a generated CLAUDE.md.
+the actual code; retrieval serves tiered, token-budgeted context; and `irag
+export` installs a static operator guide without dumping memory into it.
 
 ## Non-negotiable principles
 
@@ -19,8 +19,10 @@ export` projects the database back into a generated CLAUDE.md.
    LLM track state.
 2. **Memory is data with a prose projection.** CLAUDE.md in target repos
    is a generated artifact. Never make it a source of truth.
-3. **Append-only revisions.** Never UPDATE or DELETE rows in `revisions`.
-   Rollback = insert the old body as a new revision. The
+3. **Append-only revisions.** Never UPDATE or DELETE rows in `revisions`
+   during normal operation; the explicit destructive
+   `irag forget --purge` command is the sole exception. Rollback = insert the
+   old body as a new revision. The
    `revisions_advance` trigger in db.py owns the current-revision pointer
    and staleness reset — never move the pointer in Python.
 4. **Structural facts are parsed, never inferred.** The symbols/deps
@@ -38,26 +40,28 @@ export` projects the database back into a generated CLAUDE.md.
 | File | Owns |
 |---|---|
 | `irag/db.py` | schema, triggers, shared helpers (get_meta, get_or_create_page, current_body, fts_sanitize) |
-| `irag/config.py` | defaults + `.irag/config.toml` deep-merge (tomllib) |
-| `irag/structure.py` | deterministic map: symbols + deps tables via ast/regex; scan gated on HEAD; feeds linter (exact symbols), synthesis (facts block), retrieval (+20 dep neighbors, map blocks), links/Obsidian |
-| `irag/ingest.py` | git commits OR working-tree snapshots → per-FILE events; ancestor folders bumped at half weight; ignoring = config segments + .iragignore globs + hidden paths + binary exts |
+| `irag/config.py` | defaults + `.irag/config.toml` deep-merge and semantic validation (tomllib) |
+| `irag/structure.py` | deterministic map: symbols + deps tables via ast/regex; scan gated on the working-tree fingerprint; feeds linter (exact symbols), synthesis (facts block), retrieval (+20 dep neighbors, map blocks), links/Obsidian |
+| `irag/ingest.py` | hybrid git-commit + working-tree fingerprint changes → per-FILE events; ancestor folders bumped at half weight; ignoring = config segments + .iragignore globs + hidden paths + binary exts |
 | `irag/synthesis.py` | two-phase hierarchical sweep: FILE pages (content+facts prompt) then FOLDER pages bottom-up (children-summary prompt); LLM subprocess: stdin by default, {prompt} argv or {promptfile} temp-file substitution, ANSI-stripped output, empty-output guard |
 | `irag/linter.py` | static checks: missing_path (high), version_mismatch (medium), missing_symbol (low, heuristic); dedupe on identical open claim; auto-resolve static rows that stop failing (never llm_flagged rows) |
 | `irag/retrieval.py` | scoring (+50 open-module, +25 parent, ≤+30 FTS, +15 link-hop, +10 recent, −20 stale, −40 contradicted) and FULL/DIGEST/INDEX serving under token_budget |
 | `irag/provenance.py` | why / asof / rollback / pin |
 | `irag/sessions.py` | conversation diary: begin/end with ID high-water marks (not timestamps), per-file `changes_detail` (redundant with revisions by design), LLM narrative with deterministic fallback, `recap_block` |
-| `irag/export.py` | db → CLAUDE.md + AGENTS.md (identical content) with warning banners |
+| `irag/export.py` | bundled static operator guide → CLAUDE.md + AGENTS.md (identical content), with ownership guards and atomic replacement |
 | `irag/obsidian.py` | db → Obsidian vault: Modules/ notes, _versions/ chain (#version), _meta/ stats+instructions; wipe-and-rebuild behind `.irag-vault` marker guard |
 | `irag/check.py` | CI gate: exit 1 on open contradictions or staleness > max |
 | `irag/hooks.py` | post-commit/post-merge/post-checkout installers (never clobber foreign hooks) |
 | `irag/stats.py` | shared metric builders (status_dict, token_series, activity) for CLI + dashboard |
 | `irag/dashboard.py` | stdlib ThreadingHTTPServer on 127.0.0.1; /api/* JSON; chat router (route_query: sql vs ai); assets/dashboard.html SPA; background update worker |
 | `irag/doctor.py` | install diagnostics: env, db/FTS integrity, config types, LLM probe, hooks, queue health |
-| `irag/cli.py` | argparse; every command resolves repo root via git, opens `.irag/memory.db` |
+| `irag/cli.py` | argparse; every command resolves the nearest `.irag` root (or cwd for init), opens `.irag/memory.db` |
 
 ## Conventions
 
-- No `shell=True`. Subprocess lists only.
+- Product subprocesses use argument lists. The sole `shell=True` path is
+  executable facts: user-authored proof commands, stored and run only after
+  explicit opt-in via `[check].fail_on_facts` or `irag verify`.
 - User-facing errors via `raise SystemExit("irag: ...")` — no raw
   tracebacks for user mistakes.
 - Every write path ends in `conn.commit()`.
@@ -69,10 +73,10 @@ export` projects the database back into a generated CLAUDE.md.
   drift silently.
 - `__version__` in `irag/__init__.py` and `version` in `pyproject.toml`
   must be bumped together — nothing enforces the pairing.
-- Schema changes: no migration system exists. Additive columns go in
-  `SCHEMA` (fresh installs) **and** a guarded `ALTER TABLE` via
-  `db._add_column_if_missing` in `ensure_db` (existing installs).
-  Anything non-additive requires users to rebuild the database.
+- Schema changes: additive upgrades go in `SCHEMA` (fresh installs) **and** a
+  guarded `ALTER TABLE` via `db._add_column_if_missing` in `ensure_db`
+  (existing installs). The whole upgrade is serialized and transactional.
+  Anything destructive or renaming still needs a designed migration.
 
 ## Search duality (keep both)
 
@@ -92,4 +96,4 @@ stdout.
 ## Roadmap (do not build unless asked)
 
 MCP server (five tools wrapping retrieval/provenance/linter), confidence
-scoring from lint history, CI webhooks, session capture.
+scoring from lint history, and CI webhooks.
