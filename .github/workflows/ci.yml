@@ -10,16 +10,17 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Lint (pyflakes)
+      - name: Static analysis
         run: |
-          pip install pyflakes
-          pyflakes irag/*.py
+          pip install ruff mypy
+          ruff check irag site tests/mock_llm.py
+          mypy irag
       - name: End-to-end smoke test (mock LLM, no tokens)
         run: sh tests/test_smoke.sh
       - name: Package builds
