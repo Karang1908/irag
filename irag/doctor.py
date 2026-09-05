@@ -6,7 +6,6 @@ configured LLM command actually responds. Exit 1 on any FAIL.
 """
 from __future__ import annotations
 
-import shlex
 import shutil
 import sqlite3
 from pathlib import Path
@@ -200,14 +199,11 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
     if not config_errors:
         ok("config sanity")
 
-    # LLM command
-    try:
-        llm_cmd = shlex.split(cfg["llm"]["command"])
-    except ValueError as exc:
-        llm_cmd = []
-        fail("LLM command syntax", str(exc))
-    if llm_cmd and shutil.which(llm_cmd[0]):
-        ok("LLM command found", cfg["llm"]["command"])
+    # Provider adapter: configuration, executable, and optional output probe.
+    from . import providers
+    ready, provider_detail = providers.availability(cfg)
+    if ready:
+        ok("LLM provider", provider_detail)
         if probe_llm:
             try:
                 from . import synthesis
@@ -216,10 +212,8 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
                 ok("LLM probe", f"responded ({len(answer)} chars)")
             except (OSError, SystemExit) as exc:
                 fail("LLM probe", str(exc))
-    elif llm_cmd:
-        fail("LLM command found",
-             f"{llm_cmd[0] if llm_cmd else '(empty)'} not on PATH — "
-             "set [llm].command in .irag/config.toml")
+    else:
+        fail("LLM provider", provider_detail)
 
     # hooks — only applicable when the project root IS a git toplevel;
     # snapshot-scoped projects (plain folders, or dirs inside a larger
