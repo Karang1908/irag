@@ -15,16 +15,6 @@ from . import config as config_mod
 from . import db
 from .hooks import HOOK_MARKER
 
-KNOWN_KEYS = {
-    "llm": {"command": str, "model_label": str, "timeout": int},
-    "modules": {"ignore": list},
-    "staleness": {"commit": int, "dependency": int, "threshold": int},
-    "retrieval": {"token_budget": int, "full_max": int, "min_score": int},
-    "check": {"max_staleness": int, "fail_on_contradictions": bool,
-              "fail_on_staleness": bool},
-}
-
-
 def _sibling_installs(active: Path) -> list[str]:
     """Other importable irag package dirs on sys.path, excluding the active
     one. Two clones plus an editable install is a real layout here, and the
@@ -127,7 +117,7 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
         parsed = _json.loads(sample)
         cmd = (parsed.get("tool_input") or {}).get("command")
         rc = (parsed.get("tool_response") or {}).get("exit_code")
-        if cmd and int(rc):
+        if cmd and rc is not None and int(rc):
             ok("hook payload parsing", "a failing command would be captured")
         else:
             fail("hook payload parsing",
@@ -145,6 +135,53 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
             fail("database integrity", str(row[0]) if row else "no result")
     except sqlite3.DatabaseError as exc:
         fail("database integrity", str(exc))
+
+    # integrity_check validates SQLite's storage, not the relational and
+    # application-level invariants that page retrieval relies on. Legacy
+    # databases can therefore report "ok" while containing orphaned rows,
+    # duplicate revision numbers, or a current pointer into another page.
+    try:
+        violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            fail("foreign key relations",
+                 f"{len(violations)} orphaned row(s); restore or remove "
+                 "the referenced records")
+        else:
+            ok("foreign key relations")
+    except sqlite3.DatabaseError as exc:
+        fail("foreign key relations", str(exc))
+    try:
+        duplicates = conn.execute(
+            """SELECT page_id, version_number, COUNT(*) AS copies
+               FROM revisions GROUP BY page_id, version_number
+               HAVING COUNT(*) > 1 LIMIT 5""").fetchall()
+        if duplicates:
+            example = duplicates[0]
+            fail("revision versions",
+                 f"duplicate page {example['page_id']} version "
+                 f"{example['version_number']} ({example['copies']} rows)")
+        else:
+            ok("revision versions")
+    except sqlite3.DatabaseError as exc:
+        fail("revision versions", str(exc))
+    try:
+        bad_pointers = conn.execute(
+            """SELECT p.page_id, p.current_revision_id
+               FROM pages p
+               LEFT JOIN revisions r
+                 ON r.revision_id = p.current_revision_id
+               WHERE p.current_revision_id IS NOT NULL
+                 AND (r.revision_id IS NULL OR r.page_id != p.page_id)
+               LIMIT 5""").fetchall()
+        if bad_pointers:
+            example = bad_pointers[0]
+            fail("current revision pointers",
+                 f"page {example['page_id']} points to revision "
+                 f"{example['current_revision_id']} that it does not own")
+        else:
+            ok("current revision pointers")
+    except sqlite3.DatabaseError as exc:
+        fail("current revision pointers", str(exc))
     try:
         conn.execute("INSERT INTO revisions_fts(revisions_fts) "
                      "VALUES('integrity-check')")
@@ -157,21 +194,10 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
     user_cfg_path = config_mod.config_path(repo)
     if not user_cfg_path.exists():
         warn("config file", f"{user_cfg_path} missing — using defaults")
-    for section, keys in KNOWN_KEYS.items():
-        if section not in cfg:
-            fail("config section", f"[{section}] missing")
-            continue
-        for key, typ in keys.items():
-            val = cfg[section].get(key)
-            if val is None:
-                fail("config key", f"[{section}].{key} missing")
-            elif not isinstance(val, typ) and not (
-                    typ is int and isinstance(val, bool) is False
-                    and isinstance(val, int)):
-                fail("config type",
-                     f"[{section}].{key} should be {typ.__name__}, "
-                     f"got {type(val).__name__}")
-    if all(r[0] != "FAIL" or "config" not in r[1] for r in results):
+    config_errors = config_mod.validation_errors(cfg)
+    for detail in config_errors:
+        fail("config sanity", detail)
+    if not config_errors:
         ok("config sanity")
 
     # LLM command
