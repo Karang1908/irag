@@ -42,3 +42,23 @@ include-package-data = false
 
 [tool.setuptools.package-data]
 irag = ["assets/*.html", "assets/*.md", "assets/docs/*.md"]
+
+# Pin the rule set explicitly. Ruff's defaults widen between releases, and
+# with an unpinned install that silently redefines what CI enforces: the
+# gate went from clean to 109 findings across rule families nobody chose
+# (bandit, refurb, pylint, isort) purely because a newer ruff shipped.
+# This is ruff's documented default selection, stated so it stays fixed;
+# widening it is a deliberate decision, not something upstream does for us.
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.mypy]
+python_version = "3.11"
+
+# tiktoken is an optional accelerator for token counting — irag has zero
+# runtime dependencies and falls back to its own estimator when the import
+# fails, which is the normal case. Newer mypy treats the missing stub as an
+# error, so say out loud that its absence is expected.
+[[tool.mypy.overrides]]
+module = ["tiktoken"]
+ignore_missing_imports = true
