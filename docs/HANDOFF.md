@@ -456,7 +456,7 @@ on model prose.
 ```bash
 cd /Users/karangarg/Desktop/iRag/irag-4.1.1/irag
 python3 -m compileall -q irag site
-ruff check irag site tests/mock_llm.py
+ruff check irag site tests/mock_llm.py     # rule set pinned in pyproject
 mypy irag
 sh tests/test_smoke.sh                  # must print SMOKE TEST PASSED
 ```
@@ -484,6 +484,23 @@ print("\n".join(re.findall(r"<script[^>]*>(.*?)</script>", h, re.S)))
 PY
 node --check /tmp/d.js
 ```
+
+### 3.3b The lint gate is pinned, and that is deliberate
+
+CI installs `ruff==0.16.6` and `mypy==2.3.1`, and `pyproject.toml` selects
+`["E4", "E7", "E9", "F"]` explicitly. Both pins exist because the gate was
+briefly unpinned and it broke immediately: a local ruff 0.11.9 reported
+`All checks passed` while CI's freshly-installed 0.16.6 found **109
+errors** in the same tree, from rule families nobody had chosen — bandit,
+refurb, pylint, isort. Nothing in the code had changed; a newer ruff had
+simply widened its defaults.
+
+So: an unpinned linter is not a gate, it is a subscription to whatever
+upstream decides this month. If you upgrade the pin, do it as its own
+commit, read what the new findings actually are, and fix or explicitly
+ignore them — do not widen `select` and leave the tree red. Verify against
+the pinned version, not whatever is on your PATH, or you will reproduce
+exactly this.
 
 ### 3.4 Falsify every guard you add — this is the house rule
 
