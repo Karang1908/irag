@@ -54,28 +54,51 @@ def claude_setup(repo_root: Path) -> list[str]:
         except json.JSONDecodeError:
             raise SystemExit(f"irag: {settings_path} is not valid JSON — "
                              "fix or remove it first")
+        if not isinstance(settings, dict):
+            raise SystemExit(f"irag: {settings_path} must contain a JSON "
+                             "object at the top level")
     installed = settings.setdefault("hooks", {})
+    if not isinstance(installed, dict):
+        raise SystemExit(f"irag: {settings_path} field 'hooks' must be an "
+                         "object")
     out: list[str] = []
     changed = False
     for event, spec in CLAUDE_HOOKS.items():
         command, timeout, why = spec[0], spec[1], spec[2]
         matcher = spec[3] if len(spec) > 3 else None
         entries = installed.setdefault(event, [])
-        already = any("irag " in h.get("command", "")
-                      for e in entries for h in e.get("hooks", []))
+        if not isinstance(entries, list):
+            raise SystemExit(f"irag: {settings_path} hooks.{event} must be "
+                             "an array")
+        already = False
+        for existing in entries:
+            if not isinstance(existing, dict):
+                raise SystemExit(f"irag: {settings_path} hooks.{event} "
+                                 "entries must be objects")
+            commands = existing.get("hooks", [])
+            if not isinstance(commands, list):
+                raise SystemExit(f"irag: {settings_path} hooks.{event}.hooks "
+                                 "must be an array")
+            if any(isinstance(hook, dict)
+                   and "irag " in str(hook.get("command", ""))
+                   for hook in commands):
+                already = True
+                break
         if already:
             out.append(f"{event} hook already installed")
             continue
-        entry = {"hooks": [{"type": "command", "command": command,
-                            "timeout": timeout}]}
+        entry: dict[str, object] = {
+            "hooks": [{"type": "command", "command": command,
+                       "timeout": timeout}],
+        }
         if matcher:
             entry["matcher"] = matcher
         entries.append(entry)
         changed = True
         out.append(f"installed {event} hook ({why})")
     if changed:
-        settings_path.write_text(json.dumps(settings, indent=2) + "\n",
-                                 encoding="utf-8")
+        export_mod._atomic_write(settings_path,
+                                 json.dumps(settings, indent=2) + "\n")
     res = export_mod.install_guide(repo_root)
     if res["written"]:
         out.append("agent guide: "
@@ -101,8 +124,9 @@ def install(repo_root: Path) -> None:
                       "to it manually:")
                 print(f"    {command}")
                 continue
-        hook_path.write_text(f"#!/bin/sh\n{HOOK_MARKER}\n{command}\n",
-                             encoding="utf-8")
+        from .export import _atomic_write
+        _atomic_write(hook_path,
+                      f"#!/bin/sh\n{HOOK_MARKER}\n{command}\n")
         hook_path.chmod(hook_path.stat().st_mode | stat.S_IXUSR
                         | stat.S_IXGRP | stat.S_IXOTH)
         print(f"installed hook: {hook_path}")
