@@ -264,6 +264,8 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
 #page-view{white-space:pre-wrap;font-family:var(--mono);font-size:var(--fs-xs);background:var(--bg-inset);border:1px solid var(--border);
   border-radius:var(--r-md);padding:var(--sp-3);margin-top:var(--sp-3);max-height:400px;overflow:auto}
 #update-log{font-family:var(--mono);font-size:var(--fs-xs);color:var(--text-dim)}
+#update-progress{width:min(220px,100%);height:6px;accent-color:var(--accent)}
+.panel-heading{display:flex;align-items:center;justify-content:space-between;gap:var(--sp-3);flex-wrap:wrap}
 /* Dismissing a flag is permanent and does not edit the page, so the one
    affordance that has to exist is a way back from a mis-click. */
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
@@ -333,6 +335,18 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
      Without this boundary, long contradiction claims widened the entire
      Health view (475px of table in a 390px viewport). */
   .panel>table{display:block;max-width:100%;overflow-x:auto}
+  /* Contradictions are actions, not passive tabular data. Keep every repair
+     button visible on phones instead of making the user discover a sideways
+     scroll before they can open the agent handoff. */
+  #contras thead{display:none}
+  #contras tbody{display:block}
+  #contras tr{display:grid;gap:var(--sp-2);padding:var(--sp-3) 0;
+    border-bottom:1px solid var(--panel-2)}
+  #contras td{display:grid;grid-template-columns:74px minmax(0,1fr);gap:var(--sp-2);
+    align-items:start;padding:0;border:0;overflow-wrap:anywhere}
+  #contras td::before{content:attr(data-label);font:600 var(--fs-2xs) var(--mono);
+    color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em}
+  #contras td button{justify-self:start}
 }
 @media (pointer:coarse){
   button.mini,.ghost-btn{min-height:44px}
@@ -731,6 +745,7 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
         <canvas id="burn" role="img" aria-label="Cumulative token usage over time"></canvas>
         <div style="margin-top:var(--sp-4);display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap">
           <button class="primary" id="run-update">Run irag update</button>
+          <progress id="update-progress" max="100" value="0" hidden></progress>
           <span id="update-log"></span>
         </div>
       </div>
@@ -804,9 +819,11 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
     <div class="page-sub">Where memory disagrees with the code, and which pages are drifting.</div>
     <div class="row equal">
       <div class="panel">
-        <h3>Open contradictions</h3>
+        <div class="panel-heading"><h3>Open contradictions</h3>
+          <button class="mini" id="master-brief" type="button">Open master agent brief ↗</button>
+        </div>
         <p class="hint">Something the memory claims that your code disproves: a hallucination caught mechanically. Fix the code or re-run Update, then it clears itself. <b>Dismiss only when the flag itself is wrong</b> — it does not edit the page, and the claim will not be raised again.</p>
-        <table id="contras"><thead><tr><th>page</th><th>claim</th><th>truth</th><th>sev</th><th></th></tr></thead><tbody></tbody></table>
+        <table id="contras"><thead><tr><th>page</th><th>claim</th><th>truth</th><th>sev</th><th>agent handoff</th><th></th></tr></thead><tbody></tbody></table>
       </div>
       <div class="panel">
         <h3>Staleness · top</h3>
@@ -1300,25 +1317,56 @@ async function refreshFeed(){
     :`<div class="empty">No activity yet — run <code>irag update</code> to synthesize the first pages.</div>`;
   }finally{feedBusy=false}
 }
+let _jobSource=null,_jobPoll=null;
+function finishJobWatch(){
+  if(_jobSource){_jobSource.close();_jobSource=null}
+  if(_jobPoll){clearInterval(_jobPoll);_jobPoll=null}
+}
+function renderJob(job){
+  if(!job)return;
+  const progress=$("#update-progress"),btn=$("#run-update");
+  const running=!!job.running;
+  btn.disabled=running;progress.hidden=false;progress.value=Number(job.progress||0);
+  const tail=(job.log||[]).slice(-2).join("  ·  ");
+  $("#update-log").textContent=tail||job.status||"idle";
+  if(!running){
+    finishJobWatch();btn.disabled=false;
+    refreshStatus();refreshBurn();refreshFeed();refreshDoctorState();
+    if(job.status==="failed")showToast("Update failed.",job.error||tail||"Open the server console for details.");
+  }
+}
+function watchJob(id){
+  finishJobWatch();
+  if(window.EventSource){
+    _jobSource=new EventSource("/api/job-events?id="+encodeURIComponent(id));
+    _jobSource.addEventListener("job",event=>{
+      try{renderJob(JSON.parse(event.data))}catch(_err){}
+    });
+    _jobSource.onerror=()=>{
+      if(!_jobSource)return;
+      // EventSource reconnects itself. A normal terminal close is handled by
+      // the last job event before this callback.
+      $("#update-log").textContent="reconnecting to update "+id.slice(0,8)+"…";
+    };
+  }else{
+    _jobPoll=setInterval(()=>quiet(async()=>renderJob(await api("/api/job?id="+encodeURIComponent(id)))),800);
+  }
+}
+async function resumeUpdate(){
+  const job=await api("/api/update-log");renderJob(job);
+  if(job.running&&job.job_id)watchJob(job.job_id);
+}
 async function runUpdate(){
   const btn=$("#run-update");btn.disabled=true;
   try{
-    await api("/api/update",{method:"POST",
+    const job=await api("/api/update",{method:"POST",
       headers:{"Content-Type":"application/json"},body:"{}"});
+    $("#update-log").textContent="update "+job.job_id.slice(0,8)+" queued";
+    watchJob(job.job_id);
   }catch(e){
     $("#update-log").textContent="update did not start — "+errorText(e);
     btn.disabled=false;return;
   }
-  const poll=setInterval(async()=>{
-    try{
-      const u=await api("/api/update-log");
-      $("#update-log").textContent=u.log.slice(-2).join("  ·  ");
-      if(!u.running){clearInterval(poll);btn.disabled=false;refreshStatus();refreshBurn();refreshFeed();refreshDoctorState()}
-    }catch(e){
-      clearInterval(poll);btn.disabled=false;
-      $("#update-log").textContent="lost contact with the server";
-    }
-  },800);
 }
 $("#run-update").onclick=runUpdate;
 
@@ -1465,18 +1513,23 @@ async function refreshHealth(){
   // with an empty memory a green tick would be a lie
   const noMemory=(_lastStatus?_lastStatus.revisions:0)===0;
   $("#contras tbody").innerHTML=cs.length?cs.map(c=>
-    `<tr><td>${esc(c.subject_id)}</td><td>${esc(c.claim||"")}</td><td>${esc(c.truth||"")}</td>
-     <td class="sev-${c.severity}">${c.severity}</td>
-     <td><button class="mini" title="Mark this check mistaken. The page text is not changed — run Update if the page is what's wrong."
+    `<tr><td data-label="page">${esc(c.subject_id)}</td><td data-label="claim">${esc(c.claim||"")}</td><td data-label="truth">${esc(c.truth||"")}</td>
+     <td data-label="severity" class="sev-${c.severity}">${c.severity}</td>
+     <td data-label="handoff"><button class="mini" onclick="openContradictionBrief(${c.contradiction_id})">Agent brief ↗</button></td>
+     <td data-label="review"><button class="mini" title="Mark this check mistaken. The page text is not changed — run Update if the page is what's wrong."
                  onclick="resolveC(${c.contradiction_id})">dismiss flag</button></td></tr>`).join("")
     :noMemory
-      ?`<tr><td colspan="5">Nothing to check yet — no summaries have been written.
+      ?`<tr><td colspan="6">Nothing to check yet — no summaries have been written.
          Build the memory from the Overview tab first.</td></tr>`
-      :`<tr><td colspan="5" style="color:var(--green)">none — every claim still matches the code ✓</td></tr>`;
+      :`<tr><td colspan="6" style="color:var(--green)">none — every claim still matches the code ✓</td></tr>`;
   _stale=await api("/api/stale");
   initSort("staletab","staleness_score","desc",renderStale);
   renderStale();
 }
+window.openContradictionBrief=id=>window.open(
+  "/contradiction-report?id="+encodeURIComponent(id),"_blank","noopener");
+$("#master-brief").onclick=()=>window.open(
+  "/contradiction-report","_blank","noopener");
 function renderStale(){
   const st=sortRows("staletab",_stale);
   const mx=Math.max(1,..._stale.map(p=>p.staleness_score));
@@ -1485,7 +1538,7 @@ function renderStale(){
     const col=p.staleness_score>=mx*.66?"var(--red)":p.staleness_score>=mx*.33?"var(--orange)":"var(--accent)";
     return `<tr data-subject="${esc(p.subject_id).replace(/"/g,"&quot;")}" tabindex="0"><td>${esc(p.subject_id)}</td><td>${p.page_type}</td>
       <td><div style="display:flex;align-items:center;gap:8px"><div class="bar"><span style="width:${w}%;background:${col}"></span></div>${p.staleness_score}${p.pinned?" 📌":""}</div></td></tr>`}).join("")
-    :`<tr><td colspan="3">${(_lastStatus&&_lastStatus.revisions)?"no pages yet":"No pages yet — build the memory from the Overview tab."}</td></tr>`;
+    :`<tr><td colspan="3">${(_lastStatus&&_lastStatus.revisions)?"all pages are current ✓":"No pages yet — build the memory from the Overview tab."}</td></tr>`;
 }
 /* Dismissing marks the CHECK wrong and never edits the page, and it is
    permanent — so say both, and offer the way back immediately. */
@@ -1598,6 +1651,7 @@ async function viewPageDetail(subject){
       ${probs.map(c=>`<div class="prob">
         <span class="sev-${c.severity}">${c.severity}</span>
         <div><b>${esc(c.claim||"")}</b><span class="prob-truth">${esc(c.truth||"")}</span></div>
+        <button class="mini" onclick="openContradictionBrief(${c.contradiction_id})">Agent brief ↗</button>
         <button class="mini" title="Mark this check mistaken. The page text is not changed."
                 onclick="resolveFromPage(${c.contradiction_id})">dismiss flag</button>
       </div>`).join("")}
@@ -2295,6 +2349,7 @@ const quiet=fn=>fn().catch(()=>{});
 // the Pages tab was never opened
 quiet(async()=>{if(!_pages.length)_pages=await api("/api/pages")});
 quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed);quiet(refreshDoctorState);
+quiet(resumeUpdate);
 setInterval(()=>{quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed)},3000);
 setInterval(()=>{if($("#health").classList.contains("show"))quiet(refreshHealth)},8000);
 </script>
