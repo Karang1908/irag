@@ -71,6 +71,35 @@ def _resolve_key(conn) -> str:
     return f"proc-{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
 
+def _repo_lock(root: Path, action: str) -> _UpdateLock:
+    """Claim the repository-wide writer lock or fail with a useful error."""
+    lock = _UpdateLock(root)
+    if not lock.acquire():
+        raise SystemExit(
+            f"irag: cannot {action} while another update or live refresh is "
+            "running in this repository — wait for it to finish and retry")
+    return lock
+
+
+def _refresh_live(conn: sqlite3.Connection, cfg: dict, root: Path) -> None:
+    """Sync + scan, then pin a coherent read snapshot.
+
+    ``BEGIN`` alone is deferred by SQLite, so the harmless metadata read is
+    deliberate: it establishes the snapshot before the repository lock is
+    released.  A writer can then start, but every query made by this command
+    still sees one complete pre-writer state rather than a half-finished sweep.
+    """
+    lock = _repo_lock(root, "refresh live memory")
+    try:
+        ingest.sync(conn, cfg, root)
+        from . import structure
+        structure.scan(conn, cfg, root)
+        conn.execute("BEGIN")
+        conn.execute("SELECT value FROM meta LIMIT 1").fetchone()
+    finally:
+        lock.release()
+
+
 # ------------------------------------------------------------------
 # command implementations
 # ------------------------------------------------------------------
@@ -78,9 +107,33 @@ def cmd_init(args) -> int:
     # init is DIRECTORY-WISE: the folder you run it in IS the project.
     # An enclosing git repo (e.g. a versioned home dir) is never adopted.
     root = Path.cwd()
-    if (root / ".irag").is_dir():
-        print(f"irag: already initialized at {root}")
-        return 0
+    control = root / ".irag"
+    if control.exists() and not control.is_dir():
+        raise SystemExit(f"irag: cannot initialize: {control} exists but "
+                         "is not a directory")
+    control.mkdir(exist_ok=True)
+    db_path = control / "memory.db"
+    already = db_path.exists()
+    # A directory or even a database alone is not a completion marker: an
+    # earlier init may have been interrupted before config, hooks, guides, or
+    # the first scan. Reconcile every idempotent step under the repository lock
+    # so rerunning init repairs that state and concurrent first runs cannot
+    # work over each other.
+    lock = _repo_lock(root, "initialize")
+    try:
+        conn = db.ensure_db(db_path)
+        cfg_path = config.write_default(root)
+        cfg = config.load(root)
+        if ingest.git_rooted(root):
+            hooks.install(root)
+        n = ingest.sync(conn, cfg, root)
+        from . import structure
+        stats = structure.scan(conn, cfg, root)
+        # install the agent guide (CLAUDE.md + AGENTS.md) so a coding agent
+        # knows irag exists and how to drive it from the moment of init
+        guide = export_mod.install_guide(root)
+    finally:
+        lock.release()
     enclosing = ingest.git_toplevel()
     if enclosing is None:
         print("note: no git repo here — running in snapshot mode "
@@ -96,20 +149,7 @@ def cmd_init(args) -> int:
               f"      installed there). 'git init' here any time to "
               f"upgrade this project to\n"
               f"      commit-based ingestion.")
-    (root / ".irag").mkdir(exist_ok=True)
-    db_path = root / ".irag" / "memory.db"
-    conn = db.ensure_db(db_path)
-    cfg_path = config.write_default(root)
-    cfg = config.load(root)
-    if ingest.git_rooted(root):
-        hooks.install(root)
-    n = ingest.sync(conn, cfg, root)
-    from . import structure
-    stats = structure.scan(conn, cfg, root)
-    # install the agent guide (CLAUDE.md + AGENTS.md) so a coding agent
-    # knows irag exists and how to drive it from the moment of init
-    guide = export_mod.install_guide(root)
-    print(f"initialized: {db_path}")
+    print(f"{'verified' if already else 'initialized'}: {db_path}")
     print(f"config     : {cfg_path}")
     for p in guide["written"]:
         print(f"agent guide: {p.name}")
@@ -127,9 +167,13 @@ def cmd_init(args) -> int:
 
 def cmd_sync(args) -> int:
     conn, cfg, root = _open()
-    n = ingest.sync(conn, cfg, root)
-    from . import structure
-    stats = structure.scan(conn, cfg, root)
+    lock = _repo_lock(root, "sync")
+    try:
+        n = ingest.sync(conn, cfg, root)
+        from . import structure
+        stats = structure.scan(conn, cfg, root)
+    finally:
+        lock.release()
     extra = "" if stats["skipped"] else \
         f"; scanned {stats['symbols']} symbols, {stats['deps']} dep edges"
     print(f"ingested {n} new event(s){extra}")
@@ -142,15 +186,23 @@ def cmd_sync(args) -> int:
 
 def cmd_ingest_commit(args) -> int:
     conn, cfg, root = _open()
-    n = ingest.ingest_commit(conn, cfg, args.ref, root)
+    lock = _repo_lock(root, "ingest a commit")
+    try:
+        n = ingest.ingest_commit(conn, cfg, args.ref, root)
+    finally:
+        lock.release()
     print(f"ingested {n} event(s) from {args.ref}")
     return 0
 
 
 def cmd_synthesize(args) -> int:
     conn, cfg, root = _open()
-    synthesis.sweep(conn, cfg, root, dry_run=args.dry_run,
-                    limit=args.limit, subject=args.subject)
+    lock = _repo_lock(root, "synthesize pages")
+    try:
+        synthesis.sweep(conn, cfg, root, dry_run=args.dry_run,
+                        limit=args.limit, subject=args.subject)
+    finally:
+        lock.release()
     return 0
 
 
@@ -161,25 +213,13 @@ def _dirty_count(root: Path) -> int:
 
 def cmd_context(args) -> int:
     conn, cfg, root = _open()
-    ingest.sync(conn, cfg, root)      # hash-only when idle; zero LLM
-    from . import structure
-    structure.scan(conn, cfg, root)      # no-op when HEAD unchanged
-    md, machine = retrieval.serve(conn, cfg, open_files=args.open,
-                                  query=args.query,
-                                  budget_tokens=args.budget)
-    from . import sessions
-    recap = sessions.recap_block(conn, n=2)
-    if recap:
-        md = md.replace("# Project Context (irag)",
-                        f"# Project Context (irag)\n\n{recap}", 1)
-        machine["recap"] = recap
-    dirty = _dirty_count(root)
-    if dirty:
-        note = (f"note: {dirty} uncommitted change(s) in the working tree — "
-                "pages and map reflect the last commit")
-        md = md.replace("# Project Context (irag)",
-                        f"# Project Context (irag)\n\n_{note}_", 1)
-        machine["dirty_files"] = dirty
+    _refresh_live(conn, cfg, root)
+    try:
+        md, machine = retrieval.briefing(
+            conn, cfg, root, open_files=args.open, query=args.query,
+            budget_tokens=args.budget)
+    finally:
+        conn.rollback()
     if args.json:
         print(json.dumps(machine, indent=2, default=str))
     else:
@@ -296,8 +336,12 @@ def cmd_doctor(args) -> int:
 
 def cmd_scan(args) -> int:
     conn, cfg, root = _open()
-    from . import structure
-    stats = structure.scan(conn, cfg, root, force=True)
+    lock = _repo_lock(root, "scan")
+    try:
+        from . import structure
+        stats = structure.scan(conn, cfg, root, force=True)
+    finally:
+        lock.release()
     print(f"scanned: {stats['symbols']} symbols, {stats['deps']} "
           "dependency edge(s)")
     return 0
@@ -305,9 +349,8 @@ def cmd_scan(args) -> int:
 
 def cmd_map(args) -> int:
     conn, cfg, root = _open()
-    ingest.sync(conn, cfg, root)      # hash-only when idle; zero LLM
+    _refresh_live(conn, cfg, root)
     from . import structure
-    structure.scan(conn, cfg, root)
     if args.json:
         if args.subject:
             print(json.dumps(structure.module_facts(conn, args.subject,
@@ -344,9 +387,8 @@ def cmd_map(args) -> int:
 
 def cmd_impact(args) -> int:
     conn, cfg, root = _open()
-    ingest.sync(conn, cfg, root)      # hash-only when idle; zero LLM
+    _refresh_live(conn, cfg, root)
     from . import structure
-    structure.scan(conn, cfg, root)
     hits = structure.impact(conn, args.subject)
     if not hits:
         # "change is contained" is a claim about a file irag actually
@@ -476,9 +518,13 @@ def cmd_search(args) -> int:
 
 def cmd_lint(args) -> int:
     conn, cfg, root = _open()
-    n = linter.lint(conn, cfg, root, subject_id=args.subject)
-    if args.llm:
-        n += linter.lint_llm(conn, cfg, root, subject_id=args.subject)
+    lock = _repo_lock(root, "lint memory")
+    try:
+        n = linter.lint(conn, cfg, root, subject_id=args.subject)
+        if args.llm:
+            n += linter.lint_llm(conn, cfg, root, subject_id=args.subject)
+    finally:
+        lock.release()
     print(f"{n} new contradiction(s) recorded")
     return 0
 
@@ -586,20 +632,32 @@ def cmd_asof(args) -> int:
 
 
 def cmd_rollback(args) -> int:
-    conn, _, _ = _open()
-    provenance.rollback(conn, args.subject, args.version)
+    conn, _, root = _open()
+    lock = _repo_lock(root, "roll back a page")
+    try:
+        provenance.rollback(conn, args.subject, args.version)
+    finally:
+        lock.release()
     return 0
 
 
 def cmd_pin(args) -> int:
-    conn, _, _ = _open()
-    provenance.pin(conn, args.subject, True)
+    conn, _, root = _open()
+    lock = _repo_lock(root, "pin a page")
+    try:
+        provenance.pin(conn, args.subject, True)
+    finally:
+        lock.release()
     return 0
 
 
 def cmd_unpin(args) -> int:
-    conn, _, _ = _open()
-    provenance.pin(conn, args.subject, False)
+    conn, _, root = _open()
+    lock = _repo_lock(root, "unpin a page")
+    try:
+        provenance.pin(conn, args.subject, False)
+    finally:
+        lock.release()
     return 0
 
 
@@ -714,12 +772,14 @@ ASK_INSTRUCTION = """Answer the question using ONLY the project context below. R
 def cmd_ask(args) -> int:
     """AI search: retrieval + the configured LLM answers the question."""
     conn, cfg, root = _open()
-    ingest.sync(conn, cfg, root)
-    from . import structure
-    structure.scan(conn, cfg, root)
-    md, _ = retrieval.serve(conn, cfg, open_files=args.open,
-                            query=args.question,
-                            budget_tokens=args.budget or 6000)
+    _refresh_live(conn, cfg, root)
+    try:
+        md, _ = retrieval.serve(conn, cfg, open_files=args.open,
+                                query=args.question,
+                                budget_tokens=args.budget or 6000)
+    finally:
+        # Never hold a WAL read snapshot while waiting on a model process.
+        conn.rollback()
     prompt = (f"{ASK_INSTRUCTION}\n\nPROJECT CONTEXT:\n{md}\n\n"
               f"QUESTION: {args.question}\n\nANSWER:")
     answer = synthesis.run_llm(cfg, prompt)
@@ -753,30 +813,34 @@ def cmd_forget(args) -> int:
     (`irag resolve`) permanently suppresses the warning while leaving the
     page live, which is worse than doing nothing.
     """
-    conn, _, _ = _open()
-    row = conn.execute(
-        "SELECT page_id, subject_id, COALESCE(deleted_at,'') d FROM pages "
-        "WHERE subject_id=?", (args.path,)).fetchone()
-    if not row:
-        raise SystemExit(f"irag: no page for {args.path!r} "
-                         "(run 'irag map' to list what is tracked)")
-    if args.purge:
-        pid = row["page_id"]
-        conn.execute("DELETE FROM contradictions WHERE page_id=?", (pid,))
-        conn.execute("DELETE FROM links WHERE source_page_id=? "
-                     "OR target_page_id=?", (pid, pid))
-        conn.execute("DELETE FROM revisions WHERE page_id=?", (pid,))
-        conn.execute("DELETE FROM pages WHERE page_id=?", (pid,))
+    conn, _, root = _open()
+    lock = _repo_lock(root, "forget a page")
+    try:
+        row = conn.execute(
+            "SELECT page_id, subject_id, COALESCE(deleted_at,'') d "
+            "FROM pages WHERE subject_id=?", (args.path,)).fetchone()
+        if not row:
+            raise SystemExit(f"irag: no page for {args.path!r} "
+                             "(run 'irag map' to list what is tracked)")
+        if args.purge:
+            pid = row["page_id"]
+            conn.execute("DELETE FROM contradictions WHERE page_id=?", (pid,))
+            conn.execute("DELETE FROM links WHERE source_page_id=? "
+                         "OR target_page_id=?", (pid, pid))
+            conn.execute("DELETE FROM revisions WHERE page_id=?", (pid,))
+            conn.execute("DELETE FROM pages WHERE page_id=?", (pid,))
+            conn.commit()
+            print(f"purged {args.path} — page and all its history are gone")
+            return 0
+        conn.execute("UPDATE pages SET deleted_at=datetime('now') "
+                     "WHERE page_id=?", (row["page_id"],))
         conn.commit()
-        print(f"purged {args.path} — page and all its history are gone")
+        print(f"forgot {args.path} — no longer served by search or context")
+        print("    history is kept, so 'irag asof' and 'irag why' still see it")
+        print(f"    use 'irag forget {args.path} --purge' to delete it entirely")
         return 0
-    conn.execute("UPDATE pages SET deleted_at=datetime('now') "
-                 "WHERE page_id=?", (row["page_id"],))
-    conn.commit()
-    print(f"forgot {args.path} — no longer served by search or context")
-    print("    history is kept, so 'irag asof' and 'irag why' still see it")
-    print(f"    use 'irag forget {args.path} --purge' to delete it entirely")
-    return 0
+    finally:
+        lock.release()
 
 
 def cmd_suggest(args) -> int:
@@ -852,7 +916,7 @@ def cmd_capture(args) -> int:
     if exit_code is None:
         raw = response.get("exit_code", response.get("exitCode"))
         try:
-            exit_code = int(raw)
+            exit_code = int(raw) if raw is not None else None
         except (TypeError, ValueError):
             exit_code = None
     if not command or not exit_code:
@@ -966,24 +1030,31 @@ def cmd_topic(args) -> int:
     if missing:
         raise SystemExit("irag: these files do not exist: "
                          + ", ".join(missing))
-    db.get_or_create_page(conn, args.name, subject_type="topic",
-                          page_type="topic", title=args.name)
-    if args.replace:
-        conn.execute("DELETE FROM topic_members WHERE topic=?", (args.name,))
-    for f in files:
-        conn.execute("INSERT OR IGNORE INTO topic_members(topic, subject_id) "
-                     "VALUES(?,?)", (args.name, f))
-    # make it due, so the next update writes it without a special path
-    conn.execute("UPDATE pages SET staleness_score = staleness_score + ? "
-                 "WHERE subject_type='topic' AND subject_id=?",
-                 (int(cfg["staleness"]["threshold"]), args.name))
-    conn.execute(
-        "INSERT INTO events(event_type, subject_id, payload, session_key) "
-        "VALUES('topic', ?, ?, ?)",
-        (args.name, json.dumps({"files": files}), db.active_key()))
-    conn.commit()
-    total = conn.execute("SELECT COUNT(*) c FROM topic_members WHERE topic=?",
-                         (args.name,)).fetchone()["c"]
+    lock = _repo_lock(root, "change a topic")
+    try:
+        db.get_or_create_page(conn, args.name, subject_type="topic",
+                              page_type="topic", title=args.name)
+        if args.replace:
+            conn.execute("DELETE FROM topic_members WHERE topic=?",
+                         (args.name,))
+        for f in files:
+            conn.execute(
+                "INSERT OR IGNORE INTO topic_members(topic, subject_id) "
+                "VALUES(?,?)", (args.name, f))
+        # make it due, so the next update writes it without a special path
+        conn.execute("UPDATE pages SET staleness_score = staleness_score + ? "
+                     "WHERE subject_type='topic' AND subject_id=?",
+                     (int(cfg["staleness"]["threshold"]), args.name))
+        conn.execute(
+            "INSERT INTO events(event_type, subject_id, payload, session_key) "
+            "VALUES('topic', ?, ?, ?)",
+            (args.name, json.dumps({"files": files}), db.active_key()))
+        conn.commit()
+        total = conn.execute(
+            "SELECT COUNT(*) c FROM topic_members WHERE topic=?",
+            (args.name,)).fetchone()["c"]
+    finally:
+        lock.release()
     print(f"topic {args.name!r}: {total} file(s)")
     print("run 'irag update' to write the page")
     return 0
