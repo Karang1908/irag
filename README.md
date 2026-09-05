@@ -24,7 +24,7 @@
 </p>
 
 ```bash
-pip install -e ./irag && irag init      # that's the whole setup
+pip install irag && irag init           # that's the whole setup
 ```
 
 <p align="center">
@@ -105,7 +105,8 @@ reaches Codex, Antigravity and Cursor. Git is optional.
 ## Quickstart
 
 ```bash
-pip install -e .            # zero dependencies, Python 3.11+
+pip install irag            # zero dependencies, Python 3.11+
+# or, from this source checkout: pip install -e .
 cd your-project
 irag init                   # works with or without git
 irag doctor --probe-llm     # verify your summariser before spending anything
@@ -194,16 +195,16 @@ every few seconds, so new files show up without a refresh.
 
 ## Measured, not claimed
 
-Run on irag's own source — 20 modules, 5,144 lines — on a laptop:
+Run on irag's own source — 22 modules, 9,056 lines — on a laptop:
 
 | | |
 |---|---|
-| Full structural scan | **155 symbols, 70 import edges, 0.08s, 0 tokens** |
+| Full structural scan | **259 symbols, 83 import edges, 0.12s, 0 tokens** |
 | `irag impact irag/db.py` | **13 dependent modules, 0.08s, 0 tokens** |
 | Resume a past conversation | **~87 tokens** |
 | Brief a fresh session | **~650 tokens** effective, budget-capped |
 | Runtime dependencies | **0** |
-| Static analysis | **pyflakes clean** |
+| Static analysis | **Ruff + mypy clean** |
 
 The read path costs nothing because nothing on it calls a model. That's a
 property of the architecture, not a benchmark you have to take on trust.
@@ -217,7 +218,7 @@ detection → CI gate → rollback → sessions → search/ask/recap/asof →
 dashboard API → Obsidian export → directory-wise scoping → multi-language
 graph → transcript capture. The mock model in the suite **deliberately
 hallucinates a missing file**, so the fact-checker is proven to catch it
-rather than assumed to. CI runs it on Python 3.11–3.13 on every push.
+rather than assumed to. CI runs it on Python 3.11–3.14 on every push.
 
 ---
 
