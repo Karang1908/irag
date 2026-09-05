@@ -70,8 +70,17 @@ Core relations plus an FTS5 inverted index:
 - **symbols / deps** — the deterministic structural map, rebuilt by the
   scanner, gated on a working-tree content fingerprint (not git HEAD,
   so uncommitted edits are seen)
+- **scan_state** — per-source parser fingerprints. Content-only refreshes
+  replace symbols and outgoing edges only for changed files
 - **tree_state** — path→sha1 fingerprints for snapshot-mode ingestion
   and scan gating
+- **schema_migrations** — ordered applied-version history. An existing
+  database is backed up before upgrade and a newer schema is refused on
+  downgrade
+- **jobs** — durable dashboard operations with ID, state, progress, ordered
+  log, timestamps, and terminal error; streamed to the browser through SSE
+- **llm_runs** — provider/model, token estimates, latency, retry count,
+  status, and optional user-rate-based cost for every model invocation
 - **facts** — executable memory: a `claim` plus the `cmd` that
   demonstrates it, an expected substring and/or exit code, and the last
   run's status. The only relation whose contents irag can *re-establish*
@@ -123,6 +132,24 @@ without token spend; synthesis prompts embed the facts as ground truth
 exactly against it; retrieval boosts dependency neighbors (+20) and
 attaches a map block to every FULL page; dep edges project into `links`
 (retrieval link-hop + Obsidian graph edges).
+
+The initial scan and any add/delete/rename topology change parse the complete
+source set. A content-only edit hashes the same set, reparses only changed
+files, replaces only their symbols and outgoing dependency edges, then
+reprojects import links transactionally. Snapshot and Git rename detection
+move the existing page identity to the new subject, preserving its revision
+and contradiction lineage.
+
+### The agent protocol layer
+
+`irag.mcp` is a newline-delimited JSON-RPC stdio server that maps standard MCP
+tool calls onto the same library functions used by the CLI and dashboard. It
+supports negotiated stable protocol versions, JSON Schema tool discovery,
+tool annotations, and both text and structured results. There is no
+client-specific branch: every MCP client receives the same tool names and
+operates on the same SQLite file. Mutating tools use the repository lock, and
+an MCP process owns an explicit diary key so concurrent clients cannot
+cross-attribute work.
 
 ## Data flows
 

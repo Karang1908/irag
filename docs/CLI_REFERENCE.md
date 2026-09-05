@@ -98,6 +98,15 @@ manual cleanup. `--llm` additionally runs the LLM audit tier
 List open (default) or resolved contradictions with id, subject, type,
 severity, claim, and truth.
 
+### `irag contradiction-report [ID] [--output FILE]`
+
+Write a self-contained HTML repair packet for one contradiction or, with no
+ID, one master packet containing every open contradiction. It includes the
+memory claim, observed truth, detector, severity, current page, verified
+structural context, a completion gate, and a ready-to-copy prompt for any
+coding agent. The dashboard exposes the same report beside every row and as a
+master button.
+
 ### `irag resolve ID [--notes TEXT] [--undo] [--id KEY]`
 
 **Dismiss a contradiction as a false positive.** This marks the *check*
@@ -217,8 +226,10 @@ SQL side: instant FTS5 full-text lookup, zero tokens.
 
 ### `irag scan`
 
-Force-rebuild the structural map (symbols + dependency edges). Runs
-automatically on `init`, `sync`, `context`, `map`, and `impact` whenever
+Force-rebuild the structural map (symbols + dependency edges). Automatic
+refreshes parse only content-changed files when the set of code paths is
+unchanged; adds, deletes, and renames trigger a full pass so newly resolvable
+imports cannot be missed. It runs on `init`, `sync`, `context`, `map`, and `impact` whenever
 HEAD has changed, so you rarely need it by hand. Pure parsing — Python
 via `ast`; JS/TS, Go, Rust, Java, C#, Ruby, PHP, and C/C++ via regex;
 zero LLM tokens; capped at 300KB per file / 4000 files. Import edges
@@ -350,6 +361,24 @@ Architecture, CLI reference, Comparison).
 
 Everything the dashboard does is also a CLI command, and vice versa —
 the GUI is a full peer of the CLI, not a read-only viewer.
+
+Updates receive durable job IDs. Progress and ordered logs are stored in
+SQLite and streamed to the browser with Server-Sent Events, so refreshes and
+reconnects resume the same operation instead of resetting a process-local
+spinner.
+
+### `irag mcp [--root PATH]`
+
+Start the vendor-neutral Model Context Protocol server over stdio. It
+negotiates stable MCP versions, publishes JSON Schema tools, returns text plus
+structured results, and never writes logs to protocol stdout. `--root` should
+be absolute when launched by a coding client. See [MCP.md](MCP.md).
+
+### `irag provider [--json]`
+
+Show the selected summary-provider adapter, effective model, timeout/retry
+policy, and whether its executable is available. This check makes no model
+call; use `doctor --probe-llm` when an actual output probe is wanted.
 
 ### `irag status [--json]`
 

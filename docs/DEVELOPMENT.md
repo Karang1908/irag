@@ -39,21 +39,24 @@ export` installs a static operator guide without dumping memory into it.
 
 | File | Owns |
 |---|---|
-| `irag/db.py` | schema, triggers, shared helpers (get_meta, get_or_create_page, current_body, fts_sanitize) |
+| `irag/db.py` | schema, ordered migrations, automatic pre-upgrade backups, downgrade refusal, triggers, shared helpers |
+| `irag/mcp.py` | standards-compliant JSON-RPC stdio MCP server and universal tool contracts |
+| `irag/providers.py` | Claude, Codex, agy, Ollama, and custom process adapters with retries/telemetry |
+| `irag/reports.py` | escaped, self-contained contradiction repair briefs for coding agents |
 | `irag/config.py` | defaults + `.irag/config.toml` deep-merge and semantic validation (tomllib) |
 | `irag/structure.py` | deterministic map: symbols + deps tables via ast/regex; scan gated on the working-tree fingerprint; feeds linter (exact symbols), synthesis (facts block), retrieval (+20 dep neighbors, map blocks), links/Obsidian |
 | `irag/ingest.py` | hybrid git-commit + working-tree fingerprint changes → per-FILE events; ancestor folders bumped at half weight; ignoring = config segments + .iragignore globs + hidden paths + binary exts |
-| `irag/synthesis.py` | two-phase hierarchical sweep: FILE pages (content+facts prompt) then FOLDER pages bottom-up (children-summary prompt); LLM subprocess: stdin by default, {prompt} argv or {promptfile} temp-file substitution, ANSI-stripped output, empty-output guard |
+| `irag/synthesis.py` | two-phase hierarchical sweep: FILE pages (content+facts prompt) then FOLDER pages bottom-up (children-summary prompt); preserves critical interfaces, invariants, data flow, failure/security behavior, and rename context while bounding large-file input |
 | `irag/linter.py` | static checks: missing_path (high), version_mismatch (medium), missing_symbol (low, heuristic); dedupe on identical open claim; auto-resolve static rows that stop failing (never llm_flagged rows) |
 | `irag/retrieval.py` | scoring (+50 open-module, +25 parent, ≤+30 FTS, +15 link-hop, +10 recent, −20 stale, −40 contradicted) and FULL/DIGEST/INDEX serving under token_budget |
 | `irag/provenance.py` | why / asof / rollback / pin |
-| `irag/sessions.py` | conversation diary: begin/end with ID high-water marks (not timestamps), per-file `changes_detail` (redundant with revisions by design), LLM narrative with deterministic fallback, `recap_block` |
+| `irag/sessions.py` | conversation diary: begin/end with ID high-water marks (not timestamps), per-file `changes_detail`, a readable LLM narrative, and a separate deterministic `critical_context` ledger that the model cannot omit |
 | `irag/export.py` | bundled static operator guide → CLAUDE.md + AGENTS.md (identical content), with ownership guards and atomic replacement |
 | `irag/obsidian.py` | db → Obsidian vault: Modules/ notes, _versions/ chain (#version), _meta/ stats+instructions; wipe-and-rebuild behind `.irag-vault` marker guard |
 | `irag/check.py` | CI gate: exit 1 on open contradictions or staleness > max |
 | `irag/hooks.py` | post-commit/post-merge/post-checkout installers (never clobber foreign hooks) |
 | `irag/stats.py` | shared metric builders (status_dict, token_series, activity) for CLI + dashboard |
-| `irag/dashboard.py` | stdlib ThreadingHTTPServer on 127.0.0.1; /api/* JSON; chat router (route_query: sql vs ai); assets/dashboard.html SPA; background update worker |
+| `irag/dashboard.py` | stdlib ThreadingHTTPServer on 127.0.0.1; /api/* JSON; chat router; persistent update jobs with SSE progress and reconnect/poll fallback; assets/dashboard.html SPA |
 | `irag/doctor.py` | install diagnostics: env, db/FTS integrity, config types, LLM probe, hooks, queue health |
 | `irag/cli.py` | argparse; every command resolves the nearest `.irag` root (or cwd for init), opens `.irag/memory.db` |
 
@@ -76,7 +79,9 @@ export` installs a static operator guide without dumping memory into it.
 - Schema changes: additive upgrades go in `SCHEMA` (fresh installs) **and** a
   guarded `ALTER TABLE` via `db._add_column_if_missing` in `ensure_db`
   (existing installs). The whole upgrade is serialized and transactional.
-  Anything destructive or renaming still needs a designed migration.
+  Schema changes require a new ordered migration, a rollback-safe data step,
+  and an upgrade test. `ensure_db` creates a pre-migration SQLite backup and
+  refuses databases newer than the running binary.
 
 ## Search duality (keep both)
 
@@ -93,7 +98,12 @@ linter must catch a missing_path). It must pass before any release. The
 mock LLM contract equals the real one: prompt on stdin, markdown on
 stdout.
 
+`python -m unittest discover -s tests -p 'test_*.py' -v` — focused protocol,
+provider, migration, race-safety, rename-continuity, summary-retention, and
+durable-job regressions. CI runs this focused suite natively on Ubuntu,
+macOS, and Windows, and the full smoke suite on every supported Python.
+
 ## Roadmap (do not build unless asked)
 
-MCP server (five tools wrapping retrieval/provenance/linter), confidence
-scoring from lint history, and CI webhooks.
+Confidence scoring from lint history, pull-request contradiction annotations,
+real-model summary-retention evals, and authenticated remote MCP transport.
