@@ -286,7 +286,7 @@ irag/
 │   ├── retrieval.py    scoring + tiered serving + FTS search
 │   ├── provenance.py   why / asof / rollback / pin
 │   ├── sessions.py     conversation diary (begin/end/recap)
-│   ├── export.py       db → CLAUDE.md + AGENTS.md
+│   ├── export.py       static operator guide → CLAUDE.md + AGENTS.md
 │   ├── stats.py        shared metrics for CLI + dashboard
 │   ├── check.py        CI gate
 │   ├── doctor.py       install diagnostics
