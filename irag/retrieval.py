@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from . import db
 
@@ -64,7 +65,13 @@ def score(conn: sqlite3.Connection, cfg: dict,
     open_modules: set[str] = set()
     open_parents: set[str] = set()
     for f in open_files:
-        norm = PurePosixPath(f).as_posix().lstrip("./")
+        # Callers on Windows naturally pass backslashes; database subjects are
+        # canonical POSIX-relative paths on every platform.
+        norm = PurePosixPath(str(f).replace("\\", "/")).as_posix()
+        # Remove explicit relative prefixes without stripping the meaningful
+        # leading dot from paths such as `.github/workflows/ci.yml`.
+        while norm.startswith("./"):
+            norm = norm[2:]
         open_modules.add(norm)
         open_parents.update(ancestors(norm))
 
@@ -153,6 +160,35 @@ def score(conn: sqlite3.Connection, cfg: dict,
     return results
 
 
+def briefing(conn: sqlite3.Connection, cfg: dict, root: Path,
+             open_files: list[str] | None = None,
+             query: str | None = None,
+             budget_tokens: int | None = None) -> tuple[str, dict]:
+    """Build the complete agent briefing shared by CLI and dashboard.
+
+    Sync/scan remain the caller's responsibility so the dashboard can hold
+    its cross-process lock for the whole read.  Centralizing the recap and
+    dirty-tree notice keeps the web preview identical to ``irag context``.
+    """
+    md, machine = serve(conn, cfg, open_files=open_files, query=query,
+                        budget_tokens=budget_tokens)
+    from . import sessions, stats
+    recap = sessions.recap_block(conn, n=2)
+    if recap:
+        md = md.replace("# Project Context (irag)",
+                        f"# Project Context (irag)\n\n{recap}", 1)
+        machine["recap"] = recap
+    dirty = stats.dirty_count(root)
+    if dirty:
+        note = (f"note: {dirty} uncommitted change(s) in the working tree — "
+                "the structural map reflects current files; synthesized page "
+                "summaries may lag until the next update")
+        md = md.replace("# Project Context (irag)",
+                        f"# Project Context (irag)\n\n_{note}_", 1)
+        machine["dirty_files"] = dirty
+    return md, machine
+
+
 def serve(conn: sqlite3.Connection, cfg: dict,
           open_files: list[str] | None = None,
           query: str | None = None,
@@ -201,7 +237,9 @@ def serve(conn: sqlite3.Connection, cfg: dict,
 
     eligible = [r for r in ranked
                 if r.get("relevance", r["score"]) >= min_score]
-    full, digest, index = [], [], []
+    full: list[tuple[dict, str]] = []
+    digest: list[dict] = []
+    index: list[dict] = []
     used = 0
     for r in eligible:
         body = db.current_body(conn, r["page"]["page_id"]) or ""
