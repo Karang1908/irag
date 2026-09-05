@@ -1,8 +1,9 @@
 # irag
 
-**Verified relational memory for AI coding agents.** One SQLite file that
-gives any agent persistent, fact-checked knowledge of your codebase —
-instead of a flat `CLAUDE.md` that silently rots.
+**One verified project brain for every AI coding agent.** Codex, Claude Code,
+Cursor, Windsurf, VS Code, and any MCP client get identical context, search,
+map, impact, provenance, contradiction, diary, and update tools from one
+SQLite file — instead of a flat context file that silently rots.
 
 **Why you'll want this:**
 
@@ -21,9 +22,11 @@ instead of a flat `CLAUDE.md` that silently rots.
 - ⏮ **Every chat resumes where the last one ended** — a ~150-token
   recap of what previous sessions did and changed, injected
   automatically. No more "let me look around the codebase first."
-- 🤝 **Works with every agent** — Claude Code hooks make it fully
-  automatic; generated `AGENTS.md` reaches Codex, Antigravity, and
-  Cursor; git is optional.
+- 🤝 **Actually works with every agent** — `irag mcp` is a standard stdio
+  MCP server, not a Claude-only wrapper. Thirteen tools, one contract, one
+  memory; Git is optional.
+- 🧨 **Contradictions become repair packets** — one button per issue and one
+  master button generate self-contained HTML handoffs ready for a coding agent.
 
 ```
 Claude Code   →     irag      →   agy / any LLM CLI
@@ -106,9 +109,10 @@ irag's costs are asymmetric by design:
 ```toml
 # .irag/config.toml — the write path runs on Gemini's free quota
 [llm]
-command = "agy --dangerously-skip-permissions -p {prompt}"
-model_label = "antigravity"
+provider = "agy"        # claude | codex | agy | ollama | custom
+model = ""
 timeout = 600
+retries = 1
 ```
 
 Any CLI with the same contract works — `claude -p` (default), a local
@@ -128,7 +132,7 @@ cd your-project
 irag init                   # works with or without git
 irag doctor --probe-llm     # verify the LLM command works
 irag update                 # first full synthesis (one call per file+folder)
-irag claude-setup           # wire Claude Code hooks (optional, recommended)
+irag mcp --root "$PWD"       # universal MCP interface for coding agents
 ```
 
 Scoping is **directory-wise**: the folder you run `init` in *is* the
@@ -201,20 +205,20 @@ irag check                      # CI gate: exit 1 if memory disagrees with code
 Full honest comparison (including where the others win):
 [docs/COMPARISON.md](docs/COMPARISON.md).
 
-## Commands (45)
+## Commands (48)
 
 `init` · `claude-setup` · `doctor` — setup ·
 `sync` · `ingest-commit` · `scan` — detect ·
 `synthesize` · `update` · `lint` · `learn` · `record-decision` · `resolve` ·
 `rollback` · `forget` — write ·
 `search` · `map` · `impact` · `stale` · `status` · `diff` ·
-`contradictions` · `asof` · `brief` · `suggest` · `facts` ·
+`contradictions` · `contradiction-report` · `asof` · `brief` · `suggest` · `facts` ·
 `candidates` — read (SQL, zero tokens) ·
 `ask` · `context` — read (AI) ·
 `tried` · `verify` · `topic` · `capture` — record what only you know ·
 `session-begin` · `session-end` · `sessions` · `transcript` · `recap` — diary ·
 `pin` · `unpin` · `export` · `check` · `backup` — admin ·
-`dashboard` · `obsidian` · `why` — views & provenance
+`dashboard` · `obsidian` · `why` · `mcp` · `provider` — views, protocol & provenance
 
 Full reference: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 
@@ -227,6 +231,7 @@ CI on every push. The same content lives in this repo:
 
 - [docs/SETUP.md](docs/SETUP.md) — install, LLM configuration (incl.
   the agy/Antigravity split), hooks, CI gate
+- [docs/MCP.md](docs/MCP.md) — connect any MCP-capable coding tool
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — schema, data flows,
   retrieval scoring, design principles
 - [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md) — every command & flag
@@ -246,11 +251,10 @@ CI runs the same suite plus Ruff, mypy, and a package build on every push
 
 ## Roadmap
 
-- MCP server (context / map / why / learn as tools)
-- Confidence scoring driven by lint history
-- CI webhooks (post contradictions to PRs)
-- Schema migration system (today: additive column guards only)
-- Real-LLM evaluation of summary quality
+- Confidence scoring driven by lint and executable-fact history
+- CI annotations that attach repair packets to pull requests
+- Real-model regression evals for critical-context retention
+- Optional authenticated Streamable HTTP for remote teams
 
 ## License
 

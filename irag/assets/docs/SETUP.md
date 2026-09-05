@@ -5,8 +5,9 @@
 - Python **3.11+** (irag uses `tomllib`; the core has zero third-party
   dependencies)
 - git on PATH
-- An LLM CLI that reads a prompt on **stdin** and writes markdown to
-  **stdout** (default: `claude -p`; any command works)
+- An LLM provider CLI for writing summaries. Built-in adapters support
+  Claude Code, Codex, Antigravity (`agy`), and Ollama; a custom command still
+  works. Reading memory never requires a model.
 
 ## Install
 
@@ -70,10 +71,34 @@ Edit `.irag/config.toml`:
 
 ```toml
 [llm]
-command = "claude -p"    # prompt piped via stdin, markdown on stdout
-model_label = "claude"   # recorded on every revision for provenance
+provider = "claude"      # claude | codex | agy | ollama | custom
+command = "claude -p"    # custom/legacy command only
+model = ""               # provider default; required for ollama
+model_label = "claude"   # custom-command provenance label
 timeout = 300
+retries = 1
+input_cost_per_million = 0.0   # optional local estimate, never hard-coded
+output_cost_per_million = 0.0
 ```
+
+Built-in examples:
+
+```toml
+[llm]
+provider = "codex"
+model = ""
+timeout = 300
+retries = 1
+
+# Or fully local:
+# provider = "ollama"
+# model = "qwen3-coder"
+```
+
+Run `irag provider` to validate the adapter without spending tokens and
+`irag doctor --probe-llm` for one end-to-end output probe. Every invocation is
+recorded locally with provider, model, input/output token estimates, duration,
+attempt count, status, and an estimated cost only when you supply rates.
 
 Prompt delivery adapts to your CLI via placeholders in `command`:
 no placeholder → prompt piped on stdin (claude -p); `{prompt}` →
@@ -114,6 +139,20 @@ what would be sent without spending tokens:
 ```bash
 irag synthesize --dry-run
 ```
+
+## Connect every coding agent through MCP
+
+The summary provider above writes memory. Your coding agent reads and manages
+that memory through the built-in, vendor-neutral MCP server:
+
+```bash
+codex mcp add irag -- irag mcp --root /absolute/path/to/project
+claude mcp add --scope project irag -- irag mcp --root /absolute/path/to/project
+```
+
+Cursor, Windsurf, VS Code and other MCP clients use the same executable and
+arguments. See [MCP.md](MCP.md) for configuration shapes, the complete tool
+contract, and the recommended agent lifecycle.
 
 ## Granularity & ignoring
 

@@ -1,8 +1,8 @@
 # Quickstart
 
-irag is a verified knowledge base for your codebase: every file and
-folder gets an AI-written summary page, versioned on every change,
-fact-checked against the code, and served to coding agents.
+irag is a verified, shared memory for your codebase: every file and folder
+gets an AI-written summary page, versioned on every change, fact-checked
+against the code, and served through the same MCP tools to every coding agent.
 
 ## 1. Install (once)
 
@@ -17,10 +17,24 @@ cd my-project
 irag init                  # works with or without git
 ```
 
-Then set your LLM in `.irag/config.toml` (default `claude -p` works if
-you have Claude Code) and verify with `irag doctor --probe-llm`.
+Then choose the summary writer in `.irag/config.toml`. Built-in adapters support
+Claude, Codex, agy, and Ollama; `custom` accepts any prompt-in/text-out CLI.
+Verify it with `irag provider` and `irag doctor --probe-llm`.
 
-## 3. The one command to remember
+## 3. Connect any coding agent
+
+Run irag as a standard, dependency-free MCP server:
+
+```
+irag mcp --root /absolute/path/to/my-project
+```
+
+For Codex: `codex mcp add irag -- irag mcp --root /absolute/path/to/my-project`.
+For Claude Code: `claude mcp add --scope project irag -- irag mcp --root /absolute/path/to/my-project`.
+Cursor, Windsurf, VS Code, and other MCP clients use the same command. All of
+them see the same 13 tools, schemas, results, sessions, and SQLite memory.
+
+## 4. The one command to remember
 
 ```
 irag update
@@ -28,21 +42,24 @@ irag update
 
 Detects every change → writes a new version of each affected file page →
 rolls up folder pages bottom-up → fact-checks everything. It updates the
-database only; the `CLAUDE.md`/`AGENTS.md` agent guide is installed once
+database only; the `AGENTS.md`/`CLAUDE.md` agent guide is installed once
 by `irag init` and tells agents to run it after edits.
 
-## 4. Ask things
+## 5. Ask things
 
 - **SQL search** (instant, free): `irag search "auth token"` or type
   keywords / a file path in the dashboard chat.
 - **AI search** (reasoned, cited): `irag ask "how does login work?"` or
   ask a question in the dashboard chat — routing is automatic.
 
-## 5. See it
+## 6. See it
 
 - `irag dashboard` — this UI: live token burn and activity, health,
   the interactive dependency graph (pan / zoom / drag), the session
   diary with per-file changes, chat, and these docs.
+- Every contradiction has an **Agent brief** button. It opens a self-contained,
+  source-grounded HTML repair packet in a new tab; the master button bundles
+  every open contradiction for one coding-agent handoff.
 - `irag obsidian` — the knowledge graph as an Obsidian vault
   (files green, folders blue, contradictions red, history gray).
 
@@ -60,6 +77,7 @@ tokens.
 
 `irag status` · `irag stale` · `irag map <path>` · `irag impact <path>` ·
 `irag why "<claim>"` · `irag diff <file>` · `irag contradictions` ·
+`irag contradiction-report [id]` · `irag mcp` · `irag provider` ·
 `irag learn "<gotcha>"` · `irag record-decision "<choice>"` ·
 `irag claude-setup` · `irag doctor` · `irag backup`
 
