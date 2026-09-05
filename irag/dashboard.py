@@ -244,11 +244,52 @@ def make_handler(state: _State):
                 return {}
             try:
                 value = json.loads(self.rfile.read(length))
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 raise ValueError("invalid JSON body") from None
             if not isinstance(value, dict):
                 raise ValueError("JSON body must be an object")
             return value
+
+        def _with_live_memory(self, conn, build):
+            """Sync, scan, and read a coherent live view.
+
+            Coordinate with both CLI/Stop-hook writers and other dashboard
+            work. If either lock is busy, callers return a retryable conflict
+            instead of silently answering from stale tree state.
+            """
+            from .locking import UpdateLock
+            repo_lock = UpdateLock(state.root)
+            if not repo_lock.acquire():
+                return False, None
+            acquired = state.lock.acquire(blocking=False)
+            if not acquired:
+                repo_lock.release()
+                return False, None
+            try:
+                from . import ingest
+                ingest.sync(conn, state.cfg, state.root)
+                structure.scan(conn, state.cfg, state.root)
+                return True, build()
+            finally:
+                state.lock.release()
+                repo_lock.release()
+
+        def _with_memory_write(self, build):
+            """Serialize a page-control write with every synthesis entry."""
+            from .locking import UpdateLock
+            repo_lock = UpdateLock(state.root)
+            if not repo_lock.acquire():
+                return False
+            acquired = state.lock.acquire(blocking=False)
+            if not acquired:
+                repo_lock.release()
+                return False
+            try:
+                build()
+                return True
+            finally:
+                state.lock.release()
+                repo_lock.release()
 
         def handle_one_request(self):
             # ThreadingHTTPServer runs one thread per request, so the
@@ -311,42 +352,38 @@ def make_handler(state: _State):
                         # update/Stop hook.  A skipped poll catches up three
                         # seconds later; serving the last complete map is
                         # safer than racing a second sync/scan writer.
-                        from .locking import UpdateLock
-                        live_lock = UpdateLock(state.root)
-                        if live_lock.acquire():
-                            try:
-                                if state.lock.acquire(blocking=False):
-                                    try:
-                                        from . import ingest
-                                        ingest.sync(
-                                            conn, state.cfg, state.root)
-                                        structure.scan(
-                                            conn, state.cfg, state.root)
-                                    except sqlite3.OperationalError:
-                                        state.last_live = 0.0
-                                    except Exception:
-                                        traceback.print_exc()
-                                        state.last_live = 0.0
-                                    finally:
-                                        state.lock.release()
-                                else:
-                                    state.last_live = 0.0
-                            finally:
-                                live_lock.release()
-                        else:
+                        try:
+                            refreshed, _ = self._with_live_memory(
+                                conn, lambda: None)
+                        except sqlite3.OperationalError:
+                            conn.rollback()
+                            refreshed = False
+                        except Exception:
+                            conn.rollback()
+                            traceback.print_exc()
+                            refreshed = False
+                        if not refreshed:
                             state.last_live = 0.0
-                    mods = conn.execute(
-                        "SELECT p.subject_id, COUNT(s.symbol_id) n "
-                        "FROM pages p LEFT JOIN symbols s "
-                        "ON s.subject_id=p.subject_id "
-                        "WHERE p.page_type='file' "
-                        "AND COALESCE(p.deleted_at,'')='' "
-                        "GROUP BY p.subject_id ORDER BY p.subject_id"
-                    ).fetchall()
-                    deps = conn.execute(
-                        "SELECT source_subject s, target_subject t, "
-                        "import_count n FROM deps ORDER BY n DESC LIMIT 200"
-                    ).fetchall()
+                    # These are two tables replaced by one atomic scan. Pin a
+                    # read transaction so a concurrent scan cannot commit
+                    # between the two SELECTs and return mismatched nodes and
+                    # edges when a throttled or skipped poll is served.
+                    conn.execute("BEGIN")
+                    try:
+                        mods = conn.execute(
+                            "SELECT p.subject_id, COUNT(s.symbol_id) n "
+                            "FROM pages p LEFT JOIN symbols s "
+                            "ON s.subject_id=p.subject_id "
+                            "WHERE p.page_type='file' "
+                            "AND COALESCE(p.deleted_at,'')='' "
+                            "GROUP BY p.subject_id ORDER BY p.subject_id"
+                        ).fetchall()
+                        deps = conn.execute(
+                            "SELECT source_subject s, target_subject t, "
+                            "import_count n FROM deps ORDER BY n DESC LIMIT 200"
+                        ).fetchall()
+                    finally:
+                        conn.rollback()
                     return self._json({"files": [dict(m) for m in mods],
                                        "deps": [dict(d) for d in deps]})
                 if url.path == "/api/page":
@@ -402,6 +439,7 @@ def make_handler(state: _State):
                         limit = int((qs.get("limit") or ["50"])[0])
                     except ValueError:
                         limit = 50
+                    limit = min(max(limit, 1), 200)
                     rows = conn.execute(
                         "SELECT * FROM sessions ORDER BY session_id DESC "
                         "LIMIT ?", (limit,)).fetchall()
@@ -439,14 +477,21 @@ def make_handler(state: _State):
                         provenance.why_data(conn, claim) or {})
                 if url.path == "/api/impact":
                     subject = (qs.get("subject") or [""])[0]
-                    structure.scan(conn, state.cfg, state.root)
-                    if not structure.is_tracked(conn, subject):
+                    def impact_data():
+                        if not structure.is_tracked(conn, subject):
+                            return None
+                        return [{"subject": s, "hop": h}
+                                for s, h in structure.impact(conn, subject)]
+                    refreshed, payload = self._with_live_memory(
+                        conn, impact_data)
+                    if not refreshed:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    if payload is None:
                         return self._json(
                             {"error": f"{subject or '(empty)'} is not a live "
                                       "file or folder irag tracks"}, 404)
-                    hits = structure.impact(conn, subject)
-                    return self._json(
-                        [{"subject": s, "hop": h} for s, h in hits])
+                    return self._json(payload)
                 if url.path == "/api/diff":
                     import difflib
                     subject = (qs.get("subject") or [""])[0]
@@ -494,15 +539,22 @@ def make_handler(state: _State):
                         budget = int((qs.get("budget") or ["3000"])[0])
                     except ValueError:
                         budget = 3000
-                    structure.scan(conn, state.cfg, state.root)
-                    md, machine = retrieval.serve(conn, state.cfg,
-                                                  query=query or None,
-                                                  budget_tokens=budget)
-                    return self._json({"markdown": md,
-                                       "tokens": tokens_mod.count(md),
-                                       "full": len(machine.get("full") or []),
-                                       "digest": len(machine.get("digest") or []),
-                                       "index": len(machine.get("index") or [])})
+                    budget = min(max(budget, 0), 100_000)
+                    def context_data():
+                        md, machine = retrieval.briefing(
+                            conn, state.cfg, state.root, query=query or None,
+                            budget_tokens=budget)
+                        return {"markdown": md,
+                                "tokens": tokens_mod.count(md),
+                                "full": len(machine.get("full") or []),
+                                "digest": len(machine.get("digest") or []),
+                                "index": len(machine.get("index") or [])}
+                    refreshed, payload = self._with_live_memory(
+                        conn, context_data)
+                    if not refreshed:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    return self._json(payload)
                 if url.path == "/api/asof":
                     from . import provenance
                     date = (qs.get("date") or [""])[0].strip()
@@ -563,6 +615,10 @@ def make_handler(state: _State):
                     question = str(data.get("message", "")).strip()
                     if not question:
                         return self._json({"error": "empty"}, 400)
+                    if len(question) > 20_000:
+                        return self._json(
+                            {"error": "message must be at most 20000 characters"},
+                            413)
                     forced = data.get("mode")
                     mode = forced if forced in ("sql", "ai") \
                         else route_query(question)
@@ -576,14 +632,17 @@ def make_handler(state: _State):
                             return self._json({"mode": "sql",
                                                "results": hits})
                         mode = "ai"   # auto keyword miss -> fall through
+                    refreshed, md = self._with_live_memory(
+                        conn, lambda: retrieval.serve(
+                            conn, state.cfg, query=question,
+                            budget_tokens=6000)[0])
+                    if not refreshed:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    from .cli import ASK_INSTRUCTION
+                    prompt = (f"{ASK_INSTRUCTION}\n\nPROJECT CONTEXT:\n"
+                              f"{md}\n\nQUESTION: {question}\n\nANSWER:")
                     with state.lock:
-                        structure.scan(conn, state.cfg, state.root)
-                        md, _ = retrieval.serve(conn, state.cfg,
-                                                query=question,
-                                                budget_tokens=6000)
-                        from .cli import ASK_INSTRUCTION
-                        prompt = (f"{ASK_INSTRUCTION}\n\nPROJECT CONTEXT:\n"
-                                  f"{md}\n\nQUESTION: {question}\n\nANSWER:")
                         try:
                             answer = synthesis.run_llm(state.cfg, prompt)
                         except SystemExit as exc:
@@ -663,7 +722,15 @@ def make_handler(state: _State):
                     text = str(data.get("text", "")).strip()
                     if not text:
                         return self._json({"error": "empty text"}, 400)
+                    if len(text) > 20_000:
+                        return self._json(
+                            {"error": "text must be at most 20000 characters"},
+                            413)
                     module = str(data.get("module", "")).strip() or None
+                    if module and len(module) > 2_000:
+                        return self._json(
+                            {"error": "module must be at most 2000 characters"},
+                            413)
                     from .cli import _append_log
                     if url.path == "/api/learn":
                         _append_log(conn, "lessons", "lessons", "Lessons",
@@ -674,11 +741,20 @@ def make_handler(state: _State):
                     return self._json({"ok": True})
                 if url.path == "/api/pin":
                     from . import provenance
+                    pinned = data.get("pinned")
+                    if not isinstance(pinned, bool):
+                        return self._json(
+                            {"error": "pinned must be a boolean"}, 400)
                     try:
-                        provenance.pin(conn, str(data.get("subject", "")),
-                                       bool(data.get("pinned")))
+                        written = self._with_memory_write(
+                            lambda: provenance.pin(
+                                conn, str(data.get("subject", "")),
+                                pinned))
                     except SystemExit as exc:
                         return self._json({"error": str(exc)}, 400)
+                    if not written:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
                     return self._json({"ok": True})
                 if url.path == "/api/rollback":
                     from . import provenance
@@ -687,10 +763,14 @@ def make_handler(state: _State):
                     except (TypeError, ValueError):
                         return self._json({"error": "bad version"}, 400)
                     try:
-                        provenance.rollback(
-                            conn, str(data.get("subject", "")), version)
+                        written = self._with_memory_write(
+                            lambda: provenance.rollback(
+                                conn, str(data.get("subject", "")), version))
                     except SystemExit as exc:
                         return self._json({"error": str(exc)}, 400)
+                    if not written:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
                     return self._json({"ok": True})
                 if url.path == "/api/op":
                     # deterministic, fast maintenance operations. A strict
