@@ -10,7 +10,7 @@ This document is about **building irag**. If you want to know how to *use*
 irag inside a project, read `/CLAUDE.md` at the repo root — that is the
 operator manual for agents consuming irag's memory, not developing it.
 
-Accurate as of **v4.45.0**, 2026-09-05. Every fact below was verified by
+Accurate as of **v4.46.0**, 2026-09-05. Every fact below was verified by
 running it on this machine on that date. Where something is inferred
 rather than observed, it says so.
 
@@ -23,9 +23,12 @@ in the working tree but has **not** been committed or pushed. Preserve it.
 It fixes the failure modes reported from real use, rather than changing the
 append-only memory model:
 
-- CLI updates, dashboard updates, live-map refreshes, and dashboard
-  maintenance operations now share one cross-platform repository lock. Two
-  writers cannot run sync/scan/synthesize/lint work over each other.
+- CLI updates, direct sync/scan/synthesize/lint commands, live CLI reads,
+  page-control writes, dashboard updates, live-map refreshes, and dashboard
+  maintenance operations now share one cross-platform repository lock. Live
+  CLI reads pin a SQLite snapshot before releasing it, so a read can never
+  combine pre-update and post-update state or spend model tokens on a partial
+  sweep.
 - Page creation and structural-map replacement participate in their caller's
   transaction. The scanner records the same working-tree fingerprint that
   `doctor` compares, eliminating both partial map swaps and the false
@@ -38,33 +41,49 @@ append-only memory model:
 - Concurrent lesson/decision appends use an immediate transaction, and all
   session recap inputs (decisions, lessons, commits, events, revisions) are
   filtered by the owning session key. Overlapping agents no longer lose log
-  entries or inherit each other's diary.
+  entries or inherit each other's diary. Transcript retention is bounded while
+  parsing, and corrupt legacy JSON is skipped instead of crashing SessionEnd or
+  the Sessions dashboard.
+- Configuration is validated semantically at load time and by `doctor` through
+  one shared validator. Syntactically valid but unusable values can no longer
+  poison a running dashboard and crash a later update. Schema upgrades are one
+  serialized transaction: an interrupted or concurrent upgrade cannot leave a
+  half-migrated database.
 - The dashboard reloads config safely, reports an invalid live config instead
   of continuing with stale assumptions, serializes mutating operations,
   returns clean 4xx JSON for bad requests, marks API responses `no-store`,
-  and exposes the same drift/mode/status facts as the CLI.
+  and exposes the same drift/mode/status facts as the CLI. Context, impact,
+  map, and AI retrieval now refresh through the same live path, and dashboard
+  context uses the complete CLI briefing including recaps and dirty-tree state.
 - The frontend distinguishes HTTP application errors from an offline server,
   prevents overlapping poll responses from rewinding the UI, stops idle graph
   animation, safely renders toast text, and has accessible controls. Its
   responsive grids were corrected so all nine tabs fit without body overflow
   at 390 px; only the tab strip scrolls and the brand remains visible.
-- Backup names include microseconds, date inputs are validated consistently,
-  packaged docs match the root command list, and package metadata uses current
+- Request sizes, list limits, and context budgets are bounded. Backup names
+  include microseconds, date inputs are validated consistently, packaged docs
+  match the root command list, and package metadata uses current
   SPDX/data-discovery syntax.
+- `init` is now a locked reconciliation operation, so rerunning it repairs an
+  interrupted first run instead of treating a lone `.irag/` directory as
+  success. Setup writes are atomic, malformed/non-UTF-8 model process output
+  is handled cleanly, `doctor` checks logical database relations in addition
+  to storage integrity, and the site builder refuses to recursively replace
+  directories it does not own.
 
 Verification on the finished tree:
 
 ```text
-sh tests/test_smoke.sh                                  SMOKE TEST PASSED
-Python 3.13 py_compile + pyflakes                       passed (silent)
-node --check (dashboard script) + sh -n + diff --check passed
-dashboard: 9 tabs × desktop/mobile Chromium            no JS errors/overflow
-sdist + wheel build; wheel install/import on Python 3.13 passed
+sh tests/test_smoke.sh on Python 3.11, 3.12, 3.13, 3.14 SMOKE TEST PASSED
+Ruff + mypy + compileall + diff --check                  passed (silent)
+site: 10 pages × desktop/mobile Chromium                 no JS errors/overflow
+dashboard: 9 tabs × desktop/mobile Chromium              no JS errors/overflow
+sdist + wheel build; isolated wheel install on 3.11      passed
 ```
 
 The frontend audit used the repository's existing visual system and made
 narrow reliability/accessibility corrections; it did not redesign the
-product. The detector's sole finding (a colored status-dot glow) was removed.
+product. Its mechanical detector reports no remaining findings.
 
 ---
 
@@ -116,8 +135,8 @@ So:
   `tests/test_smoke.sh` relies on (it sets `PYTHONPATH="$IRAG_SRC"`).
 - `python3 -m pip show irag` — reports **not found**. That is expected,
   not a broken install.
-- `python3 -m pyflakes irag/*.py` — fails; pyflakes is installed only
-  under 3.13. Use the full path (§3.3).
+- `ruff check ...` and `mypy irag` are the current static gates. They are
+  available in the development environment; CI installs them explicitly.
 
 ### 0.3 Verifying which copy of irag you are editing
 
@@ -136,7 +155,7 @@ If it points anywhere else, your edits are not what the `irag` command runs.
 
 **Note the version reported there is stale and that is normal.** pip
 records the version at the last `pip install -e .`; it currently says
-`4.40.1` while the code is `4.45.0`. `irag --version` reads
+`4.40.1` while the code is `4.46.0`. `irag --version` reads
 `irag/__init__.py` and is authoritative. Only a reinstall refreshes pip's
 copy, and a reinstall is unnecessary for ordinary source edits — editable
 installs pick those up immediately.
@@ -244,15 +263,14 @@ git push origin main
 
 `.github/workflows/ci.yml` runs on every push to `main` and every PR:
 
-1. **Lint** — `pyflakes irag/*.py`, must be silent.
+1. **Static analysis** — `ruff check irag site tests/mock_llm.py` and
+   `mypy irag`, both silent except their success summaries.
 2. **Smoke test** — `sh tests/test_smoke.sh`, must print `SMOKE TEST PASSED`.
 3. **Package build** — `python -m build`.
 
-Matrix: Python **3.11, 3.12, 3.13**. It has caught real defects that
-passed locally — most recently an f-string with no placeholders, which
-lint rejects. **Run pyflakes locally before pushing** (§3.3); it is
-installed only under 3.13, so the bare `python3 -m pyflakes` will mislead
-you into thinking it is unavailable.
+Matrix: Python **3.11, 3.12, 3.13, 3.14**. It has caught real defects that
+passed locally. Run both static analyzers locally before pushing (§3.3), not
+only a syntax compile.
 
 `.github/workflows/pages.yml` ("Docs") builds and deploys the site. It has
 `workflow_dispatch`, so you can trigger it manually:
@@ -306,7 +324,7 @@ resumes a project for a few hundred tokens instead of thousands of tokens
 of re-exploration. Everything lives in one SQLite file
 (`.irag/memory.db`) that any agent on any machine can mount.
 
-**v4.45.0. ~8,300 lines of Python. Zero runtime dependencies** — stdlib
+**v4.46.0. 9,056 lines of Python. Zero runtime dependencies** — stdlib
 only (`sqlite3`, `http.server`, `ast`, `tomllib`, `subprocess`). Package
 `irag`, console command `irag`, config dir `.irag/`, **45 commands**.
 
@@ -339,25 +357,26 @@ success. When a code path cannot know, it must say so and exit non-zero.
 
 | Module | LOC | Owns |
 |---|---:|---|
-| `cli.py` | 1740 | every command, argument parsing, the update lock |
-| `synthesis.py` | 984 | prompts, LLM invocation, page writing, injection scrubbing |
-| `structure.py` | 720 | symbol + dependency extraction for 10 languages |
-| `ingest.py` | 700 | change detection, ignoring, secrets, event queue |
-| `dashboard.py` | 652 | stdlib HTTP server, JSON API, CSRF guard |
-| `linter.py` | 651 | fact-checking pages against code; contradictions |
-| `sessions.py` | 458 | the conversation diary and attribution |
-| `db.py` | 422 | schema, triggers, additive migrations |
-| `obsidian.py` | 352 | vault projection |
-| `retrieval.py` | 322 | ranking, tiering, budget, FTS search |
-| `doctor.py` | 285 | self-diagnosis |
-| `provenance.py` | 222 | `why` / `asof` / `diff` |
+| `cli.py` | 1759 | every command, argument parsing, repository coordination |
+| `synthesis.py` | 1001 | prompts, LLM invocation, page writing, injection scrubbing |
+| `structure.py` | 751 | symbol + dependency extraction for 10 languages |
+| `ingest.py` | 783 | change detection, ignoring, secrets, event queue |
+| `dashboard.py` | 853 | stdlib HTTP server, JSON API, CSRF guard |
+| `linter.py` | 653 | fact-checking pages against code; contradictions |
+| `sessions.py` | 482 | the conversation diary and attribution |
+| `db.py` | 447 | schema, triggers, transactional additive migrations |
+| `obsidian.py` | 357 | vault projection |
+| `retrieval.py` | 360 | ranking, tiering, budget, FTS search |
+| `doctor.py` | 307 | self-diagnosis |
+| `provenance.py` | 246 | `why` / `asof` / `diff` |
 | `facts.py` | 204 | executable memory |
-| `config.py` | 138 | defaults, TOML merge |
-| `check.py` | 129 | the CI gate |
-| `hooks.py` | 108 | git + Claude Code hook wiring |
-| `stats.py` `tokens.py` `export.py` | 228 | shared metrics, token estimation, guide install |
+| `config.py` | 239 | defaults, TOML merge, semantic validation |
+| `check.py` | 133 | the CI gate |
+| `hooks.py` | 132 | git + Claude Code hook wiring |
+| `stats.py` `tokens.py` `export.py` | 271 | shared metrics, token estimation, guide install |
+| `locking.py` | 72 | cross-platform repository operation lock |
 
-### 2.3 Subsystems added in the 4.41–4.45 line
+### 2.3 Subsystems added in the 4.41–4.46 line
 
 These are recent and less battle-tested than the core:
 
@@ -436,14 +455,13 @@ on model prose.
 
 ```bash
 cd /Users/karangarg/Desktop/iRag/irag-4.1.1/irag
-PY=/Library/Frameworks/Python.framework/Versions/3.13/bin/python3
-
-python3 -m compileall -q irag/          # syntax
-$PY -m pyflakes irag/*.py               # lint — MUST use the 3.13 path
+python3 -m compileall -q irag site
+ruff check irag site tests/mock_llm.py
+mypy irag
 sh tests/test_smoke.sh                  # must print SMOKE TEST PASSED
 ```
 
-The suite is `tests/test_smoke.sh`: ~1,980 lines, **40 guard blocks**, the
+The suite is `tests/test_smoke.sh`: ~2,405 lines, **40 guard blocks**, the
 only persisted regression test. It runs entirely on the mock — costs
 nothing, takes a couple of minutes. It uses `set -e`, which has two
 consequences worth knowing:
@@ -655,8 +673,10 @@ conscious decision rather than a surprise.
 
 ## 6. Non-negotiables — do not regress these under any refactor
 
-- **Revisions are append-only.** Never `UPDATE`/`DELETE` a `revisions`
-  row. Rollback inserts a *new* row with the old content.
+- **Revisions are append-only during normal operation.** Never
+  `UPDATE`/`DELETE` a `revisions` row except for the user's explicit,
+  destructive `irag forget --purge`. Rollback inserts a *new* row with the
+  old content.
 - `pages.current_revision_id` moves only via the `revisions_advance`
   trigger.
 - **The database is the only source of truth.** `CLAUDE.md`, the
@@ -684,8 +704,9 @@ conscious decision rather than a surprise.
 
 **Verified by running it**, repeatedly, on this machine:
 
-- The full smoke suite: 40 guard blocks, every one falsified against a
-  neutered build before being kept.
+- The full smoke suite: 40 end-to-end guard blocks, including explicit
+  concurrency, migration interruption, malformed input, and stale-live-view
+  regressions.
 - Zero-token read path (sentinel test, §6).
 - Parallel synthesis produces byte-identical results to sequential — same
   page count, revision count, no duplicate versions — and a failing model
@@ -695,8 +716,11 @@ conscious decision rather than a surprise.
 - Schema migration from a database with every added column and table
   stripped out, including a pre-upgrade human resolution correctly
   backfilled.
-- All 45 commands respond; the dashboard serves all ten endpoints the UI
-  calls.
+- All 45 commands respond; the dashboard routes used by every one of its nine
+  views and interactive controls are exercised.
+- The rendered static site (all ten pages) and all nine dashboard views were
+  checked at 1440 px and 390 px in Chromium, including keyboard controls and
+  reduced motion, with no console errors or body overflow.
 
 **Not verified, and you should not claim otherwise:**
 
@@ -704,11 +728,6 @@ conscious decision rather than a surprise.
   mock. The pipeline, the fact-checker and the gates are proven; whether
   the prose is *good* on a real codebase is untested here. This remains
   the highest-value next step.
-- **The dashboard's appearance.** The Chrome extension was disconnected
-  for every session that touched it. HTTP status, JSON payloads, HTML
-  content and JS syntax are checked; nobody has looked at it rendering.
-  The toast and the "dismiss flag" buttons in particular are verified as
-  correct markup, not correct pixels.
 - **`[llm].parallel > 1` against a real LLM CLI.** Correct against the
   mock; left defaulting to 1 because whether a given CLI tolerates
   concurrent invocations is unknown.
@@ -724,9 +743,9 @@ conscious decision rather than a surprise.
 - **Compaction** — see gotcha #5. Opt-in only, if ever.
 - **A real-LLM evaluation of summary quality** — arguably higher priority
   than any new feature.
-- **A schema migration system.** Currently additive column guards only,
-  in `db.ensure_db()`; they are exercised and work, but there is no
-  mechanism for a destructive or renaming migration.
+- **Destructive or renaming schema migrations.** Additive upgrades are
+  serialized, transactional, exercised under interruption, and safe; there is
+  deliberately no generic mechanism for destructive transformations.
 - **Confidence scoring from lint history** (`pages.confidence` exists and
   is unused).
 - **CI webhooks** posting contradictions onto a PR.
@@ -738,17 +757,13 @@ conscious decision rather than a surprise.
 1. **The docs site is down** because the repo is private (§1.4). Recovery
    is two commands once the owner makes it public. Only they can flip
    visibility.
-2. **`irag/assets/docs/README.md`** is a third copy of the README, stale
-   relative to the root one. It is the in-app landing blurb rather than a
-   mirror, so it is deliberately outside the sync guard — but somebody
-   should decide whether it tracks the root README or stays its own thing.
-3. **One candidate lesson** is parked in the owner's
+2. **One candidate lesson** is parked in the owner's
    `ultimatenetworkscan` project: `nmap -O 127.0.0.1 exited 1 —
    QUITTING!` on `scanner.py`. That is a genuine finding, not debris —
    promote it with `irag learn` or discard it with
    `irag candidates --discard 37`. The owner's call; leave it alone
    otherwise.
-4. **Java bodiless-declaration extraction** covers interface, `abstract`
+3. **Java bodiless-declaration extraction** covers interface, `abstract`
    and `native` methods, but was written against synthetic fixtures. A
    real Java project would be a better test.
 
@@ -761,8 +776,9 @@ conscious decision rather than a surprise.
 cd /Users/karangarg/Desktop/iRag/irag-4.1.1/irag
 
 # 2. before any commit
-python3 -m compileall -q irag/
-/Library/Frameworks/Python.framework/Versions/3.13/bin/python3 -m pyflakes irag/*.py
+python3 -m compileall -q irag site
+ruff check irag site tests/mock_llm.py
+mypy irag
 sh tests/test_smoke.sh        # must print SMOKE TEST PASSED
 
 # 3. commit to main as Karang1908, long explanatory body
