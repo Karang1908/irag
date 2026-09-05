@@ -181,11 +181,7 @@ def _window_facts(conn, row) -> dict:
                 WHERE {rv_where} ORDER BY r.revision_id""",
             rv_args).fetchall()]
     def event_text(payload: object) -> str:
-        try:
-            decoded = json.loads(payload) if isinstance(payload, str) else payload
-        except (json.JSONDecodeError, TypeError):
-            return ""
-        return str(decoded.get("text", "")) if isinstance(decoded, dict) else ""
+        return str(db.json_object(payload).get("text", ""))
 
     decisions = [text for r in conn.execute(
         f"SELECT payload FROM events WHERE {ev_where} "
@@ -200,12 +196,9 @@ def _window_facts(conn, row) -> dict:
             f"""SELECT payload FROM events WHERE {ev_where}
                  AND event_type='commit' ORDER BY event_id""",
             ev_args).fetchall():
-        try:
-            m = json.loads(r["payload"]).get("message")
-            if m and m not in messages:
-                messages.append(m)
-        except json.JSONDecodeError:
-            pass
+        m = db.json_object(r["payload"]).get("message")
+        if m and m not in messages:
+            messages.append(m)
     return {"files": files, "versions": versions, "decisions": decisions,
             "lessons": lessons, "messages": messages,
             "changes_detail": changes_detail}
@@ -233,7 +226,8 @@ def _close(conn, cfg, session_id: int, narrate: bool,
     row = conn.execute("SELECT * FROM sessions WHERE session_id=?",
                        (session_id,)).fetchone()
     facts = _window_facts(conn, row)
-    summary = _deterministic_summary(facts)
+    deterministic = _deterministic_summary(facts)
+    summary = deterministic
     if narrate and cfg is not None and facts["files"]:
         try:
             from . import synthesis
@@ -247,28 +241,40 @@ def _close(conn, cfg, session_id: int, narrate: bool,
                     changes.append(f"{f}:\n" +
                                    body.split("## Recent changes", 1)[1][:400])
             prompt = (
-                "SESSION LOG TASK: write 2-5 sentences, past tense, plain "
-                "prose, describing what happened in this coding session — "
-                "what was built/changed and why it matters. No preamble, "
-                "no headers, no bullet points.\n\n"
-                f"SESSION DIGEST:\n{summary}\n\n"
+                "SESSION LOG TASK: write one dense handoff paragraph (3-7 "
+                "sentences, past tense, plain prose) that lets the next coding "
+                "agent continue without rediscovery. Preserve every evidenced "
+                "decision, changed behavior, invariant, compatibility or "
+                "migration constraint, failure/root cause, unresolved risk, "
+                "and validation result. Name important files and symbols. "
+                "State why the work matters and what remains. Never invent a "
+                "test result or omit a recorded decision/lesson for brevity. "
+                "No preamble, headers, or bullets.\n\n"
+                f"SESSION DIGEST:\n{deterministic}\n\n"
+                "LOSSLESS SESSION EVIDENCE (JSON):\n"
+                f"{json.dumps(facts, ensure_ascii=False)[:30000]}\n\n"
                 "RECENT-CHANGES NOTES FROM AFFECTED PAGES:\n"
                 + "\n".join(changes))
             narrative = synthesis.run_llm(cfg, prompt)
             if narrative:
-                summary = narrative.strip()[:2000]
+                # Prose is useful orientation, but it must never replace the
+                # deterministic evidence it was derived from. Keep both in
+                # the human summary and store the complete structure below.
+                summary = (narrative.strip()[:1350] +
+                           " Critical record: " + deterministic[:600])[:2000]
         except SystemExit:
             pass   # LLM unavailable -> keep the deterministic summary
     conn.execute(
         """UPDATE sessions SET ended_at=datetime('now'), status=?,
            summary=?, files_changed=?, versions_written=?, decisions=?,
-           lessons=?, changes_detail=? WHERE session_id=?""",
+           lessons=?, changes_detail=?, critical_context=? WHERE session_id=?""",
         (status, summary, json.dumps(facts["files"]), facts["versions"],
          len(facts["decisions"]), len(facts["lessons"]),
-         json.dumps(facts["changes_detail"]), session_id))
+         json.dumps(facts["changes_detail"]),
+         json.dumps(facts, ensure_ascii=False), session_id))
     conn.commit()
     return {"session_id": session_id, "summary": summary,
-            "files": facts["files"]}
+            "files": facts["files"], "critical_context": facts}
 
 
 def end(conn: sqlite3.Connection, cfg: dict | None,
@@ -450,11 +456,8 @@ def row_to_dict(row: sqlite3.Row) -> dict:
     machine callers the same shape."""
     d = dict(row)
     for key in ("files_changed", "changes_detail"):
-        try:
-            value = json.loads(d.get(key) or "[]")
-        except (json.JSONDecodeError, TypeError):
-            value = []
-        d[key] = value if isinstance(value, list) else []
+        d[key] = db.json_list(d.get(key))
+    d["critical_context"] = db.json_object(d.get("critical_context"))
     return d
 
 
