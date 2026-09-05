@@ -15,9 +15,14 @@ DEFAULT_TOML = '''[ingest]
 mode = "auto"               # auto | git | snapshot (auto = git if present)
 
 [llm]
+provider = "claude"         # claude | codex | agy | ollama | custom
 command = "claude -p"       # prompt on stdin, markdown on stdout
+model = ""                  # optional provider model (required by ollama)
 model_label = "claude"
 timeout = 300
+retries = 1                 # retry transient exit/timeout/empty-output failures
+input_cost_per_million = 0.0   # optional; enables local cost estimates
+output_cost_per_million = 0.0
 
 [modules]
 # every non-ignored file gets its own page; every folder gets a rollup.
@@ -59,9 +64,14 @@ fail_on_facts = false         # OFF by default: these are shell commands stored 
 DEFAULTS: dict[str, Any] = {
     "ingest": {"mode": "auto"},
     "llm": {
+        "provider": "claude",
         "command": "claude -p",
+        "model": "",
         "model_label": "claude",
         "timeout": 300,
+        "retries": 1,
+        "input_cost_per_million": 0.0,
+        "output_cost_per_million": 0.0,
         # how many pages to synthesize at once. 1 keeps the old strictly
         # sequential behaviour; raise it if your LLM CLI tolerates
         # concurrent invocations (most do — each is its own process).
@@ -120,17 +130,26 @@ def load(repo_root: Path) -> dict[str, Any]:
     # deep-copy so nested dicts/lists are never shared with the module-level
     # DEFAULTS (a mutation of one repo's cfg must not leak into another's)
     if not path.exists():
-        return copy.deepcopy(DEFAULTS)
+        merged = copy.deepcopy(DEFAULTS)
+        merged["_runtime"] = {"root": str(repo_root)}
+        return merged
     try:
         with open(path, "rb") as fh:
             user = tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
         raise SystemExit(f"irag: invalid TOML in {path}: {exc}") from exc
     merged = _deep_merge(copy.deepcopy(DEFAULTS), user)
+    # Configs written before provider adapters existed are deliberately
+    # interpreted as custom commands. Silently treating an old `agy ...` or
+    # wrapper command as Claude would be a backwards-incompatible change.
+    user_llm = user.get("llm") if isinstance(user, dict) else None
+    if isinstance(user_llm, dict) and "provider" not in user_llm:
+        merged["llm"]["provider"] = "custom"
     errors = validation_errors(merged)
     if errors:
         detail = "; ".join(errors)
         raise SystemExit(f"irag: invalid config in {path}: {detail}")
+    merged["_runtime"] = {"root": str(repo_root)}
     return merged
 
 
@@ -186,10 +205,24 @@ def validation_errors(cfg: object) -> list[str]:
         errors.append("[ingest].mode must be one of: auto, git, snapshot")
 
     llm = section("llm")
-    expect(llm, "llm", "command", str, nonempty=True)
+    provider = expect(llm, "llm", "provider", str, nonempty=True)
+    if isinstance(provider, str) and provider.lower() not in {
+            "claude", "codex", "agy", "ollama", "custom"}:
+        errors.append("[llm].provider must be one of: claude, codex, agy, "
+                      "ollama, custom")
+    command = expect(llm, "llm", "command", str)
+    if (isinstance(provider, str) and provider.lower() == "custom"
+            and isinstance(command, str) and not command.strip()):
+        errors.append("[llm].command must not be empty for provider=custom")
+    expect(llm, "llm", "model", str)
     expect(llm, "llm", "model_label", str, nonempty=True)
     expect(llm, "llm", "timeout", int, minimum=1)
+    expect(llm, "llm", "retries", int, minimum=0)
     expect(llm, "llm", "parallel", int, minimum=1)
+    for key in ("input_cost_per_million", "output_cost_per_million"):
+        value = llm.get(key) if llm else None
+        if value is not None and (type(value) not in (int, float) or value < 0):
+            errors.append(f"[llm].{key} must be a non-negative number")
 
     modules = section("modules")
     if modules is not None and "ignore" in modules:
