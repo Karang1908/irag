@@ -10,15 +10,15 @@ This document is about **building irag**. If you want to know how to *use*
 irag inside a project, read `/CLAUDE.md` at the repo root — that is the
 operator manual for agents consuming irag's memory, not developing it.
 
-Accurate as of **v4.46.0**, 2026-09-05. Every fact below was verified by
-running it on this machine on that date. Where something is inferred
+Accurate as of **v4.47.0**, 2026-09-06. Every fact below was verified by
+running it on this machine by that date. Where something is inferred
 rather than observed, it says so.
 
 ---
 
 ## Current working tree — reliability audit (uncommitted)
 
-The broad CLI/backend/dashboard audit completed on 2026-09-05 is present
+The broad CLI/backend/dashboard audit completed on 2026-09-06 is present
 in the working tree but has **not** been committed or pushed. Preserve it.
 It fixes the failure modes reported from real use, rather than changing the
 append-only memory model:
@@ -55,6 +55,8 @@ append-only memory model:
   and exposes the same drift/mode/status facts as the CLI. Context, impact,
   map, and AI retrieval now refresh through the same live path, and dashboard
   context uses the complete CLI briefing including recaps and dirty-tree state.
+  Browser-cancelled polls/navigation are treated as normal disconnects instead
+  of recursively writing to a dead socket and printing backend tracebacks.
 - The frontend distinguishes HTTP application errors from an offline server,
   prevents overlapping poll responses from rewinding the UI, stops idle graph
   animation, safely renders toast text, and has accessible controls. Its
@@ -70,15 +72,45 @@ append-only memory model:
   is handled cleanly, `doctor` checks logical database relations in addition
   to storage integrity, and the site builder refuses to recursively replace
   directories it does not own.
+- `irag mcp` is a dependency-free stdio Model Context Protocol server with 13
+  generic memory, provenance, update, contradiction, and session tools. It
+  speaks JSON-RPC on stdin/stdout and is not coupled to Claude Code; Codex,
+  Claude, Cursor, Windsurf, VS Code, and any other stdio MCP client can use the
+  same server command.
+- Model invocation now goes through explicit Claude, Codex, agy, Ollama, and
+  custom adapters with bounded retries, timeout/error normalization, optional
+  model selection, and local run/cost telemetry. Database evolution is an
+  ordered v1→v6 migration history with an automatic SQLite backup before an
+  upgrade and a hard refusal to open a newer schema with an older binary.
+- Large-repository updates reuse the structural index when topology is stable,
+  reparse only changed source files, bound synthesis inputs around imports and
+  symbol windows, and preserve page/revision/contradiction identity across Git
+  and snapshot renames. Replayed Git rename events are idempotent, and merge
+  commits are diffed explicitly against their first parent instead of skipped.
+- Dashboard updates are durable database jobs. A 202 response returns the job
+  ID, progress streams over SSE, the browser reconnects or polls as needed,
+  and a reload resumes the same job. Startup only abandons stale jobs after it
+  acquires the repository lock, so a second dashboard cannot kill live work.
+- Every contradiction has an **Agent brief** action, plus one master action for
+  the complete open set. Both open escaped, self-contained HTML in a new tab
+  with source facts, current memory, repair instructions, clipboard copy, and
+  download. On mobile these render as action-first evidence cards.
+- File/folder synthesis prompts now explicitly retain public contracts, state
+  and data flow, invariants, security/failure behavior, dependencies, and
+  recent-change causality. Session endings store a separate deterministic
+  `critical_context` JSON ledger, so a weak or truncated model narrative cannot
+  erase decisions, lessons, revisions, commits, or touched files.
 
 Verification on the finished tree:
 
 ```text
-sh tests/test_smoke.sh on Python 3.11, 3.12, 3.13, 3.14 SMOKE TEST PASSED
-Ruff + mypy + compileall + diff --check                  passed (silent)
-site: 10 pages × desktop/mobile Chromium                 no JS errors/overflow
-dashboard: 9 tabs × desktop/mobile Chromium              no JS errors/overflow
-sdist + wheel build; isolated wheel install on 3.11      passed
+focused unittest suite on local Python 3.11 and 3.14      13 tests passed
+sh tests/test_smoke.sh on local Python 3.14               SMOKE TEST PASSED
+Ruff + mypy + compileall + diff --check                   passed (silent)
+site: all 11 pages × desktop/mobile Chromium              no JS errors/overflow
+dashboard Health + report desktop/mobile Chromium         no JS errors/overflow
+live dashboard update: 202 → SSE → reload persistence     passed
+sdist + wheel build; isolated wheel install on 3.11       passed
 ```
 
 The frontend audit used the repository's existing visual system and made
@@ -155,7 +187,7 @@ If it points anywhere else, your edits are not what the `irag` command runs.
 
 **Note the version reported there is stale and that is normal.** pip
 records the version at the last `pip install -e .`; it currently says
-`4.40.1` while the code is `4.46.0`. `irag --version` reads
+`4.40.1` while the code is `4.47.0`. `irag --version` reads
 `irag/__init__.py` and is authoritative. Only a reinstall refreshes pip's
 copy, and a reinstall is unnecessary for ordinary source edits — editable
 installs pick those up immediately.
@@ -263,14 +295,17 @@ git push origin main
 
 `.github/workflows/ci.yml` runs on every push to `main` and every PR:
 
-1. **Static analysis** — `ruff check irag site tests/mock_llm.py` and
+1. **Static analysis** — `ruff check irag site tests` and
    `mypy irag`, both silent except their success summaries.
-2. **Smoke test** — `sh tests/test_smoke.sh`, must print `SMOKE TEST PASSED`.
-3. **Package build** — `python -m build`.
+2. **Focused tests** — the unittest suite on native Ubuntu, macOS, and Windows
+   runners with Python 3.11 and 3.14.
+3. **Smoke test** — `sh tests/test_smoke.sh` on Ubuntu with Python 3.11,
+   3.12, 3.13, and 3.14; each must print `SMOKE TEST PASSED`.
+4. **Package build** — `python -m build` on Python 3.14.
 
-Matrix: Python **3.11, 3.12, 3.13, 3.14**. It has caught real defects that
-passed locally. Run both static analyzers locally before pushing (§3.3), not
-only a syntax compile.
+The matrix has caught real defects that passed locally. Run the focused tests,
+smoke suite, and both static analyzers locally before pushing (§3.3), not only
+a syntax compile.
 
 `.github/workflows/pages.yml` ("Docs") builds and deploys the site. It has
 `workflow_dispatch`, so you can trigger it manually:
@@ -279,13 +314,13 @@ only a syntax compile.
 gh workflow run pages.yml --repo Karang1908/irag --ref main
 ```
 
-### 1.4 The docs site, and the recurring private-repo cycle
+### 1.4 The docs site and repository visibility
 
-**Live URL: https://karang1908.github.io/irag/** — but as of 2026-09-04 it
-is **down (404), because the repo is private again.**
+**Live URL: https://karang1908.github.io/irag/** — verified HTTP 200 on
+2026-09-06. `gh repo view Karang1908/irag` reports the repository is public.
 
-This has now happened three times and will happen again, so understand the
-mechanism rather than re-diagnosing it:
+The repository has moved between public and private before, so keep the failure
+mechanism documented rather than re-diagnosing it:
 
 - On the free plan, GitHub Pages only serves **public** repos.
 - Making the repo private does not merely pause Pages — it **destroys the
@@ -296,11 +331,12 @@ mechanism rather than re-diagnosing it:
 - The Docs workflow keeps *building* successfully throughout; only the
   deploy step fails with `Ensure GitHub Pages has been enabled`.
 
-So a red "Docs" workflow while the repo is private is expected and is not
-a code defect. **Do not go looking for a bug in `site/build.py`.**
+So if a future visibility change makes the Docs deployment red, that can be
+expected infrastructure behavior rather than a code defect. Check visibility
+and the Pages resource before changing `site/build.py`.
 
-Recovery, once the owner has made the repo public again (only they can do
-that — do not change repository visibility yourself):
+Recovery after the owner has made the repo public again (only they can change
+visibility; do not do that on their behalf):
 
 ```bash
 gh api -X POST repos/Karang1908/irag/pages -f build_type=workflow
@@ -317,16 +353,17 @@ agents persistent, verified memory of a codebase. Every file and folder
 gets an LLM-written summary page, versioned append-only on every change,
 mechanically fact-checked against the actual code (wrong claims become
 queryable *contradiction* rows rather than silent lies), and served to
-agents through a CLI, a generated `CLAUDE.md`, a live dashboard, and an
-Obsidian graph. A conversation logger records each coding session as a
-row — what changed, what was decided, an LLM narrative — so a fresh chat
-resumes a project for a few hundred tokens instead of thousands of tokens
-of re-exploration. Everything lives in one SQLite file
+agents through a universal MCP server, CLI, generated `CLAUDE.md`/`AGENTS.md`,
+live dashboard, and Obsidian graph. A conversation logger records each coding
+session as a row — what changed, what was decided, a readable narrative, and a
+lossless critical-context ledger — so a fresh chat resumes a project for a few
+hundred tokens instead of thousands of tokens of re-exploration. Everything
+lives in one SQLite file
 (`.irag/memory.db`) that any agent on any machine can mount.
 
-**v4.46.0. 9,056 lines of Python. Zero runtime dependencies** — stdlib
+**v4.47.0. 10,414 lines of Python. Zero runtime dependencies** — stdlib
 only (`sqlite3`, `http.server`, `ast`, `tomllib`, `subprocess`). Package
-`irag`, console command `irag`, config dir `.irag/`, **45 commands**.
+`irag`, console command `irag`, config dir `.irag/`, **48 commands**.
 
 ### 2.1 The one sentence that explains every design decision
 
@@ -344,7 +381,7 @@ prose.** `CLAUDE.md`, the dashboard and the Obsidian vault are read-only
 views generated from the database. Nothing is ever the source of truth
 except `.irag/memory.db`. Never let a generated artifact become
 authoritative, and never let the LLM write into a table that is not
-`revisions`.
+`revisions` or the explicitly non-authoritative session narrative.
 
 The third, learned the hard way this year: **a confident wrong answer is
 worse than no answer.** Three separate bugs were all the same shape —
@@ -357,26 +394,29 @@ success. When a code path cannot know, it must say so and exit non-zero.
 
 | Module | LOC | Owns |
 |---|---:|---|
-| `cli.py` | 1759 | every command, argument parsing, repository coordination |
-| `synthesis.py` | 1001 | prompts, LLM invocation, page writing, injection scrubbing |
-| `structure.py` | 751 | symbol + dependency extraction for 10 languages |
-| `ingest.py` | 783 | change detection, ignoring, secrets, event queue |
-| `dashboard.py` | 853 | stdlib HTTP server, JSON API, CSRF guard |
-| `linter.py` | 653 | fact-checking pages against code; contradictions |
-| `sessions.py` | 482 | the conversation diary and attribution |
-| `db.py` | 447 | schema, triggers, transactional additive migrations |
-| `obsidian.py` | 357 | vault projection |
+| `cli.py` | 1833 | every command, argument parsing, repository coordination |
+| `synthesis.py` | 1000 | critical-context prompts, bounded page writing, injection scrubbing |
+| `dashboard.py` | 981 | stdlib HTTP server, durable jobs/SSE, JSON API, CSRF guard |
+| `ingest.py` | 892 | change detection, merge/rename continuity, ignoring, secrets, event queue |
+| `structure.py` | 812 | incremental symbol + dependency extraction for 10 languages |
+| `linter.py` | 658 | race-safe fact-checking pages against code; contradictions |
+| `db.py` | 645 | v1→v6 migrations/backups, schema, triggers, safe JSON helpers |
+| `sessions.py` | 485 | attributed diary, narrative, deterministic critical-context ledger |
 | `retrieval.py` | 360 | ranking, tiering, budget, FTS search |
-| `doctor.py` | 307 | self-diagnosis |
-| `provenance.py` | 246 | `why` / `asof` / `diff` |
+| `obsidian.py` | 353 | vault projection |
+| `mcp.py` | 319 | stdio JSON-RPC MCP protocol and 13 universal tool contracts |
+| `doctor.py` | 301 | self-diagnosis |
+| `config.py` | 272 | defaults, TOML merge, provider and semantic validation |
+| `provenance.py` | 243 | `why` / `asof` / `diff` |
+| `providers.py` | 250 | Claude/Codex/agy/Ollama/custom adapters, retries, telemetry |
 | `facts.py` | 204 | executable memory |
-| `config.py` | 239 | defaults, TOML merge, semantic validation |
+| `reports.py` | 183 | safe self-contained contradiction repair briefs |
 | `check.py` | 133 | the CI gate |
-| `hooks.py` | 132 | git + Claude Code hook wiring |
-| `stats.py` `tokens.py` `export.py` | 271 | shared metrics, token estimation, guide install |
+| `hooks.py` | 132 | git + optional Claude Code hook wiring |
+| `stats.py` `tokens.py` `export.py` | 280 | shared metrics, token estimation, guide install |
 | `locking.py` | 72 | cross-platform repository operation lock |
 
-### 2.3 Subsystems added in the 4.41–4.46 line
+### 2.3 Subsystems added in the 4.41–4.47 line
 
 These are recent and less battle-tested than the core:
 
@@ -395,6 +435,14 @@ These are recent and less battle-tested than the core:
   candidate lesson when a Bash command fails, via `PostToolUse`.
 - **Withdrawal** (`irag forget`) — drops a page from live serving while
   keeping its history.
+- **Universal MCP** (`mcp.py`, `irag mcp`) — thirteen stdio tools expose the
+  same deterministic memory operations to any MCP-capable coding agent.
+- **Provider adapters** (`providers.py`) — one normalized invocation boundary
+  for Claude, Codex, agy, Ollama, and user-defined commands.
+- **Contradiction packets** (`reports.py`) — one-click per-item or master HTML
+  handoffs containing verified source structure and explicit repair gates.
+- **Durable update jobs** (`dashboard.py`) — database-backed progress with SSE,
+  reconnect/poll fallback, restart-safe history, and repository-lock ownership.
 
 ### 2.4 Hooks that `irag claude-setup` installs
 
@@ -451,20 +499,25 @@ will appear to fail when the product is fine. One session nearly
 "fixed" a non-bug this way. Assert on database state and exit codes, not
 on model prose.
 
-### 3.3 The three checks before any commit
+### 3.3 The four checks before any commit
 
 ```bash
 cd /Users/karangarg/Desktop/iRag/irag-4.1.1/irag
 python3 -m compileall -q irag site
-ruff check irag site tests/mock_llm.py     # rule set pinned in pyproject
+ruff check irag site tests                 # rule set pinned in pyproject
 mypy irag
-sh tests/test_smoke.sh                  # must print SMOKE TEST PASSED
+python3 -m unittest discover -s tests -p 'test_*.py' -v
+sh tests/test_smoke.sh                     # must print SMOKE TEST PASSED
 ```
 
-The suite is `tests/test_smoke.sh`: ~2,405 lines, **40 guard blocks**, the
-only persisted regression test. It runs entirely on the mock — costs
-nothing, takes a couple of minutes. It uses `set -e`, which has two
-consequences worth knowing:
+The focused unittest suite owns protocol framing, provider contracts,
+migrations/backups/downgrade refusal, contradiction race safety, rename
+continuity, durable jobs, safe reports, and session critical-context
+retention. CI runs it on native Ubuntu, macOS, and Windows runners.
+
+The integration suite is `tests/test_smoke.sh`: ~2,422 lines and **40 guard
+blocks**. It runs entirely on the mock — costs nothing, takes a couple of
+minutes. It uses `set -e`, which has two consequences worth knowing:
 
 - A block that fails **silently aborts the whole run** with no `FAIL:`
   line. If the suite exits non-zero but printed no failure, that is why.
@@ -540,7 +593,7 @@ They drift silently — a whole "Visualize" section once existed in one copy
 and not the other. After any doc change:
 
 ```bash
-cp docs/{ARCHITECTURE,CLI_REFERENCE,COMPARISON,SETUP,STORY}.md irag/assets/docs/
+cp docs/{ARCHITECTURE,CLI_REFERENCE,COMPARISON,MCP,SETUP,STORY}.md irag/assets/docs/
 python3 site/build.py
 ```
 
@@ -724,20 +777,33 @@ conscious decision rather than a surprise.
 - The full smoke suite: 40 end-to-end guard blocks, including explicit
   concurrency, migration interruption, malformed input, and stale-live-view
   regressions.
+- Thirteen focused unittests covering MCP JSON-RPC framing/tool calls, provider
+  argument construction/retries, ordered storage migration and backup,
+  contradiction uniqueness, merge commits, snapshot and replayed-Git rename
+  continuity, durable job persistence, escaped HTML handoffs, and lossless
+  session context.
 - Zero-token read path (sentinel test, §6).
 - Parallel synthesis produces byte-identical results to sequential — same
   page count, revision count, no duplicate versions — and a failing model
   marks every event failed and self-heals on the next run.
 - Concurrency: `update` under ten simultaneous dashboard requests, zero
   lock errors, zero tracebacks.
-- Schema migration from a database with every added column and table
-  stripped out, including a pre-upgrade human resolution correctly
-  backfilled.
-- All 45 commands respond; the dashboard routes used by every one of its nine
+- Schema migration through ordered v1→v6 history, including an automatic
+  pre-upgrade backup, a pre-upgrade human resolution correctly backfilled,
+  duplicate contradiction cleanup, and refusal of an unsafe downgrade.
+- All 48 commands respond; the dashboard routes used by every one of its nine
   views and interactive controls are exercised.
-- The rendered static site (all ten pages) and all nine dashboard views were
-  checked at 1440 px and 390 px in Chromium, including keyboard controls and
-  reduced motion, with no console errors or body overflow.
+- The rendered static site builds all eleven pages, and every route was checked
+  at desktop/mobile widths in Chromium. All nine dashboard views had prior
+  desktop/mobile coverage, and the changed Health surface plus single/master
+  reports were rechecked at 1440 px and 390 px with no console errors or body
+  overflow. Mobile contradiction actions are directly visible.
+- A live dashboard update returned 202, streamed to completion over SSE, and
+  remained queryable after a full page reload. Report clipboard copy worked in
+  Chromium, and individual/master scope stayed distinct with one or many rows.
+- MCP initialize, tools/list, tools/call, notifications, batches, malformed
+  requests, and session attribution run against the real stdio server. The
+  built wheel includes the MCP/provider/report modules and documentation.
 
 **Not verified, and you should not claim otherwise:**
 
@@ -748,15 +814,20 @@ conscious decision rather than a surprise.
 - **`[llm].parallel > 1` against a real LLM CLI.** Correct against the
   mock; left defaulting to 1 because whether a given CLI tolerates
   concurrent invocations is unknown.
+- **Live calls through every provider adapter.** Local CLI help was inspected
+  and argument construction is covered with subprocess fakes, but this audit
+  did not spend tokens against Claude, Codex, agy, or Ollama.
+- **The new native OS CI matrix.** Its workflow is configured for Ubuntu,
+  macOS, and Windows, but this working tree is uncommitted, so those hosted
+  jobs have not run yet. Local macOS checks passed on Python 3.11 and 3.14.
 
 ---
 
 ## 8. Deferred — do not build unless asked
 
-- **MCP server.** The shape is ready: `stats.py`, `retrieval.serve()`,
-  `sessions.recap_block()` are pure functions with no CLI coupling.
-  Obvious tools: `get_context`, `search`, `ask`, `why`, `learn`. Gate
-  behind an `irag[mcp]` extra.
+- **Authenticated Streamable HTTP MCP transport.** The shipped stdio server is
+  the portable local integration. Remote/multi-user transport needs an auth,
+  origin, session, and deployment threat model before it is exposed.
 - **Compaction** — see gotcha #5. Opt-in only, if ever.
 - **A real-LLM evaluation of summary quality** — arguably higher priority
   than any new feature.
@@ -771,16 +842,13 @@ conscious decision rather than a surprise.
 
 ## 9. Open items handed to you
 
-1. **The docs site is down** because the repo is private (§1.4). Recovery
-   is two commands once the owner makes it public. Only they can flip
-   visibility.
-2. **One candidate lesson** is parked in the owner's
+1. **One candidate lesson** is parked in the owner's
    `ultimatenetworkscan` project: `nmap -O 127.0.0.1 exited 1 —
    QUITTING!` on `scanner.py`. That is a genuine finding, not debris —
    promote it with `irag learn` or discard it with
    `irag candidates --discard 37`. The owner's call; leave it alone
    otherwise.
-3. **Java bodiless-declaration extraction** covers interface, `abstract`
+2. **Java bodiless-declaration extraction** covers interface, `abstract`
    and `native` methods, but was written against synthetic fixtures. A
    real Java project would be a better test.
 
