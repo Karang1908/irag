@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections import deque
 
 from . import db
 
@@ -126,6 +127,10 @@ def _window_facts(conn, row) -> dict:
         key = row["session_key"]
     except (IndexError, KeyError):
         key = None
+    ev_where: str
+    rv_where: str
+    ev_args: tuple[object, ...]
+    rv_args: tuple[object, ...]
     if key:
         # strictly this session's own rows. The earlier "OR session_key IS
         # NULL" was meant to credit a manual `irag update`, but any agent that
@@ -175,14 +180,21 @@ def _window_facts(conn, row) -> dict:
                 FROM revisions r JOIN pages p ON p.page_id = r.page_id
                 WHERE {rv_where} ORDER BY r.revision_id""",
             rv_args).fetchall()]
-    decisions = [json.loads(r["payload"]).get("text", "") for r in
-                 conn.execute(f"SELECT payload FROM events WHERE "
-                              f"{ev_where} AND event_type='decision'",
-                              ev_args).fetchall()]
-    lessons = [json.loads(r["payload"]).get("text", "") for r in
-               conn.execute(f"SELECT payload FROM events WHERE "
-                            f"{ev_where} AND event_type='session'",
-                            ev_args).fetchall()]
+    def event_text(payload: object) -> str:
+        try:
+            decoded = json.loads(payload) if isinstance(payload, str) else payload
+        except (json.JSONDecodeError, TypeError):
+            return ""
+        return str(decoded.get("text", "")) if isinstance(decoded, dict) else ""
+
+    decisions = [text for r in conn.execute(
+        f"SELECT payload FROM events WHERE {ev_where} "
+        "AND event_type='decision'", ev_args).fetchall()
+        if (text := event_text(r["payload"]))]
+    lessons = [text for r in conn.execute(
+        f"SELECT payload FROM events WHERE {ev_where} "
+        "AND event_type='session'", ev_args).fetchall()
+        if (text := event_text(r["payload"]))]
     messages = []
     for r in conn.execute(
             f"""SELECT payload FROM events WHERE {ev_where}
@@ -377,7 +389,12 @@ def ingest_transcript(conn: sqlite3.Connection, session_id: int,
     path = Path(transcript_path)
     if not path.is_file():
         return 0
-    collected: list[tuple[str, str, str]] = []   # (role, content, ts)
+    if max_messages < 1 or max_message_chars < 1:
+        return 0
+    # Keep only the tail while reading.  Building an unbounded list and slicing
+    # it afterward made a long agent transcript consume memory proportional to
+    # the entire conversation despite the configured storage limit.
+    collected: deque[tuple[str, str, str | None]] = deque(maxlen=max_messages)
     with path.open(encoding="utf-8", errors="replace") as fh:
         for line in fh:
             line = line.strip()
@@ -397,13 +414,16 @@ def ingest_transcript(conn: sqlite3.Connection, session_id: int,
             text = _message_text(msg.get("content"))
             if not text:
                 continue
-            role = msg.get("role") or obj.get("type")
+            role = msg.get("role")
+            if role not in ("user", "assistant"):
+                role = obj.get("type")
+            timestamp = obj.get("timestamp")
+            if timestamp is not None and not isinstance(timestamp, str):
+                timestamp = str(timestamp)
             collected.append((role, text[:max_message_chars],
-                              obj.get("timestamp")))
+                              timestamp))
     if not collected:
         return 0
-    if len(collected) > max_messages:
-        collected = collected[-max_messages:]   # keep the most recent
     conn.execute("DELETE FROM session_messages WHERE session_id=?",
                  (session_id,))
     conn.executemany(
@@ -429,8 +449,12 @@ def row_to_dict(row: sqlite3.Row) -> dict:
     escaped strings. Shared by the CLI and the dashboard so both give
     machine callers the same shape."""
     d = dict(row)
-    d["files_changed"] = json.loads(d.get("files_changed") or "[]")
-    d["changes_detail"] = json.loads(d.get("changes_detail") or "[]")
+    for key in ("files_changed", "changes_detail"):
+        try:
+            value = json.loads(d.get(key) or "[]")
+        except (json.JSONDecodeError, TypeError):
+            value = []
+        d[key] = value if isinstance(value, list) else []
     return d
 
 
