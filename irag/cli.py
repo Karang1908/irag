@@ -160,7 +160,7 @@ def cmd_init(args) -> int:
     print(f"ingested   : {n} event(s)")
     print(f"scanned    : {stats['symbols']} symbols, {stats['deps']} "
           "dependency edge(s)")
-    print("next steps : review .irag/config.toml (llm.command), then "
+    print("next steps : review .irag/config.toml (llm.provider), then "
           "'irag update' (first full synthesis)")
     return 0
 
@@ -252,6 +252,10 @@ def cmd_status(args) -> int:
     print(f"open contradictions      : {s['open_contradictions']}")
     print(f"pages due for synthesis  : {s['pages_due']}")
     print(f"est. LLM tokens spent    : {s['est_tokens_spent']}")
+    print(f"provider calls (in/out)  : {s['llm_calls']} "
+          f"({s['llm_input_tokens']} / {s['llm_output_tokens']} tokens)")
+    if s["estimated_cost_usd"] is not None:
+        print(f"configured cost estimate : ${s['estimated_cost_usd']:.6f}")
     # In snapshot mode this is hard-coded 0 (git status would report the
     # enclosing repo's noise), so printing "0 uncommitted changes" read as
     # "nothing has changed" when it meant "not measured". drifted_files is
@@ -980,7 +984,7 @@ def cmd_candidates(args) -> int:
         return 0
     for r in rows:
         try:
-            text = json.loads(r["payload"]).get("text", "")
+            text = db.json_object(r["payload"]).get("text", "")
         except (ValueError, TypeError):
             continue
         scope = f" [{r['subject_id']}]" if r["subject_id"] else ""
@@ -1123,7 +1127,7 @@ def cmd_brief(args) -> int:
             "ORDER BY event_id DESC LIMIT 3", (ev_type, subject)).fetchall()
         for r in rows:
             try:
-                text = json.loads(r["payload"]).get("text", "").strip()
+                text = str(db.json_object(r["payload"]).get("text", "")).strip()
             except (ValueError, TypeError):
                 continue
             if text:
@@ -1371,7 +1375,7 @@ def cmd_sessions(args) -> int:
         return 0
     for r in rows:
         when = (r["started_at"] or "")[:16]
-        files = len(json.loads(r["files_changed"] or "[]"))
+        files = len(db.json_list(r["files_changed"]))
         key = r["session_key"] if "session_key" in r.keys() else None
         tail = f"  id={key}" if (key and r["status"] == "open") else ""
         print(f"[{r['session_id']}] {when}  {r['status']:<11} "
@@ -1395,6 +1399,60 @@ def cmd_dashboard(args) -> int:
     from . import dashboard
     _conn, _cfg, root = _open()
     dashboard.serve(root, port=args.port, open_browser=not args.no_open)
+    return 0
+
+
+def cmd_mcp(args) -> int:
+    """Serve the same irag tools to any MCP-capable coding agent."""
+    from . import mcp
+    root = Path(args.root).expanduser().resolve() if args.root else ingest.repo_root()
+    mcp.serve_stdio(root)
+    return 0
+
+
+def cmd_provider(args) -> int:
+    """Describe or probe the normalized model-provider adapter."""
+    from . import providers
+    _conn, cfg, _root = _open()
+    ready, detail = providers.availability(cfg)
+    llm = cfg["llm"]
+    value = {"provider": llm.get("provider", "custom"),
+             "model": providers.configured_model(cfg),
+             "ready": ready, "detail": detail,
+             "retries": llm.get("retries", 0),
+             "timeout": llm.get("timeout")}
+    if args.json:
+        print(json.dumps(value, indent=2))
+    else:
+        print(f"provider : {value['provider']}")
+        print(f"model    : {value['model'] or 'provider default'}")
+        print(f"process  : {'ready' if ready else 'not ready'} — {detail}")
+        print(f"policy   : {value['timeout']}s timeout, "
+              f"{value['retries']} retr{'y' if value['retries'] == 1 else 'ies'}")
+    return 0 if ready else 1
+
+
+def cmd_contradiction_report(args) -> int:
+    """Write a self-contained coding-agent repair brief as HTML."""
+    from . import reports
+    conn, _, root = _open()
+    ids = [args.contradiction_id] if args.contradiction_id else None
+    rows = reports.contradiction_rows(conn, ids)
+    if args.contradiction_id and not rows:
+        raise SystemExit(f"irag: no open contradiction with id "
+                         f"{args.contradiction_id}")
+    if args.output:
+        out = Path(args.output).expanduser().resolve()
+    else:
+        import datetime
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        scope = (f"contradiction-{args.contradiction_id}"
+                 if args.contradiction_id else "all-contradictions")
+        out = root / ".irag" / "reports" / f"{scope}-{stamp}.html"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    from .export import _atomic_write
+    _atomic_write(out, reports.contradiction_html(conn, root, ids))
+    print(f"contradiction brief written: {out}")
     return 0
 
 
@@ -1644,6 +1702,16 @@ def build_parser() -> argparse.ArgumentParser:
                     help="don't open the browser")
     sp.set_defaults(func=cmd_dashboard)
 
+    sp = sub.add_parser("mcp", help="serve irag to any MCP coding client "
+                                    "over standards-compliant stdio")
+    sp.add_argument("--root", help="project root (default: current irag repo)")
+    sp.set_defaults(func=cmd_mcp)
+
+    sp = sub.add_parser("provider", help="show the configured LLM provider "
+                                         "and verify its executable")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_provider)
+
     sub.add_parser("claude-setup",
                    help="wire irag into Claude Code (SessionStart hook + "
                         "agent instructions)").set_defaults(
@@ -1663,6 +1731,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--resolved", action="store_true")
     sp.add_argument("--json", action="store_true")
     sp.set_defaults(func=cmd_contradictions)
+
+    sp = sub.add_parser("contradiction-report", help="write a self-contained "
+                        "HTML repair brief for one or every open contradiction")
+    sp.add_argument("contradiction_id", nargs="?", type=int)
+    sp.add_argument("--output", "-o")
+    sp.set_defaults(func=cmd_contradiction_report)
 
     sp = sub.add_parser("resolve", help="dismiss a contradiction as a false "
                                         "positive (does NOT edit the page — "
