@@ -71,10 +71,7 @@ def why_data(conn: sqlite3.Connection, claim: str) -> dict | None:
                       (ev_id,)).fetchone()
     if not ev:
         return out
-    try:
-        payload = json.loads(ev["payload"] or "{}")
-    except json.JSONDecodeError:
-        payload = {}
+    payload = db.json_object(ev["payload"])
     out["event"] = {
         "event_id": ev["event_id"], "event_type": ev["event_type"],
         "source_ref": ev["source_ref"], "message": payload.get("message"),

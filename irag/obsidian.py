@@ -18,7 +18,6 @@ Graph anatomy:
 """
 from __future__ import annotations
 
-import json
 import hashlib
 import re
 import shutil
@@ -249,12 +248,9 @@ def export_vault(conn: sqlite3.Connection, cfg: dict, repo: Path,
                 if rev["change_summary"]:
                     parts += ["", f"> {rev['change_summary']}"]
                 if ev and ev["payload"]:
-                    try:
-                        payload = json.loads(ev["payload"])
-                        if payload.get("message"):
-                            parts.append(f"> commit: {payload['message']}")
-                    except json.JSONDecodeError:
-                        pass
+                    payload = db.json_object(ev["payload"])
+                    if payload.get("message"):
+                        parts.append(f"> commit: {payload['message']}")
                 parts += ["", "---", "", rev["body_markdown"]]
                 name = f"v{rev['version_number']} {slug}.md"
                 (vault / "_versions" / name).write_text(

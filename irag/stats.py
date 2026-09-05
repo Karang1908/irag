@@ -69,6 +69,15 @@ def status_dict(conn: sqlite3.Connection, cfg: dict, root: Path,
         "dirty_files": dirty_files,
         "db_bytes": (root / ".irag" / "memory.db").stat().st_size,
     }
+    usage = conn.execute(
+        "SELECT COUNT(*) calls, COALESCE(SUM(input_tokens),0) input_tokens, "
+        "COALESCE(SUM(output_tokens),0) output_tokens, "
+        "SUM(estimated_cost_usd) estimated_cost_usd FROM llm_runs "
+        "WHERE status='completed'").fetchone()
+    result["llm_calls"] = usage["calls"]
+    result["llm_input_tokens"] = usage["input_tokens"]
+    result["llm_output_tokens"] = usage["output_tokens"]
+    result["estimated_cost_usd"] = usage["estimated_cost_usd"]
     result["drifted_files"] = ingest.drifted_files(conn, cfg, root)
     result["ingest_mode"] = ingest.active_mode(cfg, root)
     return result

@@ -332,17 +332,22 @@ def _dismissed_claim(conn, page_id: int, claim: str, ctype: str) -> bool:
 def _insert(conn, page_id: int, revision_id: int, claim: str, truth: str,
             ctype: str, severity: str, check: str,
             detector: str = "static") -> bool:
+    # Reserve the write lock before the read-then-insert decision. Without
+    # this, a dashboard dismissal could commit between these two reads and
+    # the INSERT, resurrecting the exact claim the user just dismissed.
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
     if _existing_open_claim(conn, page_id, claim):
         return False
     if _dismissed_claim(conn, page_id, claim, ctype):
         return False
-    conn.execute(
-        "INSERT INTO contradictions(page_id, revision_id, claim, truth, ctype, "
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO contradictions(page_id, revision_id, claim, truth, ctype, "
         "severity, detected_by) VALUES(?,?,?,?,?,?,?)",
         (page_id, revision_id, claim, truth, ctype, severity,
          f"{detector}:{check}"),
     )
-    return True
+    return cur.rowcount > 0
 
 
 def lint(conn: sqlite3.Connection, cfg: dict, repo: Path,
