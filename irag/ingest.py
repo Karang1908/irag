@@ -670,7 +670,8 @@ def drifted_files(conn, cfg: dict, repo: Path, limit: int = 50) -> list[str]:
                      "IS NOT NULL AND COALESCE(deleted_at,'')=''")}
     if not pages:
         return []
-    out, count = [], 0
+    out: list[str] = []
+    count = 0
     for f in sorted(repo.rglob("*")):
         if count >= SNAP_MAX_FILES or len(out) >= limit:
             break
