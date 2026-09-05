@@ -130,7 +130,7 @@ python3 -m irag status --json | python3 -c "import json,sys; assert json.load(sy
 python3 -m irag unpin src/auth/login.py
 
 python3 - << 'DASHEOF'
-import threading, time, json, urllib.request, urllib.error, sys, pathlib
+import json, pathlib, subprocess, sys, threading, time, urllib.error, urllib.request
 sys.path.insert(0, "")
 from irag import dashboard
 threading.Thread(target=dashboard.serve, args=(pathlib.Path.cwd(),),
@@ -178,14 +178,25 @@ def expect_http(path, code, data=None):
 expect_http("/api/impact?subject=src/does-not-exist.py", 404)
 expect_http("/api/asof?date=yesterday", 400)
 expect_http("/api/learn", 400, b"{")
+expect_http("/api/learn", 400, b"\xff")
+expect_http("/api/chat", 413, json.dumps(
+    {"message": "x" * 20001}).encode())
+expect_http("/api/pin", 400, json.dumps(
+    {"subject": "src/auth/login.py", "pinned": "false"}).encode())
+with urllib.request.urlopen("http://127.0.0.1:7911/api/sessions?limit=0") as r:
+    assert len(json.load(r)) == 1, "session limit must be clamped to a safe range"
 
 # The web button and CLI/Stop hook share the same repo lock.
 from irag.locking import UpdateLock
 lock = UpdateLock(pathlib.Path.cwd()); assert lock.acquire()
 try:
     expect_http("/api/update", 409, b"{}")
+    expect_http("/api/pin", 409, json.dumps(
+        {"subject": "src/auth/login.py", "pinned": True}).encode())
+    expect_http("/api/rollback", 409, json.dumps(
+        {"subject": "src/auth/login.py", "version": 1}).encode())
     # The live map is also a writer (sync + scan). While the CLI lock is
-    # held it must serve the last complete map, not ingest concurrently.
+    # held it must serve one coherent existing map, not ingest concurrently.
     probe = pathlib.Path("dashboard-lock-probe.py")
     probe.write_text("def probe(): pass\n")
     with urllib.request.urlopen("http://127.0.0.1:7911/api/map?live=1") as r:
@@ -193,8 +204,35 @@ try:
     assert probe.as_posix() not in {f["subject_id"] for f in mapped["files"]}, \
         "live map ignored the repository update lock"
     probe.unlink()
+    # CLI live readers and direct writers use the same lock. A busy reader
+    # must fail instead of describing a partially completed synthesis as a
+    # trustworthy fallback, and Ask must fail before invoking the model.
+    for argv in (("context", "--json"), ("ask", "lock probe"), ("sync",)):
+        child = subprocess.run(
+            [sys.executable, "-m", "irag", *argv], text=True,
+            capture_output=True, cwd=pathlib.Path.cwd())
+        assert child.returncode != 0, (argv, child.stdout, child.stderr)
+        assert "cannot" in child.stderr and "running" in child.stderr, \
+            (argv, child.stdout, child.stderr)
 finally:
     lock.release()
+
+# Impact and Context must perform the same live sync as their CLI twins.
+# Previously only the Map tab refreshed tree state, so calling either endpoint
+# first returned stale data until an unrelated map poll happened.
+live = pathlib.Path("dashboard-live.py")
+live.write_text("def just_added(): return 1\n")
+with urllib.request.urlopen(
+        "http://127.0.0.1:7911/api/impact?subject=dashboard-live.py") as r:
+    assert isinstance(json.load(r), list)
+with urllib.request.urlopen("http://127.0.0.1:7911/api/context?budget=3000") as r:
+    preview = json.load(r)
+assert "Previous sessions" in preview["markdown"], \
+    "dashboard context omitted the CLI session recap"
+live.unlink()
+with urllib.request.urlopen("http://127.0.0.1:7911/api/context?budget=3000"):
+    pass
+expect_http("/api/page?subject=dashboard-live.py", 404)
 
 # Config edits are noticed by a running dashboard. Invalid config is visible
 # in status and blocks a model-spending action until the file is repaired.
@@ -204,11 +242,18 @@ try:
     with urllib.request.urlopen("http://127.0.0.1:7911/api/status") as r:
         assert json.load(r)["config_error"], "bad config was silently ignored"
     expect_http("/api/update", 400, b"{}")
+    semantic = original.replace("timeout = 300", "timeout = -1")
+    assert semantic != original
+    cfg_path.write_text(semantic)
+    with urllib.request.urlopen("http://127.0.0.1:7911/api/status") as r:
+        error = json.load(r)["config_error"]
+        assert error and "timeout" in error, error
+    expect_http("/api/update", 400, b"{}")
 finally:
     cfg_path.write_text(original)
 with urllib.request.urlopen("http://127.0.0.1:7911/api/status") as r:
     assert json.load(r)["config_error"] is None, "fixed config was not reloaded"
-print("dashboard smoke ok (HTTP errors, locking, config reload, forced SQL)")
+print("dashboard smoke ok (live parity, HTTP errors, locks, config reload)")
 DASHEOF
 
 python3 -m irag obsidian
@@ -478,6 +523,204 @@ assert warn, "flagged pages produced no warning at all"
 assert len(warn) <= 13, f"warning section unbounded: {len(warn)} lines"
 PYEOF
 echo "contradictions demote, not erase, ok"
+
+# --- config semantics, atomic upgrades, and hidden open paths ------------
+python3 - << 'PYEOF' || { echo "FAIL: config/migration/retrieval hardening"; exit 1; }
+import pathlib, sqlite3, stat, subprocess, sys, tempfile, threading, time
+from irag import (config, db, doctor, export as export_mod, retrieval,
+                  sessions, synthesis)
+
+# An interrupted first run can leave only `.irag/`, or a database without its
+# config/guides. `init` must reconcile the idempotent pieces rather than using
+# directory existence as a false completion marker.
+recover = pathlib.Path(tempfile.mkdtemp()); (recover / ".irag").mkdir()
+run = subprocess.run([sys.executable, "-m", "irag", "init"], cwd=recover,
+                     text=True, capture_output=True)
+assert run.returncode == 0, (run.stdout, run.stderr)
+for rel in (".irag/memory.db", ".irag/config.toml", "CLAUDE.md", "AGENTS.md"):
+    assert (recover / rel).is_file(), rel
+(recover / ".irag/config.toml").unlink(); (recover / "AGENTS.md").unlink()
+run = subprocess.run([sys.executable, "-m", "irag", "init"], cwd=recover,
+                     text=True, capture_output=True)
+assert run.returncode == 0 and "verified:" in run.stdout, (run.stdout, run.stderr)
+assert (recover / ".irag/config.toml").is_file()
+assert (recover / "AGENTS.md").is_file()
+
+# Bad shell quoting is a configuration error, not an internal traceback, and
+# non-UTF-8 bytes from a CLI provider cannot prevent a page from being saved.
+bad_command = {"llm": {"command": '"unterminated', "timeout": 2}}
+try:
+    synthesis.run_llm(bad_command, "prompt")
+except SystemExit as exc:
+    assert "quoting" in str(exc), exc
+else:
+    raise AssertionError("malformed LLM command unexpectedly ran")
+provider = pathlib.Path(tempfile.mkdtemp()) / "bad_bytes.py"
+provider.write_text("import os\nos.write(1, b'\\xffvalid')\n")
+byte_command = {
+    "llm": {"command": f"{sys.executable} {provider}", "timeout": 2}}
+answer = synthesis.run_llm(byte_command, "prompt")
+assert answer == "\ufffdvalid", repr(answer)
+
+# Valid TOML with an invalid value must be rejected at load time.  Before
+# semantic validation these values reached different subsystems and crashed
+# later (or made ingest disagree with itself about which mode was active).
+for body, needle in (
+    ('[ingest]\nmode = "surprise"\n', "mode"),
+    ('[llm]\ntimeout = true\n', "timeout"),
+    ('modules = "not a table"\n', "modules"),
+    ('[sessions]\nmax_messages = 0\n', "max_messages"),
+):
+    root = pathlib.Path(tempfile.mkdtemp()); (root / ".irag").mkdir()
+    (root / ".irag/config.toml").write_text(body)
+    try:
+        config.load(root)
+    except SystemExit as exc:
+        assert needle in str(exc), (body, exc)
+    else:
+        raise AssertionError(f"invalid config loaded: {body!r}")
+
+# A failed additive migration must roll every column back, then concurrent
+# openers must converge on one fully upgraded schema without ALTER races.
+root = pathlib.Path(tempfile.mkdtemp()); dbp = root / "legacy.db"
+legacy = db.connect(dbp); legacy.executescript(db.SCHEMA); legacy.close()
+original = db._add_column_if_missing
+calls = 0
+def interrupted(conn, table, column, coltype):
+    global calls
+    existed = column in {
+        row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    original(conn, table, column, coltype)
+    if not existed:
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("simulated interruption")
+db._add_column_if_missing = interrupted
+try:
+    try:
+        db.ensure_db(dbp)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("simulated migration interruption did not escape")
+finally:
+    db._add_column_if_missing = original
+probe = db.connect(dbp)
+session_cols = {r["name"] for r in probe.execute("PRAGMA table_info(sessions)")}
+event_cols = {r["name"] for r in probe.execute("PRAGMA table_info(events)")}
+probe.close()
+assert "session_key" not in session_cols and "session_key" not in event_cols, \
+    (session_cols, event_cols)
+
+errors = []
+def opener():
+    try:
+        conn = db.ensure_db(dbp); conn.close()
+    except BaseException as exc:
+        errors.append(exc)
+threads = [threading.Thread(target=opener) for _ in range(8)]
+for thread in threads: thread.start()
+for thread in threads: thread.join()
+assert not errors, errors
+probe = db.connect(dbp)
+assert {"changes_detail", "session_key"} <= {
+    r["name"] for r in probe.execute("PRAGMA table_info(sessions)")}
+assert {"content_fingerprint", "deleted_at"} <= {
+    r["name"] for r in probe.execute("PRAGMA table_info(pages)")}
+assert db._stored_schema_version(probe) == db.SCHEMA_VERSION
+# Once upgraded, opening a connection is read-only with respect to migrations:
+# it must not wait behind an unrelated active SQLite writer.
+probe.execute("BEGIN IMMEDIATE")
+started = time.monotonic(); ready = db.ensure_db(dbp)
+assert time.monotonic() - started < 1
+ready.close(); probe.rollback()
+probe.close()
+
+# SQLite's storage check does not detect broken logical relations. Doctor
+# must make all three visible instead of reporting a healthy database.
+audit_db = pathlib.Path(tempfile.mkdtemp()) / "memory.db"
+audit = db.ensure_db(audit_db)
+audit.execute("DROP INDEX idx_revisions_page")
+audit.execute("CREATE INDEX idx_revisions_page "
+              "ON revisions(page_id, version_number)")
+page_id = audit.execute(
+    "INSERT INTO pages(page_type,title,subject_type,subject_id) "
+    "VALUES('file','broken','module','broken.py')").lastrowid
+for body in ("first", "duplicate"):
+    audit.execute(
+        "INSERT INTO revisions(page_id,version_number,body_markdown) "
+        "VALUES(?,1,?)", (page_id, body))
+audit.execute("UPDATE pages SET current_revision_id=999999 WHERE page_id=?",
+              (page_id,))
+audit.commit(); audit.execute("PRAGMA foreign_keys=OFF")
+audit.execute(
+    "INSERT INTO revisions(page_id,version_number,body_markdown) "
+    "VALUES(999999,1,'orphan')")
+audit.commit()
+diagnostics = doctor.collect(audit, config.DEFAULTS, audit_db.parent)
+levels = {name: level for level, name, _detail in diagnostics}
+assert levels["foreign key relations"] == "FAIL", diagnostics
+assert levels["revision versions"] == "FAIL", diagnostics
+assert levels["current revision pointers"] == "FAIL", diagnostics
+audit.close()
+
+# `.github/...` is a real relative path, not a spelling of `github/...`.
+dotdb = pathlib.Path(tempfile.mkdtemp()) / "memory.db"
+conn = db.ensure_db(dotdb)
+conn.execute("INSERT INTO pages(page_type,title,subject_type,subject_id) "
+             "VALUES('file','ci','module','.github/workflows/ci.yml')")
+conn.commit()
+ranked = retrieval.score(conn, config.DEFAULTS,
+                         open_files=[".github/workflows/ci.yml"])
+assert ranked[0]["page"]["subject_id"] == ".github/workflows/ci.yml", ranked
+assert "open file" in ranked[0]["reasons"], ranked[0]
+ranked = retrieval.score(conn, config.DEFAULTS,
+                         open_files=[r".github\workflows\ci.yml"])
+assert "open file" in ranked[0]["reasons"], ranked[0]
+conn.close()
+
+# Atomic setup writes use unique same-directory temporary files, preserving a
+# private existing mode and never exposing a partial file under concurrency.
+target = pathlib.Path(tempfile.mkdtemp()) / "settings.json"
+target.write_text("seed"); target.chmod(0o600)
+padding = "x" * 1000
+values = [f'{{"writer": {i}, "padding": "{padding}"}}\n'
+          for i in range(12)]
+write_errors = []
+def atomic_writer(value):
+    try:
+        export_mod._atomic_write(target, value)
+    except BaseException as exc:
+        write_errors.append(exc)
+writers = [threading.Thread(target=atomic_writer, args=(value,))
+           for value in values]
+for writer in writers: writer.start()
+for writer in writers: writer.join()
+assert not write_errors, write_errors
+assert target.read_text() in values
+assert stat.S_IMODE(target.stat().st_mode) == 0o600
+assert not list(target.parent.glob(f".{target.name}.*.tmp"))
+
+# Corrupt legacy event/row JSON is ignored rather than breaking SessionEnd or
+# the Sessions dashboard response.
+session_db = pathlib.Path(tempfile.mkdtemp()) / "memory.db"
+conn = db.ensure_db(session_db)
+sid = sessions.begin(conn, agent="hardening", key="hardening-key")
+conn.execute("INSERT INTO events(event_type, subject_id, payload, session_key) "
+             "VALUES('decision','decisions',?,?)",
+             ("{not json", "hardening-key"))
+conn.commit()
+closed = sessions.end(conn, None, narrate=False, key="hardening-key")
+assert closed and closed["session_id"] == sid
+conn.execute("UPDATE sessions SET files_changed='{bad', changes_detail='{}' "
+             "WHERE session_id=?", (sid,))
+conn.commit()
+row = sessions.row_to_dict(conn.execute(
+    "SELECT * FROM sessions WHERE session_id=?", (sid,)).fetchone())
+assert row["files_changed"] == [] and row["changes_detail"] == [], row
+conn.close()
+print("semantic config, atomic migrations, and dotfile relevance ok")
+PYEOF
 
 # --- symbol precision round 3 + check gate (regression guard) --------------
 python3 - << 'PYEOF' || { echo "FAIL: symbol precision round 3"; exit 1; }
@@ -1743,6 +1986,29 @@ assert not missing, f"commands missing from CLI_REFERENCE.md: {missing}"
 PYEOF
 [ $? -eq 0 ] || { echo "FAIL: CLI reference is missing commands"; exit 1; }
 echo "docs in sync + every command documented ok"
+
+# The docs builder owns only directories it marked (plus legacy builds from
+# before the marker existed). Never recursively replace an unrelated target.
+python3 - "$IRAG_SRC" << 'PYEOF'
+import pathlib, runpy, sys, tempfile
+root = pathlib.Path(sys.argv[1])
+build = runpy.run_path(str(root / "site/build.py"))["build"]
+foreign = pathlib.Path(tempfile.mkdtemp()); sentinel = foreign / "keep.txt"
+sentinel.write_text("mine")
+try:
+    build(foreign)
+except SystemExit as exc:
+    assert "refusing" in str(exc), exc
+else:
+    raise AssertionError("site builder replaced an unrelated directory")
+assert sentinel.read_text() == "mine"
+generated = pathlib.Path(tempfile.mkdtemp()) / "site"
+assert build(generated) == 10
+assert (generated / ".irag-site-build").is_file()
+assert build(generated) == 10
+PYEOF
+[ $? -eq 0 ] || { echo "FAIL: safe, repeatable site build"; exit 1; }
+echo "site output ownership guard ok"
 
 # the README's command list is the first thing anyone reads; it drifted to
 # claiming 36 commands when there were 45, listing none of the new ones
