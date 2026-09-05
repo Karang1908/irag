@@ -24,7 +24,8 @@
 </p>
 
 ```bash
-pip install irag && irag init           # that's the whole setup
+pip install git+https://github.com/Karang1908/irag.git \
+  && irag init                            # that's the whole setup
 ```
 
 <p align="center">
@@ -105,8 +106,9 @@ reaches Codex, Antigravity and Cursor. Git is optional.
 ## Quickstart
 
 ```bash
-pip install irag            # zero dependencies, Python 3.11+
-# or, from this source checkout: pip install -e .
+pip install git+https://github.com/Karang1908/irag.git
+# or, from a source checkout:  pip install -e .
+# (not on PyPI yet — `pip install irag` will not resolve)
 cd your-project
 irag init                   # works with or without git
 irag doctor --probe-llm     # verify your summariser before spending anything
