@@ -13,6 +13,7 @@ Everything in this module is pure parsing: deterministic, free, local.
 from __future__ import annotations
 
 import ast
+import hashlib
 import re
 import sqlite3
 from pathlib import Path
@@ -544,8 +545,13 @@ def scan_fingerprint(conn: sqlite3.Connection, repo: Path) -> str:
 
 def scan(conn: sqlite3.Connection, cfg: dict, repo: Path,
          force: bool = False) -> dict:
-    """(Re)build the symbols and deps tables. Skips when HEAD is unchanged
-    unless forced. Returns counts."""
+    """Refresh symbols/deps, parsing only content-changed files when safe.
+
+    Adding or removing a code path deliberately causes a full parse: imports
+    in unchanged files may become newly resolvable (or stop resolving). When
+    topology is stable, only changed sources are reparsed and their outgoing
+    edges replaced.
+    """
     # gate on the working-tree fingerprint (kept fresh by sync), so
     # UNCOMMITTED edits refresh the map too; fall back to git HEAD only
     # when no fingerprints exist yet
@@ -559,11 +565,37 @@ def scan(conn: sqlite3.Connection, cfg: dict, repo: Path,
 
     code_files = list(_iter_code_files(repo, cfg))
     known_files = {rel for _, rel in code_files}
+    current_hashes: dict[str, str] = {}
+    for path, rel in code_files:
+        digest = _hash_file(path)
+        if digest:
+            current_hashes[rel] = digest
+    previous_hashes = {row["path"]: row["hash"] for row in conn.execute(
+        "SELECT path, hash FROM scan_state").fetchall()}
+    topology_changed = set(current_hashes) != set(previous_hashes)
+    incremental = bool(previous_hashes) and not topology_changed and not force
+    changed = ({rel for rel, digest in current_hashes.items()
+                if previous_hashes.get(rel) != digest}
+               if incremental else set(current_hashes))
+
+    if not changed and incremental:
+        if head:
+            conn.execute(
+                "INSERT INTO meta(key,value) VALUES('last_scanned_head',?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (head,))
+            conn.commit()
+        return {"skipped": False, "incremental": True, "parsed_files": 0,
+                "symbols": conn.execute(
+                    "SELECT COUNT(*) c FROM symbols").fetchone()["c"],
+                "deps": conn.execute(
+                    "SELECT COUNT(*) c FROM deps").fetchone()["c"]}
+
     sym_rows: list[tuple] = []
     edge_counts: dict[tuple[str, str], int] = {}
-    pending_imports: list[tuple[str, str]] = []
 
     for f, rel in code_files:
+        if rel not in changed:
+            continue
         source_subject = file_subject(rel, cfg, repo)
         if source_subject is None:
             continue
@@ -573,24 +605,32 @@ def scan(conn: sqlite3.Connection, cfg: dict, repo: Path,
             continue
         items = (_py_parse(text, rel) if f.suffix in PY_EXT
                  else _regex_parse(text, rel, f.suffix))
+        pending_imports: list[tuple[str, str]] = []
         for item in items:
             if item[0] == "sym":
                 _, name, kind, line = item
                 sym_rows.append((source_subject, rel, name, kind, line))
             else:
                 pending_imports.append((source_subject, item[1]))
-    for source_subject, imp in pending_imports:
-        target = _resolve_import(imp, repo, known_files)
-        if target and target != source_subject:
-            key = (source_subject, target)
-            edge_counts[key] = edge_counts.get(key, 0) + 1
+        for parsed_source, imp in pending_imports:
+            target = _resolve_import(imp, repo, known_files)
+            if target and target != parsed_source:
+                key = (parsed_source, target)
+                edge_counts[key] = edge_counts.get(key, 0) + 1
 
     try:
-        conn.execute("DELETE FROM symbols")
+        if incremental:
+            marks = ",".join("?" * len(changed))
+            conn.execute(f"DELETE FROM symbols WHERE file IN ({marks})",
+                         tuple(changed))
+            conn.execute(f"DELETE FROM deps WHERE source_subject IN ({marks})",
+                         tuple(changed))
+        else:
+            conn.execute("DELETE FROM symbols")
+            conn.execute("DELETE FROM deps")
         conn.executemany(
             "INSERT INTO symbols(subject_id, file, name, kind, line) "
             "VALUES(?,?,?,?,?)", sym_rows)
-        conn.execute("DELETE FROM deps")
         conn.executemany(
             "INSERT INTO deps(source_subject, target_subject, import_count) "
             "VALUES(?,?,?)",
@@ -599,7 +639,10 @@ def scan(conn: sqlite3.Connection, cfg: dict, repo: Path,
         # project dep edges into the links table (drives retrieval link-hop
         # and the Obsidian graph); manual 'related' links are left untouched
         conn.execute("DELETE FROM links WHERE link_type='imports'")
-        for (s, t) in edge_counts:
+        all_edges = conn.execute(
+            "SELECT source_subject, target_subject FROM deps").fetchall()
+        for edge in all_edges:
+            s, t = edge["source_subject"], edge["target_subject"]
             sp = db.get_or_create_page(conn, s, subject_type="file",
                                        page_type="file")
             tp = db.get_or_create_page(conn, t, subject_type="file",
@@ -608,6 +651,9 @@ def scan(conn: sqlite3.Connection, cfg: dict, repo: Path,
                 "INSERT OR IGNORE INTO links(source_page_id, target_page_id, "
                 "link_type) VALUES(?,?, 'imports')",
                 (sp["page_id"], tp["page_id"]))
+        conn.execute("DELETE FROM scan_state")
+        conn.executemany("INSERT INTO scan_state(path,hash) VALUES(?,?)",
+                         current_hashes.items())
         if head:
             conn.execute(
                 "INSERT INTO meta(key,value) VALUES('last_scanned_head',?) "
@@ -617,8 +663,23 @@ def scan(conn: sqlite3.Connection, cfg: dict, repo: Path,
     except Exception:
         conn.rollback()
         raise
-    return {"skipped": False, "symbols": len(sym_rows),
-            "deps": len(edge_counts)}
+    return {"skipped": False, "incremental": incremental,
+            "parsed_files": len(changed),
+            "symbols": conn.execute(
+                "SELECT COUNT(*) c FROM symbols").fetchone()["c"],
+            "deps": conn.execute(
+                "SELECT COUNT(*) c FROM deps").fetchone()["c"]}
+
+
+def _hash_file(path: Path) -> str | None:
+    digest = hashlib.sha1()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+    except OSError:
+        return None
+    return digest.hexdigest()
 
 
 # ---------------------------------------------------------------------
