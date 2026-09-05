@@ -126,7 +126,104 @@ def load(repo_root: Path) -> dict[str, Any]:
             user = tomllib.load(fh)
     except tomllib.TOMLDecodeError as exc:
         raise SystemExit(f"irag: invalid TOML in {path}: {exc}") from exc
-    return _deep_merge(copy.deepcopy(DEFAULTS), user)
+    merged = _deep_merge(copy.deepcopy(DEFAULTS), user)
+    errors = validation_errors(merged)
+    if errors:
+        detail = "; ".join(errors)
+        raise SystemExit(f"irag: invalid config in {path}: {detail}")
+    return merged
+
+
+def validation_errors(cfg: object) -> list[str]:
+    """Return actionable semantic errors for a merged iRAG config.
+
+    Parsing TOML only proves syntax.  This guard prevents valid TOML with
+    incompatible values from reaching dashboard workers or being interpreted
+    differently by separate commands.  Unknown keys remain allowed for
+    forwards compatibility.
+    """
+    if not isinstance(cfg, dict):
+        return ["top-level value must be a table"]
+
+    errors: list[str] = []
+
+    def section(name: str) -> dict[str, Any] | None:
+        value = cfg.get(name)
+        if not isinstance(value, dict):
+            errors.append(f"[{name}] must be a table")
+            return None
+        return value
+
+    def expect(
+        table: dict[str, Any] | None,
+        section_name: str,
+        key: str,
+        expected: type,
+        *,
+        minimum: int | None = None,
+        nonempty: bool = False,
+    ) -> Any:
+        if table is None or key not in table:
+            return None
+        value = table[key]
+        valid = (
+            type(value) is expected
+            if expected in (bool, int)
+            else isinstance(value, expected)
+        )
+        if not valid:
+            errors.append(f"[{section_name}].{key} must be {expected.__name__}")
+            return None
+        if minimum is not None and value < minimum:
+            errors.append(f"[{section_name}].{key} must be at least {minimum}")
+        if nonempty and isinstance(value, str) and not value.strip():
+            errors.append(f"[{section_name}].{key} must not be empty")
+        return value
+
+    ingest = section("ingest")
+    mode = expect(ingest, "ingest", "mode", str, nonempty=True)
+    if isinstance(mode, str) and mode not in {"auto", "git", "snapshot"}:
+        errors.append("[ingest].mode must be one of: auto, git, snapshot")
+
+    llm = section("llm")
+    expect(llm, "llm", "command", str, nonempty=True)
+    expect(llm, "llm", "model_label", str, nonempty=True)
+    expect(llm, "llm", "timeout", int, minimum=1)
+    expect(llm, "llm", "parallel", int, minimum=1)
+
+    modules = section("modules")
+    if modules is not None and "ignore" in modules:
+        ignore = modules["ignore"]
+        if not isinstance(ignore, list) or any(not isinstance(item, str) for item in ignore):
+            errors.append("[modules].ignore must be an array of strings")
+
+    staleness = section("staleness")
+    expect(staleness, "staleness", "commit", int, minimum=0)
+    expect(staleness, "staleness", "dependency", int, minimum=0)
+    expect(staleness, "staleness", "threshold", int, minimum=1)
+    expect(staleness, "staleness", "skip_trivial", bool)
+
+    retrieval = section("retrieval")
+    expect(retrieval, "retrieval", "token_budget", int, minimum=0)
+    expect(retrieval, "retrieval", "min_score", int)
+    expect(retrieval, "retrieval", "full_max", int, minimum=0)
+
+    sessions = section("sessions")
+    expect(sessions, "sessions", "capture_transcript", bool)
+    expect(sessions, "sessions", "max_messages", int, minimum=1)
+    expect(sessions, "sessions", "max_message_chars", int, minimum=1)
+
+    check = section("check")
+    expect(check, "check", "max_staleness", int, minimum=0)
+    for key in (
+        "fail_on_contradictions",
+        "fail_on_staleness",
+        "fail_on_unsynthesized",
+        "fail_on_facts",
+    ):
+        expect(check, "check", key, bool)
+
+    return errors
 
 
 def write_default(repo_root: Path) -> Path:
@@ -134,5 +231,9 @@ def write_default(repo_root: Path) -> Path:
     path = config_path(repo_root)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
-        path.write_text(DEFAULT_TOML, encoding="utf-8")
+        # A first-run interruption must never leave valid-looking partial TOML,
+        # and concurrent init processes may both observe the file as absent.
+        # They write identical defaults through unique atomic temp files.
+        from .export import _atomic_write
+        _atomic_write(path, DEFAULT_TOML)
     return path
