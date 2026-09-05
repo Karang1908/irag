@@ -582,7 +582,7 @@ fact-checked against your real code so it can never quietly lie.</p>
 <a class="btn primary" href="docs/quickstart/">Get started</a>
 <a class="btn ghost" href="{GITHUB}" target="_blank" rel="noopener">GitHub ↗</a>
 </div>
-<div class="install"><code>pip install irag &amp;&amp; irag init</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
+<div class="install"><code>pip install git+https://github.com/Karang1908/irag.git</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
 </div>
 <figure class="hero-graph" aria-hidden="true">
 {hero_graph()}
@@ -748,7 +748,7 @@ with a database attached."</blockquote>
 <a class="btn primary" href="docs/quickstart/">Get started</a>
 <a class="btn ghost" href="docs/architecture/">Read the architecture</a>
 </div>
-<div class="install"><code>pip install irag &amp;&amp; irag init</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
+<div class="install"><code>pip install git+https://github.com/Karang1908/irag.git</code><button class="code-copy" type="button" aria-label="Copy install command">copy</button></div>
 </section>
 <footer class="foot land">
 <span>MIT · <a href="{GITHUB}" target="_blank"
