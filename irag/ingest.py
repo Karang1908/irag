@@ -384,26 +384,108 @@ def _reconcile_folder_liveness(conn: sqlite3.Connection) -> None:
 def ingest_commit(conn: sqlite3.Connection, cfg: dict, ref: str,
                   repo: Path | None = None) -> int:
     """Ingest a single commit: one queued event per touched file."""
-    out = _git(["show", "--name-only", "--pretty=format:%H%n%ct%n%s", ref],
-               cwd=repo)
-    lines = out.splitlines()
-    if len(lines) < 3:
+    meta = _git(["show", "-s", "--pretty=format:%H%n%s", ref], cwd=repo)
+    lines = meta.splitlines()
+    if len(lines) < 2:
         return 0
-    commit_hash, message = lines[0], lines[2]
-    files = [ln.strip() for ln in lines[3:] if ln.strip()]
+    commit_hash, message = lines[0], lines[1]
+    ancestry = _git(["rev-list", "--parents", "-n", "1", commit_hash],
+                    cwd=repo).split()
+    # A plain diff-tree of a merge commit is empty. Compare it explicitly to
+    # its first parent: those are the changes that entered the checked-out
+    # branch. Using -m would concatenate a diff against every parent and queue
+    # files that were already present on the first-parent branch.
+    treeish = ([ancestry[1], commit_hash] if len(ancestry) > 1
+               else ["--root", commit_hash])
+    changes = _git(["diff-tree", "--no-commit-id", "--name-status",
+                    "-r", "-M", *treeish], cwd=repo)
+    files: list[tuple[str, str | None]] = []
+    for line in changes.splitlines():
+        fields = line.split("\t")
+        if not fields:
+            continue
+        status = fields[0]
+        if status.startswith("R") and len(fields) >= 3:
+            old, new = fields[1], fields[2]
+            old_subject = file_subject(old, cfg, repo)
+            new_subject = file_subject(new, cfg, repo)
+            if old_subject and new_subject:
+                if _rename_subject(conn, old_subject, new_subject):
+                    files.append((new_subject, old_subject))
+                elif conn.execute(
+                        "SELECT 1 FROM events WHERE source_ref=? "
+                        "AND subject_id=? LIMIT 1",
+                        (commit_hash, new_subject)).fetchone():
+                    # The post-commit hook already moved the page and queued
+                    # this exact rename. A later explicit sync replays the
+                    # commit; treating the now-missing source as a collision
+                    # recreates an empty tombstone at the old path. The page
+                    # move and event insert commit together, so the event is
+                    # a safe idempotency marker rather than a guess.
+                    continue
+                else:
+                    files.extend(((old_subject, None), (new_subject, None)))
+            else:
+                if old_subject:
+                    files.append((old_subject, None))
+                if new_subject:
+                    files.append((new_subject, None))
+        elif len(fields) >= 2:
+            files.append((fields[1], None))
     inserted = 0
-    for f in files:
+    for f, renamed_from in files:
         subject = file_subject(f, cfg, repo)
         if subject is None:
             continue
-        if repo is not None and _content_already_known(conn, repo, subject):
+        # A rename keeps identical bytes by definition, but its summary still
+        # names the old path. Never let content dedup suppress the rename
+        # event: that event both refreshes the page and acts as the durable
+        # replay marker for the post-commit-hook + explicit-sync sequence.
+        if (repo is not None and renamed_from is None
+                and _content_already_known(conn, repo, subject)):
             continue   # snapshot already captured this exact content
-        if _queue_file_event(conn, cfg, subject, commit_hash,
-                             {"files": [subject], "message": message},
+        payload = {"files": [subject], "message": message}
+        if renamed_from:
+            payload["renamed_from"] = renamed_from
+        if _queue_file_event(conn, cfg, subject, commit_hash, payload,
                              repo=repo):
             inserted += 1
     conn.commit()
     return inserted
+
+
+def _rename_subject(conn: sqlite3.Connection, old: str, new: str) -> bool:
+    """Move a live file page while preserving its append-only revision chain."""
+    if old == new:
+        return False
+    source = conn.execute(
+        "SELECT page_id FROM pages WHERE subject_type='file' AND subject_id=?",
+        (old,)).fetchone()
+    occupied = conn.execute(
+        "SELECT 1 FROM pages WHERE subject_type='file' AND subject_id=?",
+        (new,)).fetchone()
+    if not source or occupied:
+        return False
+    conn.execute(
+        "UPDATE pages SET subject_id=?, title=?, deleted_at=NULL WHERE page_id=?",
+        (new, new, source["page_id"]))
+    conn.execute("UPDATE symbols SET subject_id=?, file=? WHERE subject_id=?",
+                 (new, new, old))
+    conn.execute("UPDATE deps SET source_subject=? WHERE source_subject=?",
+                 (new, old))
+    conn.execute("UPDATE deps SET target_subject=? WHERE target_subject=?",
+                 (new, old))
+    conn.execute("INSERT OR IGNORE INTO topic_members(topic,subject_id) "
+                 "SELECT topic, ? FROM topic_members WHERE subject_id=?",
+                 (new, old))
+    conn.execute("DELETE FROM topic_members WHERE subject_id=?", (old,))
+    old_state = conn.execute("SELECT hash FROM tree_state WHERE path=?",
+                             (old,)).fetchone()
+    if old_state:
+        conn.execute("INSERT OR IGNORE INTO tree_state(path,hash) VALUES(?,?)",
+                     (new, old_state["hash"]))
+        conn.execute("DELETE FROM tree_state WHERE path=?", (old,))
+    return True
 
 
 def _content_already_known(conn, repo: Path, subject: str) -> bool:
@@ -759,6 +841,33 @@ def snapshot(conn: sqlite3.Connection, cfg: dict, repo: Path,
     ref = f"snap:{seq}"
 
     inserted = 0
+    # A unique delete/add pair with identical bytes is a rename. Preserve the
+    # page id and all revisions instead of withdrawing one memory lineage and
+    # starting another from zero.
+    deleted_by_hash: dict[str, list[str]] = {}
+    for old in deleted:
+        deleted_by_hash.setdefault(previous[old], []).append(old)
+    renamed: dict[str, str] = {}
+    for new in list(changed):
+        matches = deleted_by_hash.get(current[new], [])
+        if len(matches) != 1:
+            continue
+        old = matches[0]
+        old_subject = file_subject(old, cfg, repo)
+        new_subject = file_subject(new, cfg, repo)
+        if old_subject and new_subject and _rename_subject(
+                conn, old_subject, new_subject):
+            renamed[new] = old_subject
+            deleted.remove(old)
+            changed.remove(new)
+            deleted_by_hash[current[new]] = []
+    for new, old in renamed.items():
+        if _queue_file_event(
+                conn, cfg, new, ref,
+                {"files": [new], "renamed_from": old,
+                 "message": f"file renamed from {old}"},
+                event_type="snapshot", repo=repo):
+            inserted += 1
     for p in changed:
         subject = file_subject(p, cfg, repo)
         if subject and _queue_file_event(
