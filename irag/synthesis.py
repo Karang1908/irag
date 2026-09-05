@@ -488,17 +488,23 @@ def run_llm(cfg: dict, prompt: str, page_hint: str = "") -> str:
       - neither        -> piped via stdin (default; claude -p, mock, ...)
     """
     raw = cfg["llm"]["command"]
-    cmd = shlex.split(raw)
+    try:
+        cmd = shlex.split(raw)
+    except ValueError as exc:
+        raise SystemExit(f"irag: invalid [llm].command quoting: {exc}") \
+            from None
+    if not cmd:
+        raise SystemExit("irag: [llm].command must not be empty")
     stdin_input = prompt
     tmp_path = None
     try:
         if any("{promptfile}" in tok for tok in cmd):
             import tempfile
-            fh = tempfile.NamedTemporaryFile(
-                "w", suffix=".txt", delete=False, encoding="utf-8")
-            tmp_path = fh.name   # record before write/close so the finally
-            fh.write(prompt)     # block always cleans up, even if write fails
-            fh.close()
+            with tempfile.NamedTemporaryFile(
+                    "w", suffix=".txt", delete=False,
+                    encoding="utf-8") as fh:
+                tmp_path = fh.name
+                fh.write(prompt)
             cmd = [tok.replace("{promptfile}", tmp_path) for tok in cmd]
             stdin_input = ""
         elif any("{prompt}" in tok for tok in cmd):
@@ -507,6 +513,7 @@ def run_llm(cfg: dict, prompt: str, page_hint: str = "") -> str:
         try:
             result = subprocess.run(
                 cmd, input=stdin_input, capture_output=True, text=True,
+                errors="replace",
                 timeout=int(cfg["llm"]["timeout"]),
             )
         except FileNotFoundError:
