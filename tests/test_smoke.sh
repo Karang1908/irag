@@ -102,7 +102,7 @@ python3 -m irag learn "test lesson" --module src/auth/login.py
 python3 -m irag context | grep -q "test lesson" || { echo "FAIL: lesson not served"; exit 1; }
 python3 -m irag claude-setup
 grep -q "irag context" .claude/settings.json || { echo "FAIL: hook not installed"; exit 1; }
-grep -q "manage this project's memory with irag" CLAUDE.md || { echo "FAIL: agent guide missing"; exit 1; }
+grep -q "whatever coding agent you are" CLAUDE.md || { echo "FAIL: agent guide missing"; exit 1; }
 
 python3 -m irag status
 python3 -m irag status --json | python3 -c "import json,sys; json.load(sys.stdin)"
@@ -583,7 +583,18 @@ for body, needle in (
 # A failed additive migration must roll every column back, then concurrent
 # openers must converge on one fully upgraded schema without ALTER races.
 root = pathlib.Path(tempfile.mkdtemp()); dbp = root / "legacy.db"
-legacy = db.connect(dbp); legacy.executescript(db.SCHEMA); legacy.close()
+legacy = db.connect(dbp); legacy.executescript(db.SCHEMA)
+# Build an actual pre-ledger schema. Using today's SCHEMA verbatim made this
+# fixture self-contradictory as soon as a newly migrated column was promoted
+# into the fresh-install definitions: the rollback assertion then blamed the
+# migration for a column the fixture had created before migration began.
+for table, column in (
+    ("sessions", "changes_detail"), ("sessions", "session_key"),
+    ("sessions", "critical_context"), ("events", "session_key"),
+    ("revisions", "session_key"), ("contradictions", "resolution_kind"),
+):
+    legacy.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+legacy.commit(); legacy.close()
 original = db._add_column_if_missing
 calls = 0
 def interrupted(conn, table, column, coltype):
@@ -1966,7 +1977,7 @@ echo "every write command accepts --id ok"
 # irag/assets/docs/ is what the dashboard's Docs tab serves; docs/ is what
 # the website builds from. Nothing syncs them, and they had already drifted
 # (a whole Visualize section existed in one and not the other).
-for f in ARCHITECTURE CLI_REFERENCE COMPARISON SETUP STORY; do
+for f in ARCHITECTURE CLI_REFERENCE COMPARISON MCP SETUP STORY; do
   diff -q "$IRAG_SRC/docs/$f.md" "$IRAG_SRC/irag/assets/docs/$f.md" >/dev/null \
     || { echo "FAIL: docs/$f.md and irag/assets/docs/$f.md have drifted — "\
               "the dashboard and the website would show different things"; \
@@ -2003,9 +2014,9 @@ else:
     raise AssertionError("site builder replaced an unrelated directory")
 assert sentinel.read_text() == "mine"
 generated = pathlib.Path(tempfile.mkdtemp()) / "site"
-assert build(generated) == 10
+assert build(generated) == 11
 assert (generated / ".irag-site-build").is_file()
-assert build(generated) == 10
+assert build(generated) == 11
 PYEOF
 [ $? -eq 0 ] || { echo "FAIL: safe, repeatable site build"; exit 1; }
 echo "site output ownership guard ok"
@@ -2307,21 +2318,27 @@ subjects = {r["subject"] for tier in ("full", "digest", "index")
             for r in d[tier]}
 assert "oldname.py" not in subjects, subjects
 ' ) || { echo "FAIL: a deleted file is still served in context"; rm -rf "$FN"; exit 1; }
-# history must survive
+# A rename moves the stable page identity and its history to the new subject;
+# it must not leave a duplicate tombstone lineage behind.
 ( cd "$FN" && python3 - << 'PYEOF'
-import pathlib, sys
+import json, pathlib, sys
 sys.path.insert(0, str(pathlib.Path.cwd()))
 from irag import db
 conn = db.connect(pathlib.Path(".irag/memory.db"))
-row = conn.execute("SELECT deleted_at FROM pages WHERE subject_id="
+old = conn.execute("SELECT page_id FROM pages WHERE subject_id="
                    "'oldname.py'").fetchone()
-assert row and row["deleted_at"], "the deleted page was not marked"
+new = conn.execute("SELECT page_id,deleted_at FROM pages WHERE subject_id="
+                   "'newname.py'").fetchone()
+assert old is None and new and not new["deleted_at"], (old, new)
 n = conn.execute("SELECT COUNT(*) c FROM revisions r JOIN pages p ON "
-                 "p.page_id=r.page_id WHERE p.subject_id='oldname.py'"
+                 "p.page_id=r.page_id WHERE p.subject_id='newname.py'"
                  ).fetchone()["c"]
-assert n > 0, "history was destroyed rather than withdrawn from serving"
+assert n > 1, "rename did not carry the existing revision chain forward"
+event = conn.execute("SELECT payload FROM events WHERE subject_id='newname.py' "
+                     "ORDER BY event_id DESC LIMIT 1").fetchone()
+assert event and json.loads(event["payload"])["renamed_from"] == "oldname.py"
 PYEOF
-) || { echo "FAIL: deleted-page bookkeeping"; rm -rf "$FN"; exit 1; }
+) || { echo "FAIL: rename continuity"; rm -rf "$FN"; exit 1; }
 # and an explicit forget must exist and work
 ( cd "$FN" && python3 -m irag forget app.py >/dev/null 2>&1 ) \
   || { echo "FAIL: 'irag forget' does not work"; rm -rf "$FN"; exit 1; }
