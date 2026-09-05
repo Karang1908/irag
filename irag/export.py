@@ -11,6 +11,8 @@ rewrites these files — it only updates the database.
 from __future__ import annotations
 
 import os
+import stat
+import tempfile
 from pathlib import Path
 
 GUIDE = Path(__file__).parent / "assets" / "AGENT_GUIDE.md"
@@ -20,10 +22,23 @@ TARGETS = ("CLAUDE.md", "AGENTS.md")
 
 def _atomic_write(path: Path, text: str) -> None:
     """Write via a temp file + os.replace so an interrupted run can never
-    leave a half-written file."""
-    tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    leave a half-written file. Unique same-directory temps also make two setup
+    processes safe, and an existing file keeps its permission bits."""
+    old_mode = stat.S_IMODE(path.stat().st_mode) if path.exists() else None
+    fd, raw_tmp = tempfile.mkstemp(prefix=f".{path.name}.",
+                                   suffix=".tmp", dir=path.parent)
+    tmp = Path(raw_tmp)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        if old_mode is not None:
+            tmp.chmod(old_mode)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
 
 
 def install_guide(repo: Path) -> dict:
