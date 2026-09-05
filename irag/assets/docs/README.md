@@ -121,7 +121,8 @@ scribe never weakens the trust layer. Verify your command once with
 ## Quickstart
 
 ```bash
-pip install -e .            # zero dependencies, Python 3.11+
+pip install irag            # zero dependencies, Python 3.11+
+# or, from a source checkout: pip install -e .
 cd your-project
 irag init                   # works with or without git
 irag doctor --probe-llm     # verify the LLM command works
@@ -239,8 +240,8 @@ CI on every push. The same content lives in this repo:
 sh tests/test_smoke.sh    # end-to-end against a deterministic mock LLM — no tokens
 ```
 
-CI runs the same suite plus pyflakes and a package build on every push
-(Python 3.11–3.13).
+CI runs the same suite plus Ruff, mypy, and a package build on every push
+(Python 3.11–3.14).
 
 ## Roadmap
 
