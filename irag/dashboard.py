@@ -20,6 +20,7 @@ import sqlite3
 import time
 import threading
 import traceback
+import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -68,10 +69,24 @@ class _State:
         bootstrap.close()
         self._schema_ready = True
         self.lock = threading.Lock()          # serialize LLM-heavy operations
-        self.update_lock = threading.Lock()   # atomic guard for update_running
-        self.update_log: list[str] = []
-        self.update_running = False
         self.last_live = 0.0
+        # A killed dashboard cannot leave a forever-running spinner, but a
+        # second live dashboard must not pronounce the first one's work dead.
+        # Every real update owns this same cross-process lock.
+        from .locking import UpdateLock
+        startup_lock = UpdateLock(root)
+        if startup_lock.acquire():
+            try:
+                bootstrap = db.connect(root / ".irag" / "memory.db")
+                bootstrap.execute(
+                    "UPDATE jobs SET status='failed', progress=100, "
+                    "error=COALESCE(error,'dashboard stopped before completion'), "
+                    "finished_at=COALESCE(finished_at,datetime('now')) "
+                    "WHERE status IN ('queued','running')")
+                bootstrap.commit()
+                bootstrap.close()
+            finally:
+                startup_lock.release()
 
     def _stamp(self):
         path = config_mod.config_path(self.root)
@@ -145,10 +160,59 @@ def _docs_index() -> list[dict]:
         for f in sorted(docs_dir.glob("*.md")):
             title = f.stem.replace("_", " ")
             out.append({"id": f.stem, "title": title})
-    order = {"QUICKSTART": 0, "README": 1, "SETUP": 2, "ARCHITECTURE": 3,
-             "CLI_REFERENCE": 4, "COMPARISON": 5, "STORY": 6}
+    order = {"QUICKSTART": 0, "README": 1, "MCP": 2, "SETUP": 3,
+             "ARCHITECTURE": 4, "CLI_REFERENCE": 5, "COMPARISON": 6,
+             "STORY": 7}
     out.sort(key=lambda d: order.get(d["id"], 99))
     return out
+
+
+def _job_row(conn: sqlite3.Connection, job_id: str | None = None) -> dict | None:
+    if job_id:
+        row = conn.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
+    else:
+        row = conn.execute(
+            "SELECT * FROM jobs ORDER BY created_at DESC, rowid DESC LIMIT 1"
+        ).fetchone()
+    if not row:
+        return None
+    value = dict(row)
+    value["log"] = db.json_list(value.pop("log_json", "[]"))[-100:]
+    value["running"] = value["status"] in ("queued", "running")
+    return value
+
+
+def _create_job(conn: sqlite3.Connection, kind: str) -> dict:
+    job_id = uuid.uuid4().hex
+    conn.execute(
+        "INSERT INTO jobs(job_id,kind,status,progress,log_json) "
+        "VALUES(?,?,'queued',0,?)", (job_id, kind, json.dumps(["update queued"])))
+    conn.commit()
+    return _job_row(conn, job_id) or {"job_id": job_id}
+
+
+def _advance_job(conn: sqlite3.Connection, job_id: str, message: str,
+                 progress: int, status: str = "running",
+                 error: str | None = None) -> None:
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+    row = conn.execute("SELECT log_json FROM jobs WHERE job_id=?",
+                       (job_id,)).fetchone()
+    if not row:
+        conn.rollback()
+        return
+    log = db.json_list(row["log_json"])
+    log.append(str(message)[:2000])
+    log = log[-100:]
+    terminal = status in ("completed", "failed")
+    conn.execute(
+        "UPDATE jobs SET status=?, progress=?, log_json=?, error=?, "
+        "started_at=COALESCE(started_at,datetime('now')), "
+        "finished_at=CASE WHEN ? THEN datetime('now') ELSE finished_at END "
+        "WHERE job_id=?",
+        (status, max(0, min(int(progress), 100)), json.dumps(log), error,
+         1 if terminal else 0, job_id))
+    conn.commit()
 
 
 def _run_op(op: str, conn, state) -> str | None:
@@ -214,24 +278,61 @@ def make_handler(state: _State):
         # ---------- helpers ----------
         def _json(self, obj, code=200):
             body = json.dumps(obj, default=str).encode()
-            self.send_response(code)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store, must-revalidate")
-            self.end_headers()
-            self.wfile.write(body)
+            try:
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store, must-revalidate")
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                # Polls and navigation requests are routinely cancelled when
+                # a tab reloads or closes. The response is already impossible;
+                # do not turn a normal client disconnect into a server error
+                # and then recursively try to write another error response.
+                self.close_connection = True
 
         def _html(self, text: str):
             body = text.encode()
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                # live tool — never let the browser serve a stale cached page
+                # (otherwise a redeployed dashboard.html silently keeps showing
+                # the old UI until a manual hard-refresh)
+                self.send_header("Cache-Control", "no-store, must-revalidate")
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                self.close_connection = True
+
+        def _events(self, conn: sqlite3.Connection, job_id: str):
+            """Stream one durable job, reconnecting cleanly every 30s."""
+            if not _job_row(conn, job_id):
+                return self._json({"error": "no such job"}, 404)
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            # live tool — never let the browser serve a stale cached page
-            # (otherwise a redeployed dashboard.html silently keeps showing
-            # the old UI until a manual hard-refresh)
-            self.send_header("Cache-Control", "no-store, must-revalidate")
+            self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Connection", "keep-alive")
             self.end_headers()
-            self.wfile.write(body)
+            last = ""
+            deadline = time.monotonic() + 30
+            try:
+                while time.monotonic() < deadline:
+                    value = _job_row(conn, job_id)
+                    payload = json.dumps(value, default=str)
+                    if payload != last:
+                        self.wfile.write(f"event: job\ndata: {payload}\n\n".encode())
+                        self.wfile.flush()
+                        last = payload
+                    if not value or not value["running"]:
+                        return
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
+                    time.sleep(0.5)
+            except (BrokenPipeError, ConnectionResetError, OSError):
+                return
 
         def _body(self) -> dict:
             try:
@@ -314,6 +415,15 @@ def make_handler(state: _State):
                     page = (ASSETS / "dashboard.html").read_text(
                         encoding="utf-8")
                     return self._html(page)
+                if url.path == "/contradiction-report":
+                    from . import reports
+                    raw_id = (qs.get("id") or [""])[0]
+                    try:
+                        ids = [int(raw_id)] if raw_id else None
+                    except ValueError:
+                        return self._json({"error": "bad contradiction id"}, 400)
+                    return self._html(
+                        reports.contradiction_html(conn, state.root, ids))
                 if url.path == "/api/status":
                     s = stats.status_dict(conn, state.cfg, state.root)
                     s["project"] = state.root.name or str(state.root)
@@ -431,8 +541,17 @@ def make_handler(state: _State):
                                        "markdown": f.read_text(
                                            encoding="utf-8")})
                 if url.path == "/api/update-log":
-                    return self._json({"running": state.update_running,
-                                       "log": state.update_log[-50:]})
+                    value = _job_row(conn)
+                    return self._json(value or {"running": False, "log": [],
+                                                "status": "idle", "progress": 0})
+                if url.path == "/api/job":
+                    job_id = (qs.get("id") or [""])[0]
+                    value = _job_row(conn, job_id)
+                    return (self._json(value) if value else
+                            self._json({"error": "no such job"}, 404))
+                if url.path == "/api/job-events":
+                    job_id = (qs.get("id") or [""])[0]
+                    return self._events(conn, job_id)
                 if url.path == "/api/sessions":
                     from . import sessions as sessions_mod
                     try:
@@ -674,50 +793,59 @@ def make_handler(state: _State):
                             {"ok": False,
                              "error": "another irag update is already "
                                       "running in this repository"}, 409)
-                    # atomic check-and-set: two rapid POSTs must not both
-                    # start a worker (they'd run sync/scan concurrently)
-                    with state.update_lock:
-                        if state.update_running:
-                            repo_lock.release()
-                            return self._json({"ok": False,
-                                               "error": "already running"}, 409)
-                        state.update_running = True
-                        state.update_log = ["update started"]
+                    job = _create_job(conn, "update")
+                    job_id = job["job_id"]
                     worker_cfg = state.cfg
 
                     def worker():
                         try:
                             wconn = state.conn()
+                            _advance_job(wconn, job_id, "update started", 2)
                             with state.lock:
                                 from . import ingest
                                 n = ingest.sync(wconn, worker_cfg, state.root)
-                                state.update_log.append(f"sync: {n} event(s)")
-                                structure.scan(wconn, worker_cfg, state.root)
+                                _advance_job(wconn, job_id,
+                                             f"sync: {n} event(s)", 15)
+                                scanned = structure.scan(
+                                    wconn, worker_cfg, state.root)
+                                _advance_job(
+                                    wconn, job_id,
+                                    f"scan: {scanned['symbols']} symbols, "
+                                    f"{scanned['deps']} dependencies", 30)
                                 done = synthesis.sweep(
                                     wconn, worker_cfg, state.root)
-                                state.update_log.append(
-                                    f"synthesized {done} page version(s)")
+                                _advance_job(wconn, job_id,
+                                             f"synthesized {done} page version(s)",
+                                             88)
                                 added = linter.lint(
                                     wconn, worker_cfg, state.root)
-                                state.update_log.append(
-                                    f"lint: {added} new contradiction(s)")
-                            state.update_log.append("done")
+                                _advance_job(
+                                    wconn, job_id,
+                                    f"lint: {added} new contradiction(s)", 97)
+                            _advance_job(wconn, job_id, "done", 100,
+                                         status="completed")
                         except BaseException as exc:
-                            state.update_log.append(f"ERROR: {exc}")
+                            try:
+                                failed = state.conn()
+                                _advance_job(failed, job_id, f"ERROR: {exc}",
+                                             100, status="failed",
+                                             error=str(exc)[:2000])
+                            except Exception:
+                                traceback.print_exc()
                         finally:
                             state.release()
                             repo_lock.release()
-                            with state.update_lock:
-                                state.update_running = False
 
                     try:
                         threading.Thread(target=worker, daemon=True).start()
-                    except Exception:
+                    except Exception as exc:
                         repo_lock.release()
-                        with state.update_lock:
-                            state.update_running = False
+                        _advance_job(conn, job_id, f"ERROR: {exc}", 100,
+                                     status="failed", error=str(exc))
                         raise
-                    return self._json({"ok": True})
+                    return self._json({"ok": True, "job_id": job_id,
+                                       "events": f"/api/job-events?id={job_id}"},
+                                      202)
                 if url.path in ("/api/learn", "/api/record-decision"):
                     text = str(data.get("text", "")).strip()
                     if not text:
