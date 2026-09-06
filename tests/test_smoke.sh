@@ -173,6 +173,32 @@ def expect_http(path, code, data=None):
         payload = json.load(exc)
         assert payload.get("error"), payload
 
+with urllib.request.urlopen("http://127.0.0.1:7911/api/settings") as r:
+    settings = json.load(r)
+    assert settings["settings"]["llm"]["provider"]
+    assert "web" in settings and "version" in settings
+req = urllib.request.Request("http://127.0.0.1:7911/api/settings",
+    data=json.dumps({"version": settings["version"], "settings": {
+        "llm": {"provider": settings["settings"]["llm"]["provider"]},
+        "web": {"provider": "duckduckgo", "enabled": True}}}).encode(),
+    headers={"Content-Type": "application/json"})
+with urllib.request.urlopen(req) as r:
+    assert json.load(r)["ok"] is True
+with urllib.request.urlopen("http://127.0.0.1:7911/api/main-summary") as r:
+    summary = json.load(r)
+    assert summary["pages"] and summary["tree_fingerprint"]
+req = urllib.request.Request("http://127.0.0.1:7911/api/audit",
+    data=json.dumps({"check_advisories": False}).encode(),
+    headers={"Content-Type": "application/json"})
+with urllib.request.urlopen(req) as r:
+    audited = json.load(r)
+    assert audited["files_scanned"] > 0 and "api" in audited
+with urllib.request.urlopen("http://127.0.0.1:7911/api/studio") as r:
+    studio = json.load(r)
+    assert "messages" in studio and "ideas" in studio and "web" in studio
+expect_http("/api/api-check", 400, json.dumps(
+    {"base_url": "https://example.com"}).encode())
+
 # Unknown impact must fail closed; malformed history dates and JSON must not
 # turn into plausible-looking current state or an internal-error response.
 expect_http("/api/impact?subject=src/does-not-exist.py", 404)
