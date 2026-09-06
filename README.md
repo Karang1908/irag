@@ -2,10 +2,10 @@
   <img src="docs/assets/irag-banner.svg" alt="irag" width="100%">
 </p>
 
-<h3 align="center">Your agent can search your codebase for <i>zero</i> tokens.<br>Not fewer. Zero — there is no model on the read path.</h3>
+<h3 align="center">Give every coding agent the same second brain.<br>It remembers the codebase, proves its claims, and costs <i>zero tokens to read</i>.</h3>
 
 <p align="center">
-  <sub>No embeddings. No vector database. No model call when your agent asks what something does.<br>And <b>every claim is mechanically fact-checked against your real code</b> — so memory can't quietly lie to you.</sub>
+  <sub>Codex, Claude Code, Cursor, Windsurf, VS Code — one standard MCP server, one SQLite memory, identical tools.<br>No embeddings. No vector database. <b>Every checkable claim is mechanically tested against the real code.</b></sub>
 </p>
 
 <p align="center">
@@ -26,6 +26,7 @@
 ```bash
 pip install git+https://github.com/Karang1908/irag.git \
   && irag init                            # that's the whole setup
+# Then connect any MCP client to: irag mcp --root /absolute/project/path
 ```
 
 <p align="center">
@@ -49,7 +50,8 @@ stale in a week, nobody notices, and the agent keeps confidently quoting
 it.
 
 **irag pays that cost once, writes it down, checks it against your code,
-and hands it back for free.**
+and gives the same verified memory to every agent you connect. It is the
+missing state layer underneath coding agents.**
 
 |  | without irag | with irag |
 |---|---|---|
@@ -63,11 +65,11 @@ and hands it back for free.**
 
 ## Why it's different
 
-**🔒 It can't quietly lie.**
-Every claim is checked against your actual code. Hallucinated paths, wrong
+**🔒 It can't quietly lie about what can be proved.**
+Every checkable claim is tested against your actual code. Hallucinated paths, wrong
 version pins and phantom symbols become queryable rows; contradicted pages
 are never served without a warning; `irag check` fails CI while memory and
-code disagree. *No other memory tool does this.*
+code disagree. The model writes prose; deterministic checks decide what can be trusted.
 
 <p align="center">
   <img src="docs/assets/health-contradiction.jpg" alt="Health view: memory claimed argon2-cffi 21.1.0, the manifest declares 23.1.0 — caught mechanically, with a one-click resolve" width="100%">
@@ -97,9 +99,49 @@ Stdlib Python. The whole memory is one SQLite file in your repo — no
 service, no cloud, no keys. Move it, mount it from another machine, delete
 it. It's a file.
 
-**🔌 Works with the agent you already use.**
-Claude Code hooks make it fully automatic. The installed `AGENTS.md`
-reaches Codex, Antigravity and Cursor. Git is optional.
+**🔌 One protocol. Every serious coding agent.**
+`irag mcp` is a standards-compliant stdio MCP server, not a Claude wrapper.
+Codex, Claude Code, Cursor, Windsurf, VS Code and any compatible client receive
+the same context, search, map, impact, provenance, contradiction, diary and
+update tools backed by the same file. Switch agents mid-project without
+resetting the project's brain.
+
+**🧨 Contradictions become executable repair packets.**
+Every contradiction has an **Agent brief** button. It opens a self-contained,
+properly formatted HTML file with the false claim, observed truth, detector,
+current memory page, verified structural context, and exact repair mission.
+Open one issue or generate the master brief for all of them, then hand it to
+any coding agent.
+
+**🛡 It survives the boring failures that destroy trust.**
+Ordered migrations back up before upgrading and refuse unsafe downgrades.
+Dashboard updates have durable IDs and reconnectable live progress. Structural
+scans reparse only changed files when safe, and renames preserve the complete
+memory lineage. Provider failures retry and every call records model, latency,
+token estimates, status, and optional user-priced cost.
+
+**🔬 It audits the repository, not just the memory.**
+One defensive pass scans code quality, secret patterns, unsafe execution,
+dependency cycles, discovered API routes, and exact locked dependency versions
+against OSV. Findings carry file, line, evidence, confidence, and remediation;
+suspected secrets are redacted before they are stored or shown. A separate
+loopback-only API checker safely probes parameter-free read routes without
+following redirects.
+
+**🧠 It has a thinking room with access to right now.**
+The Thinking Studio combines project memory, the latest audit, the current diff,
+and optional live web results for product, business, marketing, creative, and
+code-review work. Every web result keeps its URL and retrieval time, current
+claims require current sources, and repository evidence stays visibly separate
+from outside evidence. The chat and recommendation board are durable project
+memory, not another disposable conversation.
+
+**📚 The entire project fits on one living page.**
+Main Summary renders the complete body of every current file, folder, decision,
+and lesson page together with drift, contradictions, recent sessions, and audit
+state. It refreshes structural truth automatically, tells you exactly which
+narrative is stale, and never hides completeness behind a model-generated
+abridgement.
 
 ---
 
@@ -113,13 +155,22 @@ cd your-project
 irag init                   # works with or without git
 irag doctor --probe-llm     # verify your summariser before spending anything
 irag update                 # build the memory: one call per file and folder
-irag claude-setup           # wire the hooks — after this it runs itself
+irag mcp --root "$PWD"       # the universal agent interface
 ```
 
-After `claude-setup` the loop is mechanical: **SessionStart** injects
+Register that final command in any MCP client. For Codex and Claude Code:
+
+```bash
+codex mcp add irag -- irag mcp --root /absolute/path/to/project
+claude mcp add --scope project irag -- irag mcp --root /absolute/path/to/project
+```
+
+See [docs/MCP.md](docs/MCP.md) for generic JSON configurations and the full
+tool contract. Claude Code users may additionally run `irag claude-setup` for
+native hooks. With those hooks, **SessionStart** injects
 ranked context plus a recap of previous sessions, **Stop** runs `irag
 update` when your agent finishes a turn, **SessionEnd** writes the diary.
-You never think about it again.
+MCP exposes the same lifecycle explicitly to every client.
 
 Then, day to day:
 
@@ -139,19 +190,31 @@ different model from your coding agent:
 ```toml
 # .irag/config.toml
 [llm]
-command = "agy --dangerously-skip-permissions -p {prompt}"   # or: claude -p
-model_label = "antigravity"
+provider = "codex"        # claude | codex | agy | ollama | custom
+model = ""                # provider default; required for ollama
+retries = 1
 ```
 
-Any CLI that takes a prompt and prints markdown works. The fact-checker is
-model-agnostic, so a cheaper writer never weakens the trust layer.
+The adapters normalize prompt delivery, retries, output, model provenance and
+usage telemetry. Any CLI still works through `provider = "custom"`. The
+fact-checker is model-agnostic, so a cheaper writer never weakens the trust
+layer.
+
+You can switch all of this from the dashboard Overview without editing TOML.
+Claude, Codex, agy, Ollama, and custom-command choices are explicit; validation
+and conflict detection prevent one browser tab from silently overwriting
+another. Web research can use Brave, Tavily, a self-hosted SearXNG instance, or
+the keyless DuckDuckGo fallback. Credentials stay in environment variables:
+`BRAVE_SEARCH_API_KEY` or `TAVILY_API_KEY`.
 
 ---
 
 ## The dashboard
 
-`irag dashboard` — local, zero-dependency, and a **full peer of the CLI**.
-Anything you can type, you can click.
+`irag dashboard` is the local, zero-dependency visual control plane over the
+same memory as the CLI and MCP server. Status, updates, complete summaries,
+audits, contradiction repair, sessions, configuration, maps, and sourced
+thinking stay in one place.
 
 <p align="center">
   <img src="docs/assets/dashboard-overview.jpg" alt="Overview: what needs attention, token burn, live activity" width="100%">
@@ -167,8 +230,17 @@ your summaries. Instant, zero tokens.
 - **Pages** — one page is one object: summary, version history and diffs,
   the contradictions on it, and what it defines / imports / is imported by
   (clickable, so you walk the graph from where you are).
-- **Overview** — what needs attention, each with the button that fixes it.
-- **Health** — contradictions with one-click resolve, staleness.
+- **Overview** — what needs attention, each with the button that fixes it,
+  plus live provider/model and web-research controls.
+- **Main Summary** — the unabridged, continuously refreshed project story:
+  every current page, decision, lesson, contradiction, session, and audit state.
+- **Code Audit** — defensive security and quality findings, dependency advisory
+  checks, API inventory, architecture cycles, and a loopback-only live API
+  checker.
+- **Thinking Studio** — a persistent code-review/product/business/marketing/
+  creative chat with a recommendation board and explicitly sourced live trends.
+- **Health** — contradictions, staleness, one-click HTML handoffs for each
+  issue, and one master agent repair brief.
 - **Visualize** — your codebase in 3D: orbit it, zoom it, click a file to
   see what irag knows about it.
 - **Map** — an Obsidian-style dependency graph: pan, zoom, trace imports.
@@ -177,6 +249,8 @@ your summaries. Instant, zero tokens.
 - **Tools** — preview the exact briefing your agent gets, time-travel, and
   run every operation without a terminal.
 - **Chat** — routes lookups to instant SQL and questions to AI answers.
+- **Docs** — the setup, architecture, MCP, and CLI manuals ship inside the
+  dashboard, so the operating contract stays available with the tool.
 
 <p align="center">
   <img src="docs/assets/dependency-graph.jpg" alt="Interactive dependency graph" width="49%">
@@ -197,7 +271,8 @@ every few seconds, so new files show up without a refresh.
 
 ## Measured, not claimed
 
-Run on irag's own source — 22 modules, 9,056 lines — on a laptop:
+Run on irag's own source on a laptop (the benchmark below predates the new
+MCP/provider/report modules, so it is retained as a reproducible baseline):
 
 | | |
 |---|---|
@@ -284,20 +359,21 @@ moment you close the terminal.
 
 The full version: [docs/STORY.md](docs/STORY.md).
 
-## Commands (45)
+## Commands (50)
 
 `init` · `claude-setup` · `doctor` — setup ·
 `sync` · `ingest-commit` · `scan` — detect ·
 `synthesize` · `update` · `lint` · `learn` · `record-decision` · `resolve` ·
 `rollback` · `forget` — write ·
 `search` · `map` · `impact` · `stale` · `status` · `diff` ·
-`contradictions` · `asof` · `brief` · `suggest` · `facts` ·
+`contradictions` · `contradiction-report` · `asof` · `brief` · `suggest` · `facts` ·
 `candidates` — read (SQL, zero tokens) ·
 `ask` · `context` — read (AI) ·
 `tried` · `verify` · `topic` · `capture` — record what only you know ·
 `session-begin` · `session-end` · `sessions` · `transcript` · `recap` — diary ·
 `pin` · `unpin` · `export` · `check` · `backup` — admin ·
-`dashboard` · `obsidian` · `why` — views & provenance
+`dashboard` · `obsidian` · `why` · `mcp` · `provider` · `audit` · `web-search` —
+views, protocol, defensive analysis, live evidence & provenance
 
 Four of these record what a summariser cannot infer:
 
@@ -326,6 +402,7 @@ reference. Built by `site/build.py` (stdlib, zero deps). The same content
 lives here:
 
 - [SETUP.md](docs/SETUP.md) — install, LLM configuration, hooks, CI gate
+- [MCP.md](docs/MCP.md) — connect Codex, Claude, Cursor, Windsurf, VS Code, or any MCP client
 - [ARCHITECTURE.md](docs/ARCHITECTURE.md) — schema, data flows, retrieval scoring
 - [CLI_REFERENCE.md](docs/CLI_REFERENCE.md) — every command and flag
 - [COMPARISON.md](docs/COMPARISON.md) — vs Graphify & claude-mem
@@ -335,11 +412,10 @@ lives here:
 
 ## Roadmap
 
-- MCP server (context / map / why / learn as tools)
-- Confidence scoring driven by lint history
-- CI webhooks (post contradictions to PRs)
-- Schema migration system (today: additive column guards only)
-- Real-LLM evaluation of summary quality
+- Confidence scoring driven by lint and executable-fact history
+- CI annotations that attach contradiction repair packets to pull requests
+- Real-model regression evals for critical-context retention
+- Optional authenticated Streamable HTTP transport for shared remote teams
 
 ## License
 
