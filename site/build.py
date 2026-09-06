@@ -603,7 +603,7 @@ Claude tomorrow, Cursor after lunch — the project never forgets.</p>
 or trace a claim: those paths never call a model</span></div>
 <div class="stat"><b data-cnt="87" data-pre="~">~87</b><span>tokens to
 resume any past conversation, with its per-file changes</span></div>
-<div class="stat"><b data-cnt="16" data-suf=" tools">16 tools</b><span>one
+<div class="stat"><b data-cnt="21" data-suf=" tools">21 tools</b><span>one
 standard MCP contract, identical in every connected coding agent</span></div>
 <div class="stat"><b data-cnt="0">0</b><span>runtime dependencies,
 services, or required API keys</span></div>
@@ -655,7 +655,7 @@ update.</p>
 <pre class="term-body">codex mcp add irag -- irag mcp --root /absolute/project
 claude mcp add --scope project irag -- irag mcp --root /absolute/project
 
-✓ 16 tools · same memory · live evidence · isolated sessions</pre>
+✓ 21 tools · same memory · live evidence · isolated sessions</pre>
 </div>
 <p class="fineprint"><a href="docs/mcp/">Connect Cursor, Windsurf, VS Code, or any MCP client →</a></p>
 </section>
@@ -665,11 +665,14 @@ claude mcp add --scope project irag -- irag mcp --root /absolute/project
 <p><b>Main Summary is the whole project on one living page.</b> Not a vague
 executive abstract: every current file, folder, decision, and lesson in full,
 beside drift, contradictions, sessions, and audit state. Structural truth
-refreshes automatically and stale prose says that it is stale.</p>
+refreshes automatically, stale prose says that it is stale, and Memory Trust
+explains which evidence is lowering confidence instead of hiding it in a score.</p>
 <p><b>Code Audit turns review risk into evidence.</b> It maps APIs, finds
 dependency cycles, checks exact package versions against OSV, redacts suspected
 secrets, and attaches file, line, confidence, and remediation to every finding.
-The live API checker cannot wander beyond loopback or follow a redirect.</p>
+The live API checker cannot wander beyond loopback or follow a redirect. Review
+decisions survive harmless line shifts, risk acceptances can expire, and open
+work exports as SARIF. Stale inventories fail closed.</p>
 </div>
 <div class="term reveal tilt" role="img" aria-label="irag developer intelligence workspace">
 <div class="term-bar" aria-hidden="true"><span class="tb"></span><span class="tb"></span><span class="tb"></span><span class="term-title">thinking studio</span></div>
@@ -677,7 +680,7 @@ The live API checker cannot wander beyond loopback or follow a redirect.</p>
 WEB    Brave / Tavily / SearXNG / DuckDuckGo · URL + retrieval time
 MODES  code review · product · business · marketing · creative
 
-→ sourced conversation + five concrete experiments + durable idea board</pre>
+→ sourced conversation + measured experiments + change-aware watchlists</pre>
 </div>
 <p class="fineprint">Current trend claims require live sources. Search failure
 is disclosed. Repository text and web snippets are treated as untrusted data,
@@ -729,7 +732,7 @@ model, so bookkeeping never touches your agent's limits.</p>
 <h2 class="sec-t">This is infrastructure, not another prompt file.</h2>
 <ol class="featlist">
 <li class="reveal"><h3>One MCP brain for every agent</h3>
-<p>Sixteen standard tools. The same names, schemas, results, lock, and
+<p>Twenty-one standard tools. The same names, schemas, results, lock, and
 database in Codex, Claude, Cursor, Windsurf, VS Code, and any MCP client.</p></li>
 <li class="reveal"><h3>Your agent never greps again</h3>
 <p>Search, code map, blast radius, and context come from SQL, not from
@@ -757,7 +760,14 @@ failures, validation, and the exact per-file revision trail.</p></li>
 visible, and current claims never quietly fall back to model memory.</p></li>
 <li class="reveal"><h3>A complete summary that refuses to summarize things away</h3>
 <p>Every live memory page appears in full beside drift, audit, contradictions,
-and sessions — searchable, filterable, and continuously refreshed.</p></li>
+and sessions — searchable, filterable, continuously refreshed, and scored by
+an explained evidence-based Memory Trust signal.</p></li>
+<li class="reveal"><h3>From diff to defensible release</h3>
+<p>Delivery maps contract removals, blast radius, related tests, native checks,
+and release gates into one brief a person or coding agent can execute.</p></li>
+<li class="reveal"><h3>Team memory without leaking the repository</h3>
+<p>Reviewable, idempotent bundles carry decisions, lessons, experiments,
+watchlists, topics, and audit triage—not code, transcripts, prompts, or commands.</p></li>
 </ol>
 </section>
 <section class="sec" id="proof">
