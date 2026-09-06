@@ -233,6 +233,12 @@
         anchor: [0.955, 0.20], label: "Why" },
       { sel: "#connect", n: hubs[3], off: [0.7, -0.2, 2.1], o: 0.28, oy: -0.10,
         anchor: [0.052, 0.64], label: "Connect" },
+      // o places the projection centre at W*(0.5+o), and the marker rides it.
+      // -0.40 parks it in the left gutter, clear of this section's unusually
+      // long three-line heading; oy keeps it off #why's height.
+      { sel: "#intelligence", n: hubs[1], off: [1.15, -0.5, 2.0],
+        o: -0.40, oy: -0.24,
+        anchor: [0.948, 0.30], label: "Intelligence" },
       { sel: "#how",   n: hubs[0], off: [0.55, 0.55, 1.85], o: 0.34, oy: -0.21,
         anchor: [0.048, 0.38], label: "How it runs" },
       { sel: "#built", n: hubs[2], off: [0.5, -0.55, 1.75], o: 0.30, oy: -0.30,
