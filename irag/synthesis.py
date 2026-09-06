@@ -112,6 +112,8 @@ current page. Never write vague filler.>"""
 FILE_CONTENT_CAP = 12000
 CURRENT_PAGE_CAP = 20000
 DIFF_CAP = 4000
+CHILD_SUMMARY_CAP = 2400
+CHILDREN_TOTAL_CAP = 60000
 # git's canonical empty-tree object — lets us diff a repository's very
 # first commit (which has no parent) without special-casing it
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -271,6 +273,30 @@ def _event_messages(events) -> list[str]:
     return out
 
 
+def _child_summary_excerpt(body: str, cap: int = CHILD_SUMMARY_CAP) -> str:
+    """Retain every critical section of a child page within a fixed budget.
+
+    Prefix truncation kept a child's title and purpose but routinely dropped
+    the later invariants, failure/security behavior, connections, and recent
+    changes that a parent rollup exists to preserve. Give each markdown
+    section a fair slice instead, then spend any remaining budget in document
+    order. This stays deterministic and bounded while preventing a late
+    critical section from disappearing merely because it was late.
+    """
+    clean = body.strip()
+    if len(clean) <= cap:
+        return clean
+    blocks = re.split(r"(?=^##\s+)", clean, flags=re.M)
+    if not blocks:
+        return clean[:cap]
+    marker = "\n… child summary excerpt bounded …"
+    usable = max(1, cap - len(marker))
+    quota = max(80, usable // len(blocks))
+    selected = [block.strip()[:quota] for block in blocks if block.strip()]
+    excerpt = "\n\n".join(selected)
+    return excerpt[:usable].rstrip() + marker
+
+
 def _touched_symbols(conn, subject_id: str, diff: str) -> list[str]:
     """Indexed symbols whose definition line falls inside a changed hunk.
 
@@ -424,12 +450,22 @@ def build_folder_prompt(conn, cfg, page, repo: Path):
     events = _queued_events(conn, page["subject_id"])
     children = _children(conn, page["subject_id"])
     parts = [FOLDER_INSTRUCTION, "", f"FOLDER: {page['subject_id']}", "",
-             "DIRECT CHILDREN AND THEIR SUMMARIES:"]
-    for child in children:
+             "DIRECT CHILDREN AND CRITICAL SUMMARY EXCERPTS:"]
+    child_context_used = 0
+    for index, child in enumerate(children):
         kind = "folder" if child["page_type"] == "folder" else "file"
-        first = child["body"].strip().splitlines()
-        gist = " ".join(first[1:3])[:300] if len(first) > 1 else first[0][:300]
-        parts.append(f"- [{kind}] `{child['subject_id']}`: {gist}")
+        excerpt = _child_summary_excerpt(child["body"])
+        entry = (f"\n--- [{kind}] `{child['subject_id']}` ---\n"
+                 f"{excerpt}")
+        if child_context_used + len(entry) > CHILDREN_TOTAL_CAP:
+            omitted = len(children) - index
+            parts.append(
+                f"\n… {omitted} additional direct child summary excerpt(s) "
+                "omitted at the folder evidence limit; preserve any still-"
+                "valid details already present in CURRENT PAGE …")
+            break
+        parts.append(entry)
+        child_context_used += len(entry)
     parts.append("")
     messages = _event_messages(events)
     if messages:
@@ -493,7 +529,8 @@ def build_topic_prompt(conn, cfg, page, repo: Path):
         (page["subject_id"],)).fetchall()]
     parts = [TOPIC_INSTRUCTION, "", f"TOPIC: {page['subject_id']}", "",
              "MEMBER FILES AND THEIR SUMMARIES:"]
-    for subject in members:
+    member_context_used = 0
+    for index, subject in enumerate(members):
         row = conn.execute(
             "SELECT r.body_markdown b, p.deleted_at FROM pages p "
             "LEFT JOIN revisions r ON r.revision_id = p.current_revision_id "
@@ -504,10 +541,18 @@ def build_topic_prompt(conn, cfg, page, repo: Path):
         if row and row["deleted_at"]:
             gist = "(member removed from the live project)"
         elif body:
-            gist = " ".join(body.splitlines()[1:6])[:600]
+            gist = _child_summary_excerpt(body, cap=1600)
         else:
             gist = "(no summary yet — run 'irag update')"
-        parts.append(f"- `{subject}`: {gist}")
+        entry = f"\n--- MEMBER `{subject}` ---\n{gist}"
+        if member_context_used + len(entry) > CHILDREN_TOTAL_CAP:
+            parts.append(
+                f"\n… {len(members) - index} additional member summary "
+                "excerpt(s) omitted at the topic evidence limit; preserve "
+                "any still-valid details already present in CURRENT PAGE …")
+            break
+        parts.append(entry)
+        member_context_used += len(entry)
     parts.append("")
     body = db.current_body(conn, page["page_id"])
     parts += ["CURRENT PAGE:", body[:CURRENT_PAGE_CAP] if body else "none — write the first "
