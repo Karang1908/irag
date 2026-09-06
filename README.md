@@ -102,9 +102,9 @@ it. It's a file.
 **🔌 One protocol. Every serious coding agent.**
 `irag mcp` is a standards-compliant stdio MCP server, not a Claude wrapper.
 Codex, Claude Code, Cursor, Windsurf, VS Code and any compatible client receive
-the same context, search, map, impact, provenance, contradiction, diary and
-update tools backed by the same file. Switch agents mid-project without
-resetting the project's brain.
+the same 21 context, search, map, impact, provenance, audit, delivery, research,
+team-memory, contradiction and diary tools backed by the same file. Switch
+agents mid-project without resetting the project's brain.
 
 **🧨 Contradictions become executable repair packets.**
 Every contradiction has an **Agent brief** button. It opens a self-contained,
@@ -126,7 +126,10 @@ dependency cycles, discovered API routes, and exact locked dependency versions
 against OSV. Findings carry file, line, evidence, confidence, and remediation;
 suspected secrets are redacted before they are stored or shown. A separate
 loopback-only API checker safely probes parameter-free read routes without
-following redirects.
+following redirects. Review decisions persist across rescans and harmless line
+shifts, accepted risks can expire automatically, and open findings export as
+SARIF 2.1.0. Direct reports and probes fail closed when their structural
+inventory is stale.
 
 **🧠 It has a thinking room with access to right now.**
 The Thinking Studio combines project memory, the latest audit, the current diff,
@@ -134,7 +137,9 @@ and optional live web results for product, business, marketing, creative, and
 code-review work. Every web result keeps its URL and retrieval time, current
 claims require current sources, and repository evidence stays visibly separate
 from outside evidence. The chat and recommendation board are durable project
-memory, not another disposable conversation.
+memory, not another disposable conversation. Turn promising ideas into measured
+experiments, and refresh source-backed watchlists to see what changed in the
+market instead of repeatedly asking the same broad question.
 
 **📚 The entire project fits on one living page.**
 Main Summary renders the complete body of every current file, folder, decision,
@@ -142,6 +147,13 @@ and lesson page together with drift, contradictions, recent sessions, and audit
 state. It refreshes structural truth automatically, tells you exactly which
 narrative is stale, and never hides completeness behind a model-generated
 abridgement.
+
+**🚢 It closes the gap between understanding and shipping.**
+Delivery reads the current diff, maps blast radius, flags public contract
+removals, finds related tests, and produces a repository-native verification
+plan and release brief. A reviewable JSON team-memory bundle carries decisions,
+lessons, experiments, watchlists, topics, and security triage between worktrees
+without copying source, transcripts, prompts, or executable facts.
 
 ---
 
@@ -233,12 +245,14 @@ your summaries. Instant, zero tokens.
 - **Overview** — what needs attention, each with the button that fixes it,
   plus live provider/model and web-research controls.
 - **Main Summary** — the unabridged, continuously refreshed project story:
-  every current page, decision, lesson, contradiction, session, and audit state.
+  every current page, decision, lesson, contradiction, session, audit state,
+  and an explained Memory Trust score that shows exactly what needs attention.
 - **Code Audit** — defensive security and quality findings, dependency advisory
   checks, API inventory, architecture cycles, and a loopback-only live API
-  checker.
+  checker; triage findings with rationale/expiry and export open work as SARIF.
 - **Thinking Studio** — a persistent code-review/product/business/marketing/
-  creative chat with a recommendation board and explicitly sourced live trends.
+  creative chat with a recommendation board, measurable experiment ledger,
+  and explicitly refreshed, source-preserving trend watchlists.
 - **Health** — contradictions, staleness, one-click HTML handoffs for each
   issue, and one master agent repair brief.
 - **Visualize** — your codebase in 3D: orbit it, zoom it, click a file to
@@ -246,8 +260,9 @@ your summaries. Instant, zero tokens.
 - **Map** — an Obsidian-style dependency graph: pan, zoom, trace imports.
 - **Sessions** — every conversation with its per-file changes, and the
   verbatim transcript when capture is on.
-- **Tools** — preview the exact briefing your agent gets, time-travel, and
-  run every operation without a terminal.
+- **Delivery** — inspect current changes, contract risk, blast radius, mapped
+  tests, release gates, and a copyable agent brief; exchange reviewable team
+  memory, preview agent context, time-travel, and run maintenance operations.
 - **Chat** — routes lookups to instant SQL and questions to AI answers.
 - **Docs** — the setup, architecture, MCP, and CLI manuals ship inside the
   dashboard, so the operating contract stays available with the tool.
