@@ -25,6 +25,7 @@ import traceback
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse, parse_qs
 
 from . import config as config_mod
@@ -429,6 +430,13 @@ def make_handler(state: _State):
                 state.lock.release()
                 repo_lock.release()
 
+        def _with_memory_write_value(self, build):
+            """Return a mutator's value without weakening the lock boundary."""
+            values = []
+            written = self._with_memory_write(
+                lambda: values.append(build()))
+            return written, values[0] if values else None
+
         def handle_one_request(self):
             # ThreadingHTTPServer runs one thread per request, so the
             # thread-local connection must be handed back when the request
@@ -495,6 +503,24 @@ def make_handler(state: _State):
                             {"error": "memory update in progress; retry"}, 409)
                     payload["config_error"] = config_error
                     return self._json(payload)
+                if url.path == "/api/delivery":
+                    from . import delivery
+                    base = (qs.get("base") or ["HEAD"])[0]
+                    refreshed, payload = self._with_live_memory(
+                        conn, lambda: delivery.plan(
+                            conn, state.cfg, state.root, base))
+                    if not refreshed:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    return self._json(payload)
+                if url.path == "/api/team-memory":
+                    from . import team_memory
+                    conn.execute("BEGIN")
+                    try:
+                        value = team_memory.export_bundle(conn, state.root)
+                    finally:
+                        conn.rollback()
+                    return self._json(value)
                 if url.path == "/api/audit":
                     from . import audit
                     if config_error:
@@ -508,6 +534,29 @@ def make_handler(state: _State):
                         return self._json(
                             {"error": "memory update in progress; retry"}, 409)
                     return self._json(value or {"status": "never_run"})
+                if url.path == "/api/audit-sarif":
+                    from . import audit
+                    if config_error:
+                        return self._json(
+                            {"error": "config reload failed: " + config_error},
+                            409)
+                    refreshed, value = self._with_live_memory(
+                        conn, lambda: audit.latest(conn, state.root))
+                    if not refreshed:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    if not value:
+                        return self._json(
+                            {"error": "run a code audit before exporting SARIF"},
+                            404)
+                    if value.get("stale"):
+                        return self._json(
+                            {"error": "the audit is stale; rerun Deep Audit before exporting SARIF"},
+                            409)
+                    include_triaged = (qs.get("all") or [""])[0] in (
+                        "1", "true", "yes")
+                    return self._json(audit.sarif(
+                        value, include_triaged=include_triaged))
                 if url.path == "/api/studio":
                     from . import providers, studio, websearch
                     value = studio.state(conn)
@@ -814,7 +863,8 @@ def make_handler(state: _State):
                 conn = state.conn()
                 if config_error and url.path in (
                         "/api/chat", "/api/update", "/api/op", "/api/audit",
-                        "/api/studio-chat", "/api/studio-ideas"):
+                        "/api/studio-chat", "/api/studio-ideas",
+                        "/api/watchlist/refresh", "/api/api-check"):
                     return self._json(
                         {"error": "config reload failed: " + config_error},
                         400)
@@ -848,23 +898,52 @@ def make_handler(state: _State):
                         return self._json(
                             {"error": "a deep audit is already running"}, 409)
                     try:
-                        refreshed, _ = self._with_live_memory(conn, lambda: None)
+                        from . import audit
+                        refreshed, result = self._with_live_memory(
+                            conn, lambda: audit.run(
+                                conn, state.cfg, state.root,
+                                check_advisories=advisory))
                         if not refreshed:
                             return self._json(
                                 {"error": "memory update in progress; retry"}, 409)
-                        from . import audit
-                        result = audit.run(conn, state.cfg, state.root,
-                                           check_advisories=advisory)
                     finally:
                         state.audit_lock.release()
                     return self._json(result)
+                if url.path == "/api/audit-triage":
+                    from . import audit
+                    try:
+                        written, item = self._with_memory_write_value(
+                            lambda: audit.triage_finding(
+                                conn, state.root,
+                                str(data.get("id") or ""),
+                                str(data.get("status") or ""),
+                                str(data.get("rationale") or ""),
+                                str(data.get("expires_at") or "")))
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    if not written:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    return self._json({"ok": True, "finding": item})
                 if url.path == "/api/api-check":
                     base_url = str(data.get("base_url") or "").strip()
                     if len(base_url) > 2000:
                         return self._json(
                             {"error": "base_url must be at most 2000 characters"}, 413)
                     from . import audit
-                    report = audit.latest(conn, state.root)
+                    refreshed, report = self._with_live_memory(
+                        conn, lambda: audit.latest(conn, state.root))
+                    if not refreshed:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    if not report:
+                        return self._json(
+                            {"error": "run Deep Audit first so iRAG can discover safe read-only routes"},
+                            409)
+                    if report.get("stale"):
+                        return self._json(
+                            {"error": "the route inventory is stale; rerun Deep Audit before probing the app"},
+                            409)
                     routes = ((report or {}).get("api") or {}).get("routes") or []
                     try:
                         result = audit.check_local_api(base_url, routes)
@@ -893,21 +972,25 @@ def make_handler(state: _State):
                         return self._json(
                             {"error": "memory update in progress; retry"}, 409)
                     try:
-                        with state.lock:
-                            if url.path.endswith("chat"):
-                                result = studio.chat(
+                        if url.path.endswith("chat"):
+                            written, result = self._with_memory_write_value(
+                                lambda: studio.chat(
                                     conn, state.cfg, state.root,
                                     message=question, mode=mode,
-                                    use_web=use_web, snapshot=snapshot)
-                            else:
-                                result = studio.generate_ideas(
+                                    use_web=use_web, snapshot=snapshot))
+                        else:
+                            written, result = self._with_memory_write_value(
+                                lambda: studio.generate_ideas(
                                     conn, state.cfg, state.root,
                                     mode=mode, focus=question,
-                                    use_web=use_web, snapshot=snapshot)
+                                    use_web=use_web, snapshot=snapshot))
                     except ValueError as exc:
                         return self._json({"error": str(exc)}, 400)
                     except (RuntimeError, SystemExit) as exc:
                         return self._json({"error": str(exc)}, 502)
+                    if not written:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
                     return self._json(result)
                 if url.path == "/api/studio-idea/archive":
                     try:
@@ -915,9 +998,81 @@ def make_handler(state: _State):
                     except (TypeError, ValueError):
                         return self._json({"error": "bad idea id"}, 400)
                     from . import studio
-                    if not studio.archive_idea(conn, idea_id):
+                    written, archived = self._with_memory_write_value(
+                        lambda: studio.archive_idea(conn, idea_id))
+                    if not written:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    if not archived:
                         return self._json({"error": "no active idea with that id"}, 404)
                     return self._json({"ok": True})
+                if url.path == "/api/experiment":
+                    from . import studio
+                    try:
+                        written, value = self._with_memory_write_value(
+                            lambda: studio.save_experiment(
+                                conn, data.get("experiment")))
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    if not written:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    return self._json({"ok": True, "experiment": value})
+                if url.path == "/api/watchlist":
+                    from . import studio
+                    action = str(data.get("action") or "create")
+                    try:
+                        if action == "create":
+                            written, value = self._with_memory_write_value(
+                                lambda: studio.create_watchlist(
+                                    conn, data.get("name"), data.get("query")))
+                        elif action == "archive":
+                            watchlist_id = int(data.get("id"))
+                            written, archived = self._with_memory_write_value(
+                                lambda: studio.archive_watchlist(
+                                    conn, watchlist_id))
+                            if written and not archived:
+                                return self._json(
+                                    {"error": "no active watchlist with that id"}, 404)
+                            value = {"watchlist_id": watchlist_id,
+                                     "status": "archived"}
+                        else:
+                            return self._json(
+                                {"error": "action must be create or archive"}, 400)
+                    except (TypeError, ValueError) as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    if not written:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    return self._json({"ok": True, "watchlist": value})
+                if url.path == "/api/watchlist/refresh":
+                    from . import studio
+                    try:
+                        watchlist_id = int(data.get("id"))
+                        written, value = self._with_memory_write_value(
+                            lambda: studio.refresh_watchlist(
+                                conn, state.cfg, watchlist_id))
+                    except (TypeError, ValueError) as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    except (RuntimeError, OSError) as exc:
+                        return self._json({"error": str(exc)}, 502)
+                    if not written:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    return self._json({"ok": True, "snapshot": value})
+                if url.path == "/api/team-memory/import":
+                    from . import team_memory
+                    result: dict[str, Any] = {}
+                    try:
+                        written = self._with_memory_write(
+                            lambda: result.update(team_memory.import_bundle(
+                                conn, data.get("bundle"))))
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    if not written:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    return self._json({"ok": True, **result})
                 if url.path == "/api/chat":
                     question = str(data.get("message", "")).strip()
                     if not question:
@@ -960,14 +1115,22 @@ def make_handler(state: _State):
                     try:
                         cid = int(data.get("id", 0))
                         if data.get("undo"):
-                            row = linter.undo_resolve(conn, cid)
+                            written, row = self._with_memory_write_value(
+                                lambda: linter.undo_resolve(conn, cid))
+                            if not written:
+                                return self._json(
+                                    {"error": "memory update in progress; retry"}, 409)
                             return self._json({"ok": True, "undone": True,
                                                "subject": row["subject_id"]})
-                        row = linter.resolve(
-                            conn, cid, notes=data.get("notes") or
-                            "dismissed from dashboard")
+                        written, row = self._with_memory_write_value(
+                            lambda: linter.resolve(
+                                conn, cid, notes=data.get("notes") or
+                                "dismissed from dashboard"))
                     except (TypeError, ValueError, SystemExit) as exc:
                         return self._json({"error": str(exc)}, 400)
+                    if not written:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
                     # the caller shows this: dismissing marks the flag
                     # wrong, and never edits the page it was raised on
                     return self._json({"ok": True, "subject": row["subject_id"],
@@ -1049,11 +1212,18 @@ def make_handler(state: _State):
                             413)
                     from .cli import _append_log
                     if url.path == "/api/learn":
-                        _append_log(conn, "lessons", "lessons", "Lessons",
-                                    "session", text, module)
+                        written = self._with_memory_write(
+                            lambda: _append_log(
+                                conn, "lessons", "lessons", "Lessons",
+                                "session", text, module))
                     else:
-                        _append_log(conn, "decisions", "decisions",
-                                    "Decisions", "decision", text, module)
+                        written = self._with_memory_write(
+                            lambda: _append_log(
+                                conn, "decisions", "decisions", "Decisions",
+                                "decision", text, module))
+                    if not written:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
                     return self._json({"ok": True})
                 if url.path == "/api/pin":
                     from . import provenance
