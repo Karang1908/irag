@@ -47,6 +47,11 @@ class MCPTests(unittest.TestCase):
         self.assertIn("irag_get_main_summary", names)
         self.assertIn("irag_audit", names)
         self.assertIn("irag_web_search", names)
+        self.assertIn("irag_delivery_plan", names)
+        self.assertIn("irag_team_memory", names)
+        self.assertIn("irag_audit_triage", names)
+        self.assertIn("irag_experiment", names)
+        self.assertIn("irag_watchlist", names)
         status = server.request({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "irag_status", "arguments": {}},
@@ -61,6 +66,10 @@ class MCPTests(unittest.TestCase):
         self.assertFalse(summary["isError"])
         self.assertEqual(summary["structuredContent"]["project"],
                          self.root.name)
+        (self.root / "app.py").write_text(
+            "import subprocess\n\ndef hello(command):\n"
+            "    return subprocess.run(command, shell=True)\n",
+            encoding="utf-8")
         audited = server.request({
             "jsonrpc": "2.0", "id": 5, "method": "tools/call",
             "params": {"name": "irag_audit",
@@ -68,6 +77,52 @@ class MCPTests(unittest.TestCase):
         })["result"]
         self.assertFalse(audited["isError"])
         self.assertEqual(audited["structuredContent"]["files_scanned"], 1)
+        finding = next(item for item in audited["structuredContent"]["findings"]
+                       if item["rule"] == "security.shell-true")
+        triaged = server.request({
+            "jsonrpc": "2.0", "id": "triage", "method": "tools/call",
+            "params": {"name": "irag_audit_triage", "arguments": {
+                "id": finding["id"], "status": "false-positive",
+                "rationale": "controlled unit-test fixture"}},
+        })["result"]
+        self.assertFalse(triaged["isError"])
+        self.assertEqual(
+            triaged["structuredContent"]["triage"]["status"],
+            "false-positive")
+        delivery_result = server.request({
+            "jsonrpc": "2.0", "id": "delivery", "method": "tools/call",
+            "params": {"name": "irag_delivery_plan", "arguments": {}},
+        })["result"]
+        self.assertFalse(delivery_result["isError"])
+        self.assertFalse(
+            delivery_result["structuredContent"]["workspace"]["git"])
+        experiment = server.request({
+            "jsonrpc": "2.0", "id": "experiment", "method": "tools/call",
+            "params": {"name": "irag_experiment", "arguments": {
+                "title": "Fast setup", "hypothesis": "A tour saves time",
+                "metric": "minutes", "status": "planned"}},
+        })["result"]
+        self.assertFalse(experiment["isError"])
+        watchlist = server.request({
+            "jsonrpc": "2.0", "id": "watch", "method": "tools/call",
+            "params": {"name": "irag_watchlist", "arguments": {
+                "action": "create", "name": "Agents",
+                "query": "current coding agent workflows"}},
+        })["result"]
+        self.assertFalse(watchlist["isError"])
+        memory = server.request({
+            "jsonrpc": "2.0", "id": "export", "method": "tools/call",
+            "params": {"name": "irag_team_memory",
+                       "arguments": {"action": "export"}},
+        })["result"]
+        self.assertFalse(memory["isError"])
+        imported = server.request({
+            "jsonrpc": "2.0", "id": "import", "method": "tools/call",
+            "params": {"name": "irag_team_memory", "arguments": {
+                "action": "import",
+                "bundle": memory["structuredContent"]}},
+        })["result"]
+        self.assertFalse(imported["isError"])
         with mock.patch("irag.websearch.search", return_value={
                 "query": "developer trends", "provider": "test",
                 "retrieved_at": "2026-09-06T00:00:00+00:00", "results": []}):
@@ -107,7 +162,7 @@ class MCPTests(unittest.TestCase):
             "params": {"_meta": meta},
         })["result"]
         self.assertEqual(listed["resultType"], "complete")
-        self.assertEqual(len(listed["tools"]), 16)
+        self.assertEqual(len(listed["tools"]), 21)
 
         started = server.request({
             "jsonrpc": "2.0", "id": "s", "method": "tools/call",
@@ -167,7 +222,16 @@ class MCPTests(unittest.TestCase):
                          ["discover", "tools"])
         self.assertEqual(responses[0]["result"]["supportedVersions"],
                          ["2026-07-28"])
-        self.assertEqual(len(responses[1]["result"]["tools"]), 16)
+        self.assertEqual(len(responses[1]["result"]["tools"]), 21)
+
+        oversized = subprocess.run(
+            [sys.executable, "-m", "irag", "mcp", "--root", str(self.root)],
+            input="x" * (mcp.MAX_REQUEST_BYTES + 1) + "\n", text=True,
+            capture_output=True, timeout=15,
+            cwd=Path(__file__).parent.parent)
+        too_large = json.loads(oversized.stdout)
+        self.assertEqual(too_large["error"]["code"], -32600)
+        self.assertIn("byte limit", too_large["error"]["message"])
 
     def test_protocol_errors_batches_and_session_attribution(self):
         server = mcp.MCPServer(self.root)
