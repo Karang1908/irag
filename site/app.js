@@ -231,6 +231,8 @@
         anchor: [0.945, 0.42], label: "Overview" },
       { sel: "#why",   n: hubs[1], off: [-1.0, 0.35, 1.9], o: -0.40, oy: -0.16,
         anchor: [0.955, 0.20], label: "Why" },
+      { sel: "#connect", n: hubs[3], off: [0.7, -0.2, 2.1], o: 0.28, oy: -0.10,
+        anchor: [0.052, 0.64], label: "Connect" },
       { sel: "#how",   n: hubs[0], off: [0.55, 0.55, 1.85], o: 0.34, oy: -0.21,
         anchor: [0.048, 0.38], label: "How it runs" },
       { sel: "#built", n: hubs[2], off: [0.5, -0.55, 1.75], o: 0.30, oy: -0.30,
