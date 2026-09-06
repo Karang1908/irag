@@ -1235,10 +1235,11 @@ def cmd_facts(args) -> int:
 
 def cmd_session_begin(args) -> int:
     from . import sessions
-    conn, _, _ = _open()
+    conn, _, root = _open()
     key = _session_key(args)
     db.set_active_key(key)
-    sid = sessions.begin(conn, agent=args.agent, key=key)
+    sid = sessions.begin(conn, agent=args.agent, key=key, root=root,
+                         task=args.task)
     # Print the key, always. A caller that passed no --id had one minted for
     # it and otherwise had no way to learn it - so it could never identify
     # itself on later calls, which is what left concurrent agents unable to
@@ -1704,6 +1705,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("session-begin", help="open a conversation log "
                         "entry (hooks call this)")
     sp.add_argument("--agent", default="claude-code")
+    sp.add_argument("--task", help="short task label stored with this branch/worktree session")
     sp.add_argument("--id", metavar="KEY",
                     help="conversation id owning this session; agents sharing "
                          "a repo must pass it (Claude Code hooks supply it "
