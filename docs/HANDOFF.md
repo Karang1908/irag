@@ -10,7 +10,7 @@ This document is about **building irag**. If you want to know how to *use*
 irag inside a project, read `/CLAUDE.md` at the repo root — that is the
 operator manual for agents consuming irag's memory, not developing it.
 
-Accurate as of **v4.48.0**, 2026-09-06. Every fact below was verified by
+Accurate as of **v4.49.0**, 2026-09-07. Every fact below was verified by
 running it on this machine by that date. Where something is inferred
 rather than observed, it says so.
 
@@ -18,7 +18,7 @@ rather than observed, it says so.
 
 ## Current working tree — reliability audit (uncommitted)
 
-The broad CLI/backend/dashboard audit completed on 2026-09-06 is present
+The broad CLI/backend/dashboard audit completed on 2026-09-07 is present
 in the working tree but has **not** been committed or pushed. Preserve it.
 It fixes the failure modes reported from real use, rather than changing the
 append-only memory model:
@@ -72,7 +72,7 @@ append-only memory model:
   is handled cleanly, `doctor` checks logical database relations in addition
   to storage integrity, and the site builder refuses to recursively replace
   directories it does not own.
-- `irag mcp` is a dependency-free stdio Model Context Protocol server with 16
+- `irag mcp` is a dependency-free stdio Model Context Protocol server with 21
   generic memory, provenance, update, contradiction, and session tools. It
   speaks JSON-RPC on stdin/stdout and is not coupled to Claude Code; Codex,
   Claude, Cursor, Windsurf, VS Code, and any other stdio MCP client can use the
@@ -86,7 +86,7 @@ append-only memory model:
 - Model invocation now goes through explicit Claude, Codex, agy, Ollama, and
   custom adapters with bounded retries, timeout/error normalization, optional
   model selection, and local run/cost telemetry. Database evolution is an
-  ordered v1→v7 migration history with an automatic SQLite backup before an
+  ordered v1→v8 migration history with an automatic SQLite backup before an
   upgrade and a hard refusal to open a newer schema with an older binary.
 - Large-repository updates reuse the structural index when topology is stable,
   reparse only changed source files, bound synthesis inputs around imports and
@@ -125,17 +125,50 @@ append-only memory model:
   atomic replacement, and a comment-preserving TOML editor; credentials remain
   environment-only. A semantically invalid config can be repaired from the UI
   while malformed TOML remains fail-closed.
+- Main Summary now computes an explained **Memory Trust** signal from coverage,
+  currentness, traceability, contradiction state, effective audit severity/
+  freshness, and session critical context. Code Audit triage is durable across
+  scans and harmless line shifts, requires a rationale for non-open findings,
+  reopens expired risk acceptances, and exports the effective open set as SARIF
+  2.1.0.
+- Thinking Studio now has a measured experiment ledger and explicitly refreshed
+  source-backed watchlists whose immutable snapshots retain provider, retrieval
+  time, results, and added/removed sources. These use the existing sourced-
+  research boundary rather than pretending the model knows current trends.
+- The former Tools workspace is now **Delivery**. It maps a validated Git diff
+  (including unborn repositories) or snapshot drift into change classification,
+  blast radius, contract removals, path risk, related tests, repository-native
+  verification commands, release gates, and a copyable agent brief. It plans
+  commands and never executes them.
+- Reviewable team-memory JSON moves explicit decisions, lessons, topic members,
+  experiments, watchlists, and audit triage between worktrees. Stable logical
+  IDs plus content hashes make imports idempotent while allowing a later outcome
+  to merge; code, transcripts, prompts, narratives, and executable facts are
+  excluded. Sessions now retain task, branch, worktree, and starting commit.
+- All new MCP mutations use the repository lock, the API checker refuses stale
+  route inventories, team imports are request-bounded, imported triage obeys
+  the same rationale/date invariants as direct review, and Delivery rejects Git
+  revisions that could be parsed as command options. MCP input frames are capped
+  at 2 MB and oversized lines are drained without desynchronizing the stream.
+- Delivery's agent brief treats paths and extracted contract text as untrusted
+  repository evidence, single-line escapes control/Markdown boundary characters,
+  and is regression-tested with a real newline/backtick filename.
+- Direct SARIF downloads and API probes refresh live structural drift and reject
+  missing or stale audit inventories. Finding IDs exclude volatile line numbers,
+  so inserting unrelated lines does not silently reopen reviewed evidence.
 
 Verification on the finished tree:
 
 ```text
-focused unittest suite on local Python 3.11 and 3.14      29 tests passed
+focused unittest suite on local Python 3.11 and 3.14      33 tests passed
 sh tests/test_smoke.sh on local Python 3.14               SMOKE TEST PASSED
 Ruff + mypy + compileall + diff --check                   passed (silent)
 site: all 11 pages × desktop/mobile Chromium              no JS errors/overflow
 all 12 dashboard workspaces desktop/mobile Chromium       no JS errors/overflow
 live trend search + sourced Studio chat/recommendations    passed
 live dashboard update: 202 → SSE → reload persistence     passed
+Delivery/triage/SARIF/experiment/watchlist/team roundtrip passed
+offline self-audit: 44 files, 0 critical/high, 7 medium     reviewed
 sdist + wheel build; isolated wheel install on 3.11       passed
 ```
 
@@ -213,7 +246,7 @@ If it points anywhere else, your edits are not what the `irag` command runs.
 
 **Note the version reported there is stale and that is normal.** pip
 records the version at the last `pip install -e .`; it currently says
-`4.40.1` while the code is `4.48.0`. `irag --version` reads
+`4.40.1` while the code is `4.49.0`. `irag --version` reads
 `irag/__init__.py` and is authoritative. Only a reinstall refreshes pip's
 copy, and a reinstall is unnecessary for ordinary source edits — editable
 installs pick those up immediately.
@@ -387,7 +420,7 @@ hundred tokens instead of thousands of tokens of re-exploration. Everything
 lives in one SQLite file
 (`.irag/memory.db`) that any agent on any machine can mount.
 
-**v4.48.0. 12,667 lines of Python. Zero runtime dependencies** — stdlib
+**v4.49.0. 14,291 lines of Python. Zero runtime dependencies** — stdlib
 only (`sqlite3`, `http.server`, `ast`, `tomllib`, `subprocess`). Package
 `irag`, console command `irag`, config dir `.irag/`, **50 commands**.
 
@@ -420,33 +453,35 @@ success. When a code path cannot know, it must say so and exit non-zero.
 
 | Module | LOC | Owns |
 |---|---:|---|
-| `cli.py` | 1898 | every command, argument parsing, repository coordination |
+| `cli.py` | 1900 | every command, argument parsing, repository coordination |
 | `synthesis.py` | 1045 | critical-context prompts, bounded page writing, injection scrubbing |
-| `dashboard.py` | 1169 | stdlib HTTP server, durable jobs/SSE, JSON API, CSRF guard |
+| `dashboard.py` | 1339 | stdlib HTTP server, durable jobs/SSE, JSON API, CSRF guard |
 | `ingest.py` | 892 | change detection, merge/rename continuity, ignoring, secrets, event queue |
 | `structure.py` | 812 | incremental symbol + dependency extraction for 10 languages |
-| `audit.py` | 802 | bounded static/security/dependency/API audit and safe loopback probes |
+| `audit.py` | 969 | bounded static/security/dependency/API audit, triage/SARIF, safe probes |
 | `linter.py` | 658 | race-safe fact-checking pages against code; contradictions |
-| `db.py` | 697 | v1→v7 migrations/backups, schema, triggers, safe JSON helpers |
-| `sessions.py` | 485 | attributed diary, narrative, deterministic critical-context ledger |
+| `db.py` | 773 | v1→v8 migrations/backups, schema, triggers, safe JSON helpers |
+| `mcp.py` | 567 | stdio JSON-RPC MCP protocol and 21 universal tool contracts |
+| `delivery.py` | 542 | diff/impact/contracts/tests/release planning; executes nothing |
+| `sessions.py` | 497 | attributed scoped diary, narrative, deterministic critical-context ledger |
 | `config.py` | 474 | TOML merge, safe UI edits, provider/web and semantic validation |
 | `retrieval.py` | 360 | ranking, tiering, budget, FTS search |
 | `obsidian.py` | 353 | vault projection |
-| `mcp.py` | 453 | stdio JSON-RPC MCP protocol and 16 universal tool contracts |
-| `studio.py` | 353 | sourced thinking conversations and durable recommendation cards |
+| `studio.py` | 510 | sourced thinking, recommendations, experiments, and watchlists |
 | `doctor.py` | 310 | self-diagnosis |
 | `websearch.py` | 303 | Brave/Tavily/SearXNG/DuckDuckGo search normalization and bounds |
+| `team_memory.py` | 305 | bounded, reviewable, idempotent shared-memory bundles |
 | `provenance.py` | 243 | `why` / `asof` / `diff` |
-| `providers.py` | 250 | Claude/Codex/agy/Ollama/custom adapters, retries, telemetry |
+| `providers.py` | 254 | Claude/Codex/agy/Ollama/custom adapters, retries, telemetry |
 | `facts.py` | 207 | executable memory |
 | `reports.py` | 183 | safe self-contained contradiction repair briefs |
 | `check.py` | 133 | the CI gate |
 | `hooks.py` | 132 | git + optional Claude Code hook wiring |
 | `stats.py` `tokens.py` `export.py` | 280 | shared metrics, token estimation, guide install |
-| `main_summary.py` | 97 | deterministic complete project read model and freshness metadata |
+| `main_summary.py` | 172 | complete project read model, freshness, and Memory Trust |
 | `locking.py` | 72 | cross-platform repository operation lock |
 
-### 2.3 Subsystems added in the 4.41–4.48 line
+### 2.3 Subsystems added in the 4.41–4.49 line
 
 These are recent and less battle-tested than the core:
 
@@ -465,7 +500,7 @@ These are recent and less battle-tested than the core:
   candidate lesson when a Bash command fails, via `PostToolUse`.
 - **Withdrawal** (`irag forget`) — drops a page from live serving while
   keeping its history.
-- **Universal MCP** (`mcp.py`, `irag mcp`) — sixteen stdio tools expose the
+- **Universal MCP** (`mcp.py`, `irag mcp`) — twenty-one stdio tools expose the
   same deterministic memory operations to any MCP-capable coding agent across
   the legacy 2024–2025 handshake and stateless `2026-07-28` protocol eras.
 - **Provider adapters** (`providers.py`) — one normalized invocation boundary
@@ -488,6 +523,12 @@ These are recent and less battle-tested than the core:
 - **Dashboard configuration** (`config.py`, `dashboard.py`) — an allowlisted,
   conflict-safe UI for provider/model/runtime/search settings that preserves
   unrelated TOML comments and never stores API keys.
+- **Delivery** (`delivery.py`) — deterministic current-change intelligence,
+  contract/risk/test mapping, release gates, and a copyable agent brief.
+- **Team memory** (`team_memory.py`) — privacy-bounded, content-validated,
+  idempotent knowledge exchange across worktrees and agent tools.
+- **Evidence lifecycle** (`audit.py`, `studio.py`) — audit triage/SARIF,
+  measured experiments, and immutable source-backed watchlist snapshots.
 
 ### 2.4 Hooks that `irag claude-setup` installs
 
@@ -831,18 +872,19 @@ conscious decision rather than a surprise.
 - The full smoke suite: 40 end-to-end guard blocks, including explicit
   concurrency, migration interruption, malformed input, and stale-live-view
   regressions.
-- Twenty-nine focused unittests covering MCP JSON-RPC framing/tool calls, provider
+- Thirty-three focused unittests covering MCP JSON-RPC framing/tool calls, provider
   argument construction/retries, ordered storage migration and backup,
   contradiction uniqueness, merge commits, snapshot and replayed-Git rename
   continuity, durable job persistence, escaped HTML handoffs, and lossless
-  session context.
+  session context, plus Delivery contracts/test mapping, audit triage/SARIF,
+  experiment/watchlist durability, and team-memory round trips.
 - Zero-token read path (sentinel test, §6).
 - Parallel synthesis produces byte-identical results to sequential — same
   page count, revision count, no duplicate versions — and a failing model
   marks every event failed and self-heals on the next run.
 - Concurrency: `update` under ten simultaneous dashboard requests, zero
   lock errors, zero tracebacks.
-- Schema migration through ordered v1→v7 history, including an automatic
+- Schema migration through ordered v1→v8 history, including an automatic
   pre-upgrade backup, a pre-upgrade human resolution correctly backfilled,
   duplicate contradiction cleanup, and refusal of an unsafe downgrade.
 - All 50 commands respond; the dashboard routes used by every one of its twelve
@@ -853,6 +895,11 @@ conscious decision rather than a surprise.
   Main Summary rendered full current pages; Code Audit completed and safely
   probed the loopback dashboard; Thinking Studio returned cited live sources,
   persisted chat, and generated five recommendation cards.
+- The new workspaces were populated and exercised at 1440 px and 390 px:
+  Memory Trust, audit review/SARIF, experiments, watchlists, and a blocked
+  Delivery plan all rendered without console errors or body overflow. Live HTTP
+  round trips verified meaningful experiment updates, audit triage, SARIF, and
+  repeated team-memory imports with stable counts and zero duplicate records.
 - A live dashboard update returned 202, streamed to completion over SSE, and
   remained queryable after a full page reload. Report clipboard copy worked in
   Chromium, and individual/master scope stayed distinct with one or many rows.
