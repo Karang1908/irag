@@ -169,6 +169,11 @@ canvas{width:100%;height:170px;display:block}
 .feed .detail{flex:1 1 100%;color:var(--text-dim)}
 
 table{width:100%;border-collapse:collapse;font-size:var(--fs-sm)}
+/* A wide table must scroll inside its panel, not spill out of it. Health's
+   two-column grid gives the contradictions panel ~633px for an 873px table,
+   which pushed the severity and agent-handoff columns out of sight under the
+   neighbouring panel. This was previously scoped to max-width:760px only. */
+.panel>table{display:block;max-width:100%;overflow-x:auto}
 th{color:var(--text-faint);text-align:left;font-weight:600;padding:var(--sp-2);border-bottom:1px solid var(--border);
   font-family:var(--mono);font-size:.65rem;text-transform:uppercase;letter-spacing:.1em}
 td{padding:var(--sp-2);border-bottom:1px solid var(--panel-2);font-family:var(--mono);font-size:var(--fs-xs)}
@@ -335,7 +340,6 @@ select{background:var(--bg-inset);color:var(--text);border:1px solid var(--borde
   /* Data tables keep their real column widths, but scroll inside the card.
      Without this boundary, long contradiction claims widened the entire
      Health view (475px of table in a 390px viewport). */
-  .panel>table{display:block;max-width:100%;overflow-x:auto}
   /* Contradictions are actions, not passive tabular data. Keep every repair
      button visible on phones instead of making the user discover a sideways
      scroll before they can open the agent handoff. */
@@ -1053,7 +1057,9 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
   <section id="health">
     <h2 class="page-title">Health</h2>
     <div class="page-sub">Where memory disagrees with the code, and which pages are drifting.</div>
-    <div class="row equal">
+    <!-- 2fr/1fr, not .equal: contradictions is a five-column table and the
+         50/50 split left it too narrow to show severity or the handoff. -->
+    <div class="row">
       <div class="panel">
         <div class="panel-heading"><h3>Open contradictions</h3>
           <button class="mini" id="master-brief" type="button">Open master agent brief ↗</button>
