@@ -112,10 +112,14 @@ def invocation(cfg: dict, prompt: str) -> Invocation:
             argv += ["--model", model]
         return Invocation(provider, argv)
     if provider == "agy":
-        argv = ["agy", "--print", "--output-format", "text"]
+        # agy's --print takes the NEXT argv token as its prompt, so it has to
+        # come last with the prompt immediately after it. Putting it first
+        # made agy swallow "--output-format" as the prompt and ignore the
+        # real one: "--print took \"--output-format\" as its prompt".
+        argv = ["agy", "--output-format", "text"]
         if model:
             argv += ["--model", model]
-        argv.append(prompt)
+        argv += ["--print", prompt]
         return Invocation(provider, argv, "argv")
     if not model:
         raise SystemExit("irag: [llm].model is required for provider=ollama")
