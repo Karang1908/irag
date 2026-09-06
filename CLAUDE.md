@@ -1,7 +1,8 @@
-# CLAUDE.md — You manage this project's memory with irag
+# irag agent operating guide
 
-You (Claude, or any coding agent reading this) are responsible for
-operating **irag**, the knowledge base for whatever project you work in.
+You, whatever coding agent you are, are responsible for operating **irag**,
+the knowledge base for this project. When MCP tools named `irag_*` are
+available, use them; otherwise use the equivalent `irag` CLI commands below.
 irag gives you persistent, verified memory: every file and folder has an
 AI-written summary page, versioned on every change, mechanically
 fact-checked against the code, and searchable. Your job is to keep that
@@ -10,23 +11,14 @@ is everything you need. Follow it without being asked.
 
 ## Phase 0 — Is irag set up here?
 
-Run `irag status`, then `irag doctor`. Three outcomes:
+Call `irag_status` when MCP is connected; otherwise run `irag status`, then
+`irag doctor`. Three outcomes:
 
-1. **It prints a dashboard** → irag is initialized. That is NOT the same
-   as automated. Before you go anywhere, find the Claude Code hook line
-   in `irag doctor`'s output:
-   - `✓ PASS  Claude Code hook wired` → good, skip to Phase 2.
-   - `! WARN  Claude Code hook   not set up` → **run `irag claude-setup`
-     right now, then re-run `irag doctor` and confirm the line flipped to
-     PASS.** Until it does, nothing is automatic: no context is injected
-     at session start, no session is logged, and `irag update` never runs
-     on its own. An initialized project with no hooks is the single most
-     common broken setup, and it is invisible unless you look.
-
-   Read that specific line. A missing hook is only a WARN, so `irag
-   doctor` still exits 0 and still prints **"all checks passed"** at the
-   bottom. Neither the exit code nor the summary line will tell you the
-   memory loop is dead.
+1. **It returns project health** → irag is initialized. If MCP tools are
+   visible, the integration is live and identical across clients. If you are
+   using Claude Code without MCP, verify `Claude Code hook wired` in
+   `irag doctor`; run `irag claude-setup` if it is missing. Other non-MCP
+   clients use the explicit CLI session loop in Phase 2.
 2. **"not initialized here — run 'irag init'"** → do Phase 1.
 3. **"command not found"** → irag isn't installed. Install it from the
    source folder: `pip install -e <path-to-irag>` (Python 3.11+, zero
@@ -38,31 +30,21 @@ Run `irag status`, then `irag doctor`. Three outcomes:
 irag init
 ```
 
-Works with or without git (snapshot mode fingerprints files when there is
-no repo). Then configure the summarizer LLM in `.irag/config.toml`:
+Works with or without git. Then configure the summary writer in
+`.irag/config.toml` with `provider = "claude"`, `"codex"`, `"agy"`,
+`"ollama"`, or `"custom"`. Use `irag provider` to verify its executable.
 
-- Claude Code available → the default `command = "claude -p"` already
-  works; change nothing.
-- Antigravity → `command = "agy --dangerously-skip-permissions -p {prompt}"`
-  (if output comes back empty, use the pseudo-TTY wrapper in
-  docs/SETUP.md).
-- Any other CLI → it must accept a prompt and print markdown; use
-  `{prompt}` (argv) or `{promptfile}` (temp file) placeholders, or
-  nothing for stdin.
-
-Verify, then build the initial memory and wire the hooks:
+Verify and build the initial memory:
 
 ```
 irag doctor --probe-llm     # must pass before spending real tokens
 irag update                 # first full synthesis: every file + folder
-irag claude-setup           # SessionStart (memory in) + Stop (memory out) + SessionEnd (diary)
-irag doctor                 # REQUIRED: confirm "Claude Code hook wired"
 ```
 
-`claude-setup` is not optional and its result must be verified. If that
-last `doctor` does not say the hook is wired, the memory loop is dead and
-every later phase of this document silently does nothing. Fix it before
-continuing, and tell the user.
+For MCP, register `irag mcp --root /absolute/project/path` once in the coding
+client (see `docs/MCP.md`). For hook-driven Claude Code, run `irag
+claude-setup`. Every other client can use the same MCP path or the explicit CLI
+session commands; the memory database and behavior are identical.
 
 If the user is present, tell them **this first** `irag update` costs one
 LLM call per file and folder, and let them confirm on large repos.
@@ -72,20 +54,30 @@ updates after a few edits are ordinary running cost, not a decision to
 escalate — see Phase 2 rule 2. Never quote the per-file cost as a reason
 to skip a normal update.
 
-## Phase 2 — The loop (every session, mostly automatic)
+## Phase 2 — The loop (every session)
 
-After claude-setup — **and only if `irag doctor` confirms the hook is
-wired; check, never assume** — the loop runs itself: SessionStart opens a
-conversation-log entry and injects ranked context (including a recap of
-the previous sessions — read it, that is your continuity), a Stop hook
-runs `irag update` when you finish a turn, and SessionEnd summarizes the
-whole conversation into the project diary with everything it changed. Your obligations on top of that:
+With MCP, call `irag_start_session`, retain its `session_key`, then call
+`irag_get_context` before broad exploration; finish with `irag_update` and
+`irag_finish_session` (pass the key when the client exposes it). Claude hooks
+perform the same lifecycle automatically. CLI-only agents use
+`session-begin`, `context`, `update`, and `session-end`. Your obligations are:
 
-1. **Read before exploring.** NEVER grep, glob, or walk the codebase to
-   learn what the project is — that burns your own tokens re-doing work
-   the memory has already paid for. If a question can be answered by
-   irag, it must be, before you spend a single token exploring the tree
-   yourself. The knowledge base is your second brain; query it:
+1. **Orient from memory, decide from source.** Query irag *first* — never
+   open a blind grep or walk the tree to learn what the project is, that
+   burns your tokens re-doing work the memory already paid for. But pages
+   orient you; they do not license an edit. **Before you change a file,
+   read that file.** A summary is a lossy, possibly stale description of
+   code, and this document elsewhere tells you the code is always the
+   truth — so an edit made on prose alone contradicts the rule you are
+   here to follow. Cheap loop: irag to find *where* and *why*, the file
+   itself to decide *what*. The knowledge base is your second brain;
+   query it:
+   - MCP: `irag_get_context`, `irag_search`, `irag_code_map`,
+     `irag_impact`, and `irag_trace_claim` are the same operations below.
+     `irag_get_main_summary` returns the unabridged live project record;
+     `irag_audit` runs the defensive code/API/dependency review; and
+     `irag_web_search` retrieves current evidence with sources. Use those
+     larger/open-world tools when the task actually calls for them.
    - `irag recap` — "previously on this project": what the last
      conversations did (also auto-injected at session start)
    - `irag context --open <file> --query "<task>"` — ranked, budgeted
@@ -98,8 +90,13 @@ whole conversation into the project diary with everything it changed. Your oblig
      radius, parsed from the code, always current
    - `irag why "<claim>"` — trace any memory claim to the change that
      created it
+   - `irag audit` — deterministic code, API, security, architecture, and
+     dependency review; `--offline` skips OSV
+   - `irag web-search "<current question>"` — live external evidence with
+     URLs and retrieval time; never present an unavailable search as current
 2. **Update after editing — unconditionally.** If you created, modified
-   or deleted files, run `irag update` before you finish your turn. Do
+   or deleted files, call `irag_update` (MCP) or run `irag update` before
+   you finish your turn. Do
    not reason about whether the Stop hook will cover it; run it anyway.
    It is a no-op when nothing has changed, so a redundant run is free,
    and a skipped run leaves the memory silently wrong for every later
@@ -108,21 +105,28 @@ whole conversation into the project diary with everything it changed. Your oblig
    **Do not ask the user for permission to run it, and do not decline it
    on cost grounds.** Synthesizing changed files is what this tool is
    for; that cost is the product working, not an incident to escalate.
-   If you want the user to know the size first, run `irag status`, state
-   the number of pages due, then run the update and report what it did.
+   If you want the user to know the size first, run `irag update
+   --dry-run` — it reports how many pages would be synthesized and roughly
+   what it would cost, without writing anything or calling the model —
+   then run the update and report what it did.
    "I did not run irag update, it costs N calls, your call" is a failure
    to do your job — the memory is now stale and the user has to notice
    and fix it by hand.
-3. **Keep the diary if hooks can't.** If you are Claude Code with
-   claude-setup done, sessions log themselves — skip this. Any other
-   agent (agy, Cursor, ...) must do it manually: run `irag session-begin`
-   as your first action in a conversation, and `irag session-end` as your
-   last action before the conversation closes (also when the user says
-   they're done).
 
-   **Generate one id at the start of the conversation and pass it to every
-   irag command that writes.** Claude Code supplies this automatically; you
-   must do it yourself:
+   **`irag status` alone cannot tell you an update is needed.** It reports
+   from the database, so files edited since the last sync are not counted
+   in "pages due" — it prints a separate `! N file(s) changed since their
+   page was written` warning for those. Treat either signal as "run
+   update", and never read `pages due for synthesis : 0` as "nothing to
+   do" while that warning is present.
+3. **Keep the diary.** MCP clients call `irag_start_session` first and
+   `irag_finish_session` last; current stateless clients pass the returned
+   `session_key` to writes and the final call so identity stays isolated.
+   Claude Code with verified hooks does this automatically. CLI-only agents
+   run `irag session-begin` first and `irag session-end` last.
+
+   **CLI-only agents generate one id and pass it to every write.** MCP and
+   Claude hooks own the key automatically:
 
    ```
    irag session-begin --id <your-unique-id> --agent <you>
@@ -149,14 +153,35 @@ whole conversation into the project diary with everything it changed. Your oblig
      architectural/tooling decisions
    - `irag learn "<gotcha, pitfall, constraint>" --module <path>` for
      anything that surprised you
+   - `irag tried "<approach>" --because "<why it failed>" --module <path>`
+     for a **dead end**. What you ruled out is worth as much as what
+     worked — without it the next session pays full price to rediscover
+     the same failure.
+   - `irag verify "<what is true>" --cmd "<command>" --expect "<text>"
+     --module <path>` for anything you learned by **running** something.
+     A page can only be checked against the code's text; this is the one
+     kind of memory that carries its own proof, and `irag check` re-runs
+     it, so it fails the build if the behaviour ever changes. Use it for
+     the facts that cost you the most to discover.
+   - `irag candidates` lists drafts written automatically when a command
+     failed. Confirm the useful ones with `irag learn`.
+5. **When knowledge is feature-shaped, not file-shaped.** If what matters
+   spans several files that share no folder ("how does auth affect
+   uploads?"), make it a page:
+   `irag topic "<concept>" --files a.py,b.py,c.py`, then `irag update`.
+   Folder pages cannot express this — they are directory-shaped.
+6. **`irag suggest`** prints what needs doing right now with the exact
+   command for it. Run it when you are unsure what state the memory is in.
 
 ## Phase 3 — When memory and code disagree
 
 THE CODE IS THE TRUTH, always. If a page carries a ⚠ warning or `irag
 check` fails:
 
-1. `irag contradictions` — read the exact claims (claim vs truth, with
-   severity).
+1. Call `irag_list_contradictions` or run `irag contradictions` — read the
+   exact claims (claim vs truth, with severity). The result includes a complete
+   coding-agent repair brief; the dashboard can open one per row or one master
+   HTML handoff.
 2. If the code is wrong → fix the code, then `irag update` (the
    contradiction auto-resolves when the claim stops failing).
 3. If the page is wrong → `irag update` refreshes it from current code.
@@ -194,11 +219,17 @@ against the code first.
 
 Read: `context` · `recap` · `sessions` · `transcript` · `search` · `ask` ·
 `map` · `impact` · `why` · `asof` · `diff` · `status` · `stale` ·
-`contradictions`
-Write: `update` · `learn` · `record-decision` · `resolve`
+`contradictions` · `brief` · `suggest` · `facts` · `candidates` · `web-search`
+Write: `update` · `learn` · `record-decision` · `tried` · `verify` ·
+`topic` · `resolve`
+Analysis & protocol: `audit` · `mcp` · `provider` · `contradiction-report`
 Setup (Phase 1 only): `init` · `doctor` · `claude-setup`
 Human-only: `rollback` · `pin` · `backup` · `dashboard` · `obsidian` ·
 `export`
+
+`irag brief <file>` is the fast one: everything known about a single file
+— disputed claims, verified behaviour, dead ends, who imports it — in a
+few lines. After `claude-setup` it fires automatically before every edit.
 
 Full reference: docs/CLI_REFERENCE.md · Setup details: docs/SETUP.md ·
 How it works: docs/ARCHITECTURE.md
