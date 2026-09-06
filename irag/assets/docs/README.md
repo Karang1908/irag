@@ -9,7 +9,7 @@ SQLite file — instead of a flat context file that silently rots.
 
 - 🔌 **Pluggable memory** — one `pip install`, one `irag init`. The
   entire memory is a single SQLite file in your repo: no service, no
-  cloud, no API keys, any agent on any machine can mount it.
+  cloud, no required API keys, any agent on any machine can mount it.
 - 🚫 **Your agent never greps again** — stop paying tokens for the same
   re-exploration every session. Search, code map, blast radius, and
   context come from SQL, not from the model reading your tree.
@@ -23,10 +23,19 @@ SQLite file — instead of a flat context file that silently rots.
   recap of what previous sessions did and changed, injected
   automatically. No more "let me look around the codebase first."
 - 🤝 **Actually works with every agent** — `irag mcp` is a standard stdio
-  MCP server, not a Claude-only wrapper. Thirteen tools, one contract, one
+  MCP server, not a Claude-only wrapper. Sixteen tools, one contract, one
   memory; Git is optional.
 - 🧨 **Contradictions become repair packets** — one button per issue and one
   master button generate self-contained HTML handoffs ready for a coding agent.
+- 🔬 **Audits with receipts** — security patterns, API routes, architecture,
+  quality, and exact dependency advisories with redacted evidence and concrete
+  remediation.
+- 🧠 **A thinking room connected to now** — project memory and the current diff
+  meet explicitly sourced live trends for code review, product, business,
+  marketing, and creative work.
+- 📚 **The whole project on one living page** — every current summary,
+  decision, lesson, contradiction, session, and audit state without an
+  abridging model pass.
 
 ```
 Claude Code   →     irag      →   agy / any LLM CLI
@@ -185,10 +194,13 @@ irag check                      # CI gate: exit 1 if memory disagrees with code
 
 `irag dashboard` — a local, zero-dependency web UI:
 
+- **Main Summary** — every current memory page in full, continuously refreshed.
+- **Code Audit** — code/API/security/dependency analysis and a loopback-only API checker.
+- **Thinking Studio** — persistent grounded chat, live sourced trends, and an idea board.
 - **Map** — an interactive, Obsidian-style dependency graph: drag to
   pan, scroll to zoom, drag nodes, hover to trace imports.
 - **Sessions** — the conversation log with per-file change detail.
-- **Overview** — live token burn, metric cards, activity feed.
+- **Overview** — live token burn, activity, and provider/web-search controls.
 - **Health** — open contradictions with one-click resolve, staleness.
 - **Chat** — auto-routes lookups to instant SQL search and questions to
   AI answers with citations.
@@ -205,7 +217,7 @@ irag check                      # CI gate: exit 1 if memory disagrees with code
 Full honest comparison (including where the others win):
 [docs/COMPARISON.md](docs/COMPARISON.md).
 
-## Commands (48)
+## Commands (50)
 
 `init` · `claude-setup` · `doctor` — setup ·
 `sync` · `ingest-commit` · `scan` — detect ·
@@ -218,7 +230,8 @@ Full honest comparison (including where the others win):
 `tried` · `verify` · `topic` · `capture` — record what only you know ·
 `session-begin` · `session-end` · `sessions` · `transcript` · `recap` — diary ·
 `pin` · `unpin` · `export` · `check` · `backup` — admin ·
-`dashboard` · `obsidian` · `why` · `mcp` · `provider` — views, protocol & provenance
+`dashboard` · `obsidian` · `why` · `mcp` · `provider` · `audit` · `web-search` —
+views, protocol, defensive analysis, live evidence & provenance
 
 Full reference: [docs/CLI_REFERENCE.md](docs/CLI_REFERENCE.md).
 

@@ -230,7 +230,8 @@ Force-rebuild the structural map (symbols + dependency edges). Automatic
 refreshes parse only content-changed files when the set of code paths is
 unchanged; adds, deletes, and renames trigger a full pass so newly resolvable
 imports cannot be missed. It runs on `init`, `sync`, `context`, `map`, and `impact` whenever
-HEAD has changed, so you rarely need it by hand. Pure parsing — Python
+the working-tree fingerprint has changed, so uncommitted edits are included
+and you rarely need it by hand. Pure parsing — Python
 via `ast`; JS/TS, Go, Rust, Java, C#, Ruby, PHP, and C/C++ via regex;
 zero LLM tokens; capped at 300KB per file / 4000 files. Import edges
 resolve for languages with file-relative imports (JS/TS, Python, Ruby
@@ -323,8 +324,18 @@ instead of thousands to re-explore.
 Local web dashboard on 127.0.0.1 (stdlib server, zero deps). Tabs:
 **Overview** — live cards (token burn, page versions, contradictions,
 queue) refreshing every 3s, a cumulative token-burn chart, a live
-activity feed of revisions/events, and a "Run irag update" button with
-streaming progress. **Chat** — chat with the knowledge base; each
+activity feed of revisions/events, a "Run irag update" button with
+streaming progress, and validated controls for changing the summary model and
+web-search provider without editing TOML. **Main Summary** — the complete body
+of every current memory page together with currentness, project status,
+contradictions, recent session evidence, and latest audit state; structural
+truth refreshes automatically. **Code Audit** — the same deterministic report
+as `irag audit`, filterable by severity/category, with source coverage, API
+inventory, OSV state, dependency cycles, recommendations, and a live checker
+restricted to discovered loopback read routes. **Thinking Studio** — a
+persistent code-review/product/business/marketing/creative conversation beside
+a durable recommendation board; optional live research displays source URLs,
+provider, and retrieval time. **Chat** — chat with the knowledge base; each
 message is auto-routed like the original DBS project: keyword/path/symbol
 lookups → instant SQL search (green badge), natural-language questions →
 AI answer with citations (purple badge); a keyword miss falls through to
@@ -344,7 +355,7 @@ symbol count, coloured by top-level folder), edges are real imports. Drag
 to orbit, scroll to zoom, click a file to inspect what it defines, what it
 imports, what depends on it, and everything irag has written about it; the
 map is re-read every few seconds so new files appear without a refresh.
-**Tools** — everything else the CLI does: *What your agent sees* renders
+**Tools** — core CLI operations: *What your agent sees* renders
 the exact `irag context` briefing with its token count and tier
 breakdown; *Time travel* runs `asof` for any date; *Operations* runs
 `sync`, `scan`, `lint`, `check`, `export`, `obsidian`, `claude-setup`,
@@ -359,8 +370,10 @@ verbatim transcript when `[sessions].capture_transcript` is on.
 **Docs** — the full documentation rendered in-app (Quickstart, Setup,
 Architecture, CLI reference, Comparison).
 
-Everything the dashboard does is also a CLI command, and vice versa —
-the GUI is a full peer of the CLI, not a read-only viewer.
+The main memory, audit, web-search, contradiction, provider, and update paths
+are also available through CLI or MCP. Dashboard-only composition (the Studio
+conversation and idea board) still persists in the same SQLite database rather
+than browser storage.
 
 Updates receive durable job IDs. Progress and ordered logs are stored in
 SQLite and streamed to the browser with Server-Sent Events, so refreshes and
@@ -373,6 +386,28 @@ Start the vendor-neutral Model Context Protocol server over stdio. It
 negotiates stable MCP versions, publishes JSON Schema tools, returns text plus
 structured results, and never writes logs to protocol stdout. `--root` should
 be absolute when launched by a coding client. See [MCP.md](MCP.md).
+
+### `irag audit [--offline] [--json]`
+
+Run the deterministic defensive audit over the current repository. It scans
+bounded text/code files for security-sensitive patterns, Python syntax and
+quality risks, very large files, dependency cycles, and discovered API routes.
+Exact versions found in supported lock/manifests can be queried against OSV;
+`--offline` skips that network lookup. `--json` returns the complete report.
+
+Every finding includes rule, severity, category, file, line, redacted evidence,
+remediation, and confidence. Heuristics are review leads, not proof of an
+exploitable vulnerability. The command deliberately exits 0 when it found
+review items; `irag check` remains the strict memory-integrity gate.
+
+### `irag web-search QUERY [--json]`
+
+Search the live web without asking an LLM. Results include title, URL, snippet,
+domain, any provider-supplied publication date, provider name, and retrieval
+time. The provider comes from `[web]`: `auto`, Brave, Tavily, SearXNG, or the
+keyless DuckDuckGo fallback. Brave and Tavily credentials are read only from
+`BRAVE_SEARCH_API_KEY` and `TAVILY_API_KEY`. `--json` emits the complete source
+records used by the Thinking Studio and `irag_web_search` MCP tool.
 
 ### `irag provider [--json]`
 

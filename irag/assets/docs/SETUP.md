@@ -107,29 +107,30 @@ file whose path is substituted.
 
 ### Antigravity CLI (agy)
 
-agy takes the prompt as an argument (`-p`), not stdin. Recommended
-config (macOS/zsh — also fine on Linux):
+The built-in adapter uses agy's non-interactive text contract and passes the
+prompt as one argument:
 
 ```toml
 [llm]
-command = "agy --dangerously-skip-permissions -p {prompt}"
-model_label = "antigravity"
-timeout = 600
+provider = "agy"
+model = ""               # optional
+timeout = 300
+retries = 1
 ```
 
-Known agy issue: `-p` can silently drop stdout when run without a TTY
-(github issue #76). irag detects empty output and tells you; if you hit
-it, use the pseudo-TTY wrapper instead:
+This invokes `agy --print --output-format text [--model NAME] PROMPT`. If a
+different agy release or wrapper on your machine exposes another interface,
+switch to `provider = "custom"` and describe its prompt delivery explicitly:
 
 ```toml
-# macOS
-command = "script -q /dev/null sh -c 'agy --dangerously-skip-permissions -p \"$(cat $0)\"' {promptfile}"
-# Linux
-command = "script -qec 'agy --dangerously-skip-permissions -p \"$(cat $0)\"' /dev/null {promptfile}"
+[llm]
+provider = "custom"
+command = "your-agy-wrapper {promptfile}"
+model_label = "agy-wrapper"
 ```
 
-(irag strips the terminal escape codes `script` adds.) Add `--model
-<name>` to pin a model. Verify with `irag doctor --probe-llm` before your
+irag detects empty output and reports it rather than persisting a blank page.
+Verify the actual installed CLI with `irag doctor --probe-llm` before your
 first `irag update`.
 
 Any command with the same contract works, e.g. a local model wrapper,
@@ -139,6 +140,31 @@ what would be sent without spending tokens:
 ```bash
 irag synthesize --dry-run
 ```
+
+## Configure live research
+
+The Thinking Studio and `irag web-search` can retrieve current web evidence.
+Research is opt-in per question, separate from repository evidence, and always
+returns source URLs with a retrieval timestamp.
+
+```toml
+[web]
+enabled = true
+provider = "auto"       # auto | brave | tavily | searxng | duckduckgo
+endpoint = ""           # SearXNG base URL when provider = "searxng"
+max_results = 6
+timeout = 12
+```
+
+`auto` prefers Brave when `BRAVE_SEARCH_API_KEY` is present, then Tavily when
+`TAVILY_API_KEY` is present, then a configured SearXNG endpoint, and finally
+the keyless DuckDuckGo HTML fallback. API keys are read from the process
+environment only; they are never written into `.irag/config.toml`, SQLite, or
+dashboard responses.
+
+You can change both the summary writer and web-search provider at any time from
+the dashboard Overview. Saves preserve comments and unknown TOML sections and
+reject a stale browser tab instead of silently overwriting a newer change.
 
 ## Connect every coding agent through MCP
 

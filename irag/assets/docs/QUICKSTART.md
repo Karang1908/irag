@@ -32,7 +32,8 @@ irag mcp --root /absolute/path/to/my-project
 For Codex: `codex mcp add irag -- irag mcp --root /absolute/path/to/my-project`.
 For Claude Code: `claude mcp add --scope project irag -- irag mcp --root /absolute/path/to/my-project`.
 Cursor, Windsurf, VS Code, and other MCP clients use the same command. All of
-them see the same 13 tools, schemas, results, sessions, and SQLite memory.
+them see the same 16 tools, schemas, results, sessions, audits, live-web search,
+and SQLite memory.
 
 ## 4. The one command to remember
 
@@ -55,8 +56,9 @@ by `irag init` and tells agents to run it after edits.
 ## 6. See it
 
 - `irag dashboard` — this UI: live token burn and activity, health,
-  the interactive dependency graph (pan / zoom / drag), the session
-  diary with per-file changes, chat, and these docs.
+  the complete Main Summary, deep code/API/security audit, live-trend Thinking
+  Studio, provider controls, interactive dependency graph (pan / zoom / drag),
+  session diary with per-file changes, chat, and these docs.
 - Every contradiction has an **Agent brief** button. It opens a self-contained,
   source-grounded HTML repair packet in a new tab; the master button bundles
   every open contradiction for one coding-agent handoff.
@@ -78,6 +80,7 @@ tokens.
 `irag status` · `irag stale` · `irag map <path>` · `irag impact <path>` ·
 `irag why "<claim>"` · `irag diff <file>` · `irag contradictions` ·
 `irag contradiction-report [id]` · `irag mcp` · `irag provider` ·
+`irag audit` · `irag web-search "current developer trends"` ·
 `irag learn "<gotcha>"` · `irag record-decision "<choice>"` ·
 `irag claude-setup` · `irag doctor` · `irag backup`
 

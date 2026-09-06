@@ -9,10 +9,13 @@ Claude-specific behavior in the server and no second database per client.
 irag mcp --root /absolute/path/to/your-project
 ```
 
-The transport is newline-delimited JSON-RPC over stdio. irag negotiates the
-stable MCP protocol versions from `2024-11-05` through `2025-11-25`, writes
-protocol messages only to stdout, returns JSON Schema tool definitions, and
-includes both text and structured results for old and new clients.
+The transport is newline-delimited JSON-RPC over stdio. irag supports both MCP
+eras: legacy `initialize` negotiation from `2024-11-05` through `2025-11-25`,
+and the stateless `2026-07-28` protocol with per-request metadata,
+`server/discover`, typed unsupported-version errors, cacheable deterministic
+tool lists, `resultType`, and response identity metadata. It writes protocol
+messages only to stdout, returns JSON Schema tool definitions, and includes
+both text and structured results for old and new clients.
 
 ## Connect a client
 
@@ -83,29 +86,38 @@ client's PATH, use the absolute path printed by `command -v irag` (Windows:
 | `irag_impact` | transitive blast radius with hop distance | no |
 | `irag_trace_claim` | revision and event provenance for a claim | no |
 | `irag_list_contradictions` | open rows plus a complete repair prompt | no |
+| `irag_get_main_summary` | every current memory page plus health, sessions, contradictions, and audit state | no |
+| `irag_audit` | defensive code/API/security/dependency report, optionally with OSV | no |
+| `irag_web_search` | current web evidence with source URLs and retrieval time | no |
 | `irag_learn` | durable lesson | no |
 | `irag_record_decision` | durable decision | no |
 | `irag_resolve_contradiction` | dismiss/reopen a proven false positive | no |
 | `irag_start_session` / `irag_finish_session` | isolated conversation diary | only optional final narration |
 | `irag_update` | sync → incremental scan → synthesis → lint | yes, for due pages |
 
-Read tools are deterministic and local. `irag_update` is explicitly the write
-path and may invoke the configured summary provider. The server uses irag's
+Memory read tools and the local audit are deterministic. `irag_web_search` and
+the optional OSV audit tier are explicit open-world reads; neither calls an
+LLM. `irag_update` is explicitly the write path and may invoke the configured
+summary provider. The server uses irag's
 cross-process repository lock, so an MCP update cannot race the dashboard,
 CLI, git hook, or another coding agent into a partial state.
 
 ## Recommended agent loop
 
-1. Call `irag_start_session` once.
+1. Call `irag_start_session` once and retain its `session_key`.
 2. Call `irag_get_context` with the task and currently open files before broad
    exploration.
 3. Use `irag_code_map`, `irag_impact`, and `irag_trace_claim` before edits.
-4. Record decisions and non-obvious lessons as they happen.
-5. Call `irag_update` after changing files.
-6. Call `irag_finish_session` before the conversation ends.
+4. Record decisions and non-obvious lessons as they happen. Modern stateless
+   clients pass `session_key` to these calls.
+5. Call `irag_update` after changing files, with the same `session_key` on a
+   modern stateless connection.
+6. Call `irag_finish_session` with that key before the conversation ends.
 
-The session key belongs to that MCP process, so simultaneous Codex, Claude,
-Cursor, and Windsurf sessions do not close or claim one another's diary rows.
+Legacy clients may rely on one MCP process retaining the active key. Modern
+`2026-07-28` clients carry the returned key explicitly, so requests may land on
+different server instances without closing or claiming another agent's diary
+rows.
 
 ## Safety and troubleshooting
 
