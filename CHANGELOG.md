@@ -4,6 +4,106 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.48.0 — 2026-09-06
+
+Turns the dashboard into a complete developer intelligence workspace while
+keeping repository evidence, model reasoning, and live-web evidence honest and
+separate.
+
+### Added
+
+- A continuously refreshed **Main Summary** containing every current memory
+  page in full, plus project health, contradictions, recent session ledgers,
+  structural fingerprint, and latest audit state.
+- A deterministic **Code Audit** for unsafe execution, hard-coded credential
+  patterns, private keys, insecure TLS/CORS/debug settings, Python syntax and
+  quality risks, dependency cycles, API-route inventory, and optional OSV
+  advisory queries. Suspected secret values are redacted before persistence.
+- A loopback-only API checker that probes discovered parameter-free GET/HEAD
+  routes, never follows redirects, and refuses public or non-loopback hosts.
+- A durable **Thinking Studio** with code-review, product, business, marketing,
+  and creative modes; persistent conversation history; and an idea board with
+  discuss/archive workflows.
+- Explicit live web research through Brave Search, Tavily, SearXNG, or a
+  keyless DuckDuckGo fallback. Results retain source URLs and retrieval time;
+  credentials remain environment-only and unavailable searches are disclosed.
+- `irag audit`, `irag web-search`, and the MCP tools `irag_audit`,
+  `irag_get_main_summary`, and `irag_web_search`, giving every compatible
+  coding agent the same defensive analysis, complete summary, and current-web
+  evidence available in the dashboard.
+- Dashboard controls for switching Claude, Codex, agy, Ollama, or a custom
+  provider, model and reliability settings at runtime. Saves use an allowlist,
+  semantic validation, atomic writes, comment preservation, and version
+  conflicts to prevent stale-tab overwrites.
+
+### Changed
+
+- Summary and session prompts now explicitly preserve interfaces, data flow,
+  invariants, failure/security behavior, compatibility constraints, decisions,
+  risks, validation, and unresolved unknowns. Deterministic critical context is
+  stored beside narrative summaries so prose cannot erase the evidence.
+- Folder and topic rollups now receive bounded, section-balanced child-page
+  evidence instead of a prefix-only gist, so late invariants, failure/security
+  behavior, connections, and recent changes survive hierarchical synthesis.
+- The dashboard now has twelve purpose-built workspaces and responsive,
+  keyboard-accessible navigation for the new intelligence surfaces.
+- The universal MCP server now speaks both protocol eras: the legacy
+  `initialize` revisions used by existing clients and current stateless
+  `2026-07-28` discovery/per-request metadata. Modern responses include typed
+  version failures, cache metadata, `resultType`, server identity, and an
+  explicit diary handle that remains correct without process affinity.
+- Current-trend Studio requests now fail before model invocation when live
+  search is unavailable; they can no longer degrade into an uncited answer
+  from model memory. Researched chats must cite a supplied source, and every
+  researched recommendation card must retain at least one valid citation.
+
+## 4.47.0 — 2026-09-06
+
+Turns irag into agent-independent project memory and hardens the paths that
+matter when the frontend, backend, model process, or coding client fails.
+
+### Added
+
+- A dependency-free stdio MCP server (`irag mcp`) with 13 tools for context,
+  search, structure, impact, provenance, contradictions, updates, lessons,
+  decisions, resolution, and isolated session lifecycle. It negotiates every
+  supported MCP revision through 2025-11-25 and returns both text content and
+  structured results, so Codex, Claude, Cursor, Windsurf, VS Code, and other
+  MCP clients use the same contract.
+- Explicit Claude, Codex, agy, Ollama, and custom CLI adapters with retries,
+  normalized failures, model provenance, token estimates, latency, and
+  optional configured-cost telemetry. `irag provider` checks the active one.
+- Per-contradiction and master HTML repair packets, available from the CLI and
+  dashboard. Every packet is source-grounded, escaped, self-contained, easy to
+  copy or download, and formatted as a complete coding-agent handoff.
+- Durable SQLite-backed dashboard jobs and reconnecting Server-Sent Events;
+  refreshes and server restarts no longer make an in-flight update disappear.
+- Ordered schema migration history, automatic pre-upgrade SQLite backups, and
+  refusal to open databases written by a newer irag.
+- Focused protocol/storage/provider tests across Linux, macOS, and Windows.
+
+### Changed
+
+- Structural scans reparse only content-changed source files when repository
+  topology is stable. Git and snapshot rename detection preserve page identity,
+  revision history, contradictions, and graph continuity. Merge commits are
+  compared explicitly with their first parent, so their changes cannot vanish
+  behind Git's empty default combined diff.
+- Provider status and telemetry distinguish a real configured model from the
+  legacy provider label, so switching to a provider-default Codex or agy model
+  cannot be recorded as `claude`.
+- Dashboard responses treat a browser cancelling an in-flight poll or
+  navigation as a normal disconnect, rather than recursively writing to the
+  dead socket and printing a backend traceback.
+- Large files are summarized from bounded, declaration-aware excerpts instead
+  of losing their useful middle or flooding a model prompt.
+- File, folder, and session prompts explicitly retain interfaces, data flow,
+  invariants, failure/security behavior, compatibility constraints, decisions,
+  risks, and validation. Sessions also store the full deterministic evidence in
+  `critical_context`, so model prose can never erase the underlying handoff.
+- Contradiction insertion is transactionally race-safe, and persisted JSON is
+  decoded defensively throughout user-facing read paths.
+
 ## 4.46.0 — 2026-09-05
 
 Completes the page-withdrawal work started in 4.44.0, and closes three
