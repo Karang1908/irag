@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from irag import config, db, ingest, mcp, structure
 
@@ -43,6 +44,9 @@ class MCPTests(unittest.TestCase):
         names = {tool["name"] for tool in listed["result"]["tools"]}
         self.assertIn("irag_get_context", names)
         self.assertIn("irag_record_decision", names)
+        self.assertIn("irag_get_main_summary", names)
+        self.assertIn("irag_audit", names)
+        self.assertIn("irag_web_search", names)
         status = server.request({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "irag_status", "arguments": {}},
@@ -50,6 +54,85 @@ class MCPTests(unittest.TestCase):
         self.assertFalse(status["isError"])
         self.assertEqual(status["structuredContent"]["file_pages"], 1)
         self.assertIsInstance(status["content"][0]["text"], str)
+        summary = server.request({
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {"name": "irag_get_main_summary", "arguments": {}},
+        })["result"]
+        self.assertFalse(summary["isError"])
+        self.assertEqual(summary["structuredContent"]["project"],
+                         self.root.name)
+        audited = server.request({
+            "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+            "params": {"name": "irag_audit",
+                       "arguments": {"check_advisories": False}},
+        })["result"]
+        self.assertFalse(audited["isError"])
+        self.assertEqual(audited["structuredContent"]["files_scanned"], 1)
+        with mock.patch("irag.websearch.search", return_value={
+                "query": "developer trends", "provider": "test",
+                "retrieved_at": "2026-09-06T00:00:00+00:00", "results": []}):
+            researched = server.request({
+                "jsonrpc": "2.0", "id": 6, "method": "tools/call",
+                "params": {"name": "irag_web_search",
+                           "arguments": {"query": "developer trends"}},
+            })["result"]
+        self.assertFalse(researched["isError"])
+        self.assertEqual(researched["structuredContent"]["provider"], "test")
+
+    def test_modern_discovery_metadata_and_explicit_session_handle(self):
+        server = mcp.MCPServer(self.root)
+        meta = {
+            mcp.PROTOCOL_META: "2026-07-28",
+            mcp.CAPABILITIES_META: {},
+            mcp.CLIENT_INFO_META: {"name": "modern-agent", "version": "1"},
+        }
+        discovered = server.request({
+            "jsonrpc": "2.0", "id": "d", "method": "server/discover",
+            "params": {"_meta": meta},
+        })
+        result = discovered["result"]
+        self.assertEqual(result["supportedVersions"], ["2026-07-28"])
+        self.assertEqual(result["resultType"], "complete")
+        self.assertEqual(result["_meta"][mcp.SERVER_INFO_META]["name"],
+                         "irag")
+
+        missing_meta = server.request({
+            "jsonrpc": "2.0", "id": "missing", "method": "tools/list",
+            "params": {},
+        })["error"]
+        self.assertEqual(missing_meta["code"], -32602)
+
+        listed = server.request({
+            "jsonrpc": "2.0", "id": "l", "method": "tools/list",
+            "params": {"_meta": meta},
+        })["result"]
+        self.assertEqual(listed["resultType"], "complete")
+        self.assertEqual(len(listed["tools"]), 16)
+
+        started = server.request({
+            "jsonrpc": "2.0", "id": "s", "method": "tools/call",
+            "params": {"_meta": meta, "name": "irag_start_session",
+                       "arguments": {}},
+        })["result"]["structuredContent"]
+        self.assertEqual(started["agent"], "modern-agent")
+        server.session_key = None  # model a later request on another instance
+        finished = server.request({
+            "jsonrpc": "2.0", "id": "f", "method": "tools/call",
+            "params": {"_meta": meta, "name": "irag_finish_session",
+                       "arguments": {"session_key": started["session_key"],
+                                     "narrate": False}},
+        })["result"]
+        self.assertFalse(finished["isError"])
+        self.assertEqual(finished["resultType"], "complete")
+
+        unsupported = dict(meta)
+        unsupported[mcp.PROTOCOL_META] = "2099-01-01"
+        error = server.request({
+            "jsonrpc": "2.0", "id": "e", "method": "tools/list",
+            "params": {"_meta": unsupported},
+        })["error"]
+        self.assertEqual(error["code"], -32022)
+        self.assertEqual(error["data"]["supported"], ["2026-07-28"])
 
     def test_stdio_emits_only_json_rpc_lines(self):
         payload = json.dumps({"jsonrpc": "2.0", "id": 1,
@@ -62,6 +145,29 @@ class MCPTests(unittest.TestCase):
         lines = result.stdout.splitlines()
         self.assertEqual(len(lines), 1)
         self.assertEqual(json.loads(lines[0])["result"], {})
+
+        meta = {
+            mcp.PROTOCOL_META: "2026-07-28",
+            mcp.CAPABILITIES_META: {},
+            mcp.CLIENT_INFO_META: {"name": "stdio-modern", "version": "1"},
+        }
+        modern_payload = "\n".join(json.dumps(message) for message in (
+            {"jsonrpc": "2.0", "id": "discover",
+             "method": "server/discover", "params": {"_meta": meta}},
+            {"jsonrpc": "2.0", "id": "tools", "method": "tools/list",
+             "params": {"_meta": meta}},
+        )) + "\n"
+        modern = subprocess.run(
+            [sys.executable, "-m", "irag", "mcp", "--root", str(self.root)],
+            input=modern_payload, text=True, capture_output=True, timeout=15,
+            cwd=Path(__file__).parent.parent)
+        self.assertEqual(modern.returncode, 0, modern.stderr)
+        responses = [json.loads(line) for line in modern.stdout.splitlines()]
+        self.assertEqual([item["id"] for item in responses],
+                         ["discover", "tools"])
+        self.assertEqual(responses[0]["result"]["supportedVersions"],
+                         ["2026-07-28"])
+        self.assertEqual(len(responses[1]["result"]["tools"]), 16)
 
     def test_protocol_errors_batches_and_session_attribution(self):
         server = mcp.MCPServer(self.root)
@@ -90,6 +196,12 @@ class MCPTests(unittest.TestCase):
             cwd=Path(__file__).parent.parent)
         error = json.loads(result.stdout)
         self.assertEqual(error["error"]["code"], -32600)
+
+    def test_status_refreshes_deleted_files_before_answering(self):
+        server = mcp.MCPServer(self.root)
+        (self.root / "app.py").unlink()
+        value, _ = server.call_tool("irag_status", {})
+        self.assertEqual(value["file_pages"], 0)
 
 
 if __name__ == "__main__":
