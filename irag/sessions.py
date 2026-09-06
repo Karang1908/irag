@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections import deque
+from pathlib import Path
 
 from . import db
 
@@ -26,7 +27,8 @@ STALE_AFTER = "-12 hours"
 
 
 def begin(conn: sqlite3.Connection, agent: str = "claude-code",
-          key: str | None = None) -> int:
+          key: str | None = None, *, root: Path | None = None,
+          task: str | None = None) -> int:
     """Open a session.
 
     `key` identifies the conversation that owns it, so two agents working
@@ -76,9 +78,19 @@ def begin(conn: sqlite3.Connection, agent: str = "claude-code",
     if not key:
         import uuid
         key = "auto-" + uuid.uuid4().hex[:16]
+    branch = worktree = head = None
+    if root is not None:
+        from .delivery import workspace
+        scope = workspace(root)
+        branch = str(scope.get("branch") or "")[:500]
+        worktree = str(scope.get("worktree") or "")[:2_000]
+        head = str(scope.get("head") or "")[:100]
+    task_label = (task or "").strip()[:500] or None
     conn.execute(
-        "INSERT INTO sessions(agent, start_event_id, start_revision_id, "
-        "session_key) VALUES(?,?,?,?)", (agent, ev, rv, key))
+        "INSERT INTO sessions(agent,start_event_id,start_revision_id,"
+        "session_key,task_label,branch_name,worktree_path,head_sha) "
+        "VALUES(?,?,?,?,?,?,?,?)",
+        (agent, ev, rv, key, task_label, branch, worktree, head))
     sid = conn.execute("SELECT last_insert_rowid() id").fetchone()["id"]
     conn.commit()
     # whatever this process writes from here on belongs to the session it just
