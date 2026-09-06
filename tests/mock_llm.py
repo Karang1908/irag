@@ -19,12 +19,12 @@ m = re.search(r"^(FILE|FOLDER): (.+)$", prompt, re.M)
 kind, subject = (m.group(1), m.group(2).strip()) if m else ("FILE", "unknown")
 
 if kind == "FOLDER":
-    block = re.search(r"DIRECT CHILDREN AND THEIR SUMMARIES:\n((?:- .+\n)+)",
-                      prompt)
-    kids = [m.group(1) for m in
-            (re.search(r"`([^`]+)`", ln) for ln in
-             (block.group(1).splitlines() if block else []))
-            if m]
+    block = re.search(
+        r"DIRECT CHILDREN AND CRITICAL SUMMARY EXCERPTS:\n(.*?)\nCURRENT PAGE:",
+        prompt, re.S)
+    kids = re.findall(
+        r"^--- \[(?:folder|file)\] `([^`]+)` ---$",
+        block.group(1) if block else "", re.M)
     lines = "\n".join(f"- `{k}` — child of this folder" for k in kids[:12])
     print(f"""# {subject}
 
