@@ -10,7 +10,7 @@ This document is about **building irag**. If you want to know how to *use*
 irag inside a project, read `/CLAUDE.md` at the repo root — that is the
 operator manual for agents consuming irag's memory, not developing it.
 
-Accurate as of **v4.47.0**, 2026-09-06. Every fact below was verified by
+Accurate as of **v4.48.0**, 2026-09-06. Every fact below was verified by
 running it on this machine by that date. Where something is inferred
 rather than observed, it says so.
 
@@ -60,7 +60,7 @@ append-only memory model:
 - The frontend distinguishes HTTP application errors from an offline server,
   prevents overlapping poll responses from rewinding the UI, stops idle graph
   animation, safely renders toast text, and has accessible controls. Its
-  responsive grids were corrected so all nine tabs fit without body overflow
+  responsive grids were corrected so all twelve tabs fit without body overflow
   at 390 px; only the tab strip scrolls and the brand remains visible.
 - Request sizes, list limits, and context budgets are bounded. Backup names
   include microseconds, date inputs are validated consistently, packaged docs
@@ -72,15 +72,21 @@ append-only memory model:
   is handled cleanly, `doctor` checks logical database relations in addition
   to storage integrity, and the site builder refuses to recursively replace
   directories it does not own.
-- `irag mcp` is a dependency-free stdio Model Context Protocol server with 13
+- `irag mcp` is a dependency-free stdio Model Context Protocol server with 16
   generic memory, provenance, update, contradiction, and session tools. It
   speaks JSON-RPC on stdin/stdout and is not coupled to Claude Code; Codex,
   Claude, Cursor, Windsurf, VS Code, and any other stdio MCP client can use the
   same server command.
+- MCP compatibility spans both protocol eras: legacy `initialize` clients
+  through `2025-11-25` and current stateless `2026-07-28` clients using
+  `server/discover` plus a per-request metadata envelope. Modern results carry
+  the required result type and server identity, unsupported versions return
+  the typed `-32022` error, and the diary key is an explicit handle rather
+  than hidden connection state.
 - Model invocation now goes through explicit Claude, Codex, agy, Ollama, and
   custom adapters with bounded retries, timeout/error normalization, optional
   model selection, and local run/cost telemetry. Database evolution is an
-  ordered v1→v6 migration history with an automatic SQLite backup before an
+  ordered v1→v7 migration history with an automatic SQLite backup before an
   upgrade and a hard refusal to open a newer schema with an older binary.
 - Large-repository updates reuse the structural index when topology is stable,
   reparse only changed source files, bound synthesis inputs around imports and
@@ -100,15 +106,35 @@ append-only memory model:
   recent-change causality. Session endings store a separate deterministic
   `critical_context` JSON ledger, so a weak or truncated model narrative cannot
   erase decisions, lessons, revisions, commits, or touched files.
+- The dashboard now exposes twelve developer workspaces. Main Summary is a
+  live, deterministic whole-project read model containing every current page
+  body plus drift, contradiction, session, critical-context, and audit state.
+  Code Audit combines bounded static/security/API/dependency checks, optional
+  exact-version OSV queries, redacted evidence, persisted findings, and a
+  loopback-only API probe. Thinking Studio combines repository evidence with
+  persistent code/product/business/marketing/creative conversations and a
+  five-card recommendation board.
+- Live research is a first-class, fail-loud boundary. Brave, Tavily, SearXNG,
+  and keyless DuckDuckGo adapters normalize URLs, titles, snippets, provider,
+  and retrieval time; an empty or failed search is never represented as fresh
+  evidence. Studio prompts label repository content and web snippets as
+  untrusted data, require sources for time-sensitive claims, and persist the
+  provenance shown beside chats and recommendations.
+- Provider, model, retry, parallelism, timeout, and web-search settings can now
+  be changed from Overview. Writes use an allowlist, optimistic version check,
+  atomic replacement, and a comment-preserving TOML editor; credentials remain
+  environment-only. A semantically invalid config can be repaired from the UI
+  while malformed TOML remains fail-closed.
 
 Verification on the finished tree:
 
 ```text
-focused unittest suite on local Python 3.11 and 3.14      13 tests passed
+focused unittest suite on local Python 3.11 and 3.14      29 tests passed
 sh tests/test_smoke.sh on local Python 3.14               SMOKE TEST PASSED
 Ruff + mypy + compileall + diff --check                   passed (silent)
 site: all 11 pages × desktop/mobile Chromium              no JS errors/overflow
-dashboard Health + report desktop/mobile Chromium         no JS errors/overflow
+all 12 dashboard workspaces desktop/mobile Chromium       no JS errors/overflow
+live trend search + sourced Studio chat/recommendations    passed
 live dashboard update: 202 → SSE → reload persistence     passed
 sdist + wheel build; isolated wheel install on 3.11       passed
 ```
@@ -187,7 +213,7 @@ If it points anywhere else, your edits are not what the `irag` command runs.
 
 **Note the version reported there is stale and that is normal.** pip
 records the version at the last `pip install -e .`; it currently says
-`4.40.1` while the code is `4.47.0`. `irag --version` reads
+`4.40.1` while the code is `4.48.0`. `irag --version` reads
 `irag/__init__.py` and is authoritative. Only a reinstall refreshes pip's
 copy, and a reinstall is unnecessary for ordinary source edits — editable
 installs pick those up immediately.
@@ -361,9 +387,9 @@ hundred tokens instead of thousands of tokens of re-exploration. Everything
 lives in one SQLite file
 (`.irag/memory.db`) that any agent on any machine can mount.
 
-**v4.47.0. 10,414 lines of Python. Zero runtime dependencies** — stdlib
+**v4.48.0. 12,667 lines of Python. Zero runtime dependencies** — stdlib
 only (`sqlite3`, `http.server`, `ast`, `tomllib`, `subprocess`). Package
-`irag`, console command `irag`, config dir `.irag/`, **48 commands**.
+`irag`, console command `irag`, config dir `.irag/`, **50 commands**.
 
 ### 2.1 The one sentence that explains every design decision
 
@@ -394,29 +420,33 @@ success. When a code path cannot know, it must say so and exit non-zero.
 
 | Module | LOC | Owns |
 |---|---:|---|
-| `cli.py` | 1833 | every command, argument parsing, repository coordination |
-| `synthesis.py` | 1000 | critical-context prompts, bounded page writing, injection scrubbing |
-| `dashboard.py` | 981 | stdlib HTTP server, durable jobs/SSE, JSON API, CSRF guard |
+| `cli.py` | 1898 | every command, argument parsing, repository coordination |
+| `synthesis.py` | 1045 | critical-context prompts, bounded page writing, injection scrubbing |
+| `dashboard.py` | 1169 | stdlib HTTP server, durable jobs/SSE, JSON API, CSRF guard |
 | `ingest.py` | 892 | change detection, merge/rename continuity, ignoring, secrets, event queue |
 | `structure.py` | 812 | incremental symbol + dependency extraction for 10 languages |
+| `audit.py` | 802 | bounded static/security/dependency/API audit and safe loopback probes |
 | `linter.py` | 658 | race-safe fact-checking pages against code; contradictions |
-| `db.py` | 645 | v1→v6 migrations/backups, schema, triggers, safe JSON helpers |
+| `db.py` | 697 | v1→v7 migrations/backups, schema, triggers, safe JSON helpers |
 | `sessions.py` | 485 | attributed diary, narrative, deterministic critical-context ledger |
+| `config.py` | 474 | TOML merge, safe UI edits, provider/web and semantic validation |
 | `retrieval.py` | 360 | ranking, tiering, budget, FTS search |
 | `obsidian.py` | 353 | vault projection |
-| `mcp.py` | 319 | stdio JSON-RPC MCP protocol and 13 universal tool contracts |
-| `doctor.py` | 301 | self-diagnosis |
-| `config.py` | 272 | defaults, TOML merge, provider and semantic validation |
+| `mcp.py` | 453 | stdio JSON-RPC MCP protocol and 16 universal tool contracts |
+| `studio.py` | 353 | sourced thinking conversations and durable recommendation cards |
+| `doctor.py` | 310 | self-diagnosis |
+| `websearch.py` | 303 | Brave/Tavily/SearXNG/DuckDuckGo search normalization and bounds |
 | `provenance.py` | 243 | `why` / `asof` / `diff` |
 | `providers.py` | 250 | Claude/Codex/agy/Ollama/custom adapters, retries, telemetry |
-| `facts.py` | 204 | executable memory |
+| `facts.py` | 207 | executable memory |
 | `reports.py` | 183 | safe self-contained contradiction repair briefs |
 | `check.py` | 133 | the CI gate |
 | `hooks.py` | 132 | git + optional Claude Code hook wiring |
 | `stats.py` `tokens.py` `export.py` | 280 | shared metrics, token estimation, guide install |
+| `main_summary.py` | 97 | deterministic complete project read model and freshness metadata |
 | `locking.py` | 72 | cross-platform repository operation lock |
 
-### 2.3 Subsystems added in the 4.41–4.47 line
+### 2.3 Subsystems added in the 4.41–4.48 line
 
 These are recent and less battle-tested than the core:
 
@@ -435,14 +465,29 @@ These are recent and less battle-tested than the core:
   candidate lesson when a Bash command fails, via `PostToolUse`.
 - **Withdrawal** (`irag forget`) — drops a page from live serving while
   keeping its history.
-- **Universal MCP** (`mcp.py`, `irag mcp`) — thirteen stdio tools expose the
-  same deterministic memory operations to any MCP-capable coding agent.
+- **Universal MCP** (`mcp.py`, `irag mcp`) — sixteen stdio tools expose the
+  same deterministic memory operations to any MCP-capable coding agent across
+  the legacy 2024–2025 handshake and stateless `2026-07-28` protocol eras.
 - **Provider adapters** (`providers.py`) — one normalized invocation boundary
   for Claude, Codex, agy, Ollama, and user-defined commands.
 - **Contradiction packets** (`reports.py`) — one-click per-item or master HTML
   handoffs containing verified source structure and explicit repair gates.
 - **Durable update jobs** (`dashboard.py`) — database-backed progress with SSE,
   reconnect/poll fallback, restart-safe history, and repository-lock ownership.
+- **Main Summary** (`main_summary.py`) — a complete, deterministic projection
+  of current memory, critical session context, contradictions, drift, and audit
+  status. It intentionally shows full page bodies rather than model-compressing
+  the source-of-truth memory a second time.
+- **Developer audit** (`audit.py`, `irag audit`) — bounded code, security,
+  dependency, and API surface analysis with redacted evidence, precise inline
+  suppression, persisted runs, optional OSV checks, and a loopback-only runtime
+  API checker.
+- **Thinking Studio** (`studio.py`, `websearch.py`, `irag web-search`) — five
+  thinking modes with durable chat/recommendations and current web evidence via
+  Brave, Tavily, SearXNG, or a fail-loud DuckDuckGo fallback.
+- **Dashboard configuration** (`config.py`, `dashboard.py`) — an allowlisted,
+  conflict-safe UI for provider/model/runtime/search settings that preserves
+  unrelated TOML comments and never stores API keys.
 
 ### 2.4 Hooks that `irag claude-setup` installs
 
@@ -515,7 +560,7 @@ migrations/backups/downgrade refusal, contradiction race safety, rename
 continuity, durable jobs, safe reports, and session critical-context
 retention. CI runs it on native Ubuntu, macOS, and Windows runners.
 
-The integration suite is `tests/test_smoke.sh`: ~2,422 lines and **40 guard
+The integration suite is `tests/test_smoke.sh`: ~2,448 lines and **40 guard
 blocks**. It runs entirely on the mock — costs nothing, takes a couple of
 minutes. It uses `set -e`, which has two consequences worth knowing:
 
@@ -738,6 +783,15 @@ conscious decision rather than a surprise.
     could never be cleared. Drift compares the comment-stripped
     fingerprint, and `sync` backfills a baseline for pages predating that
     column.
+13. **Trend claims need retrieved sources, not model memory.** Thinking Studio
+    may answer code-review questions without the web, but current-trend intent
+    fails explicitly when search is disabled, unavailable, or empty. Do not
+    turn that into a silent unsourced fallback.
+14. **The API checker is deliberately local.** Targets must be literal
+    loopback URLs whose complete DNS resolution remains loopback; credentials,
+    redirects, query strings, fragments, parameterized routes, and mutating
+    methods are rejected. It is a developer smoke probe, not a general-purpose
+    SSRF-capable HTTP client.
 
 ---
 
@@ -777,7 +831,7 @@ conscious decision rather than a surprise.
 - The full smoke suite: 40 end-to-end guard blocks, including explicit
   concurrency, migration interruption, malformed input, and stale-live-view
   regressions.
-- Thirteen focused unittests covering MCP JSON-RPC framing/tool calls, provider
+- Twenty-nine focused unittests covering MCP JSON-RPC framing/tool calls, provider
   argument construction/retries, ordered storage migration and backup,
   contradiction uniqueness, merge commits, snapshot and replayed-Git rename
   continuity, durable job persistence, escaped HTML handoffs, and lossless
@@ -788,35 +842,48 @@ conscious decision rather than a surprise.
   marks every event failed and self-heals on the next run.
 - Concurrency: `update` under ten simultaneous dashboard requests, zero
   lock errors, zero tracebacks.
-- Schema migration through ordered v1→v6 history, including an automatic
+- Schema migration through ordered v1→v7 history, including an automatic
   pre-upgrade backup, a pre-upgrade human resolution correctly backfilled,
   duplicate contradiction cleanup, and refusal of an unsafe downgrade.
-- All 48 commands respond; the dashboard routes used by every one of its nine
+- All 50 commands respond; the dashboard routes used by every one of its twelve
   views and interactive controls are exercised.
 - The rendered static site builds all eleven pages, and every route was checked
-  at desktop/mobile widths in Chromium. All nine dashboard views had prior
-  desktop/mobile coverage, and the changed Health surface plus single/master
-  reports were rechecked at 1440 px and 390 px with no console errors or body
-  overflow. Mobile contradiction actions are directly visible.
+  at desktop/mobile widths in Chromium. All twelve dashboard workspaces were
+  checked at 1440 px and 390 px with no console errors or body overflow.
+  Main Summary rendered full current pages; Code Audit completed and safely
+  probed the loopback dashboard; Thinking Studio returned cited live sources,
+  persisted chat, and generated five recommendation cards.
 - A live dashboard update returned 202, streamed to completion over SSE, and
   remained queryable after a full page reload. Report clipboard copy worked in
   Chromium, and individual/master scope stayed distinct with one or many rows.
-- MCP initialize, tools/list, tools/call, notifications, batches, malformed
-  requests, and session attribution run against the real stdio server. The
-  built wheel includes the MCP/provider/report modules and documentation.
+- Legacy initialize plus current stateless discovery, tools/list, tools/call,
+  notifications, batches, malformed requests, and session attribution run
+  against the real stdio server. The built wheel includes the MCP/provider,
+  audit, Studio, search, report, and summary modules and documentation.
+- A live keyless DuckDuckGo search returned normalized source URLs and
+  retrieval timestamps. Its empty-HTML behavior was reproduced and now retries
+  the Lite endpoint before reporting a clear failure.
+- A live OSV batch query completed through the production endpoint, while the
+  malformed, oversized, unavailable, and result-shape paths remain covered by
+  deterministic guards.
 
 **Not verified, and you should not claim otherwise:**
 
-- **Summary quality with a real LLM.** Everything automated runs on the
-  mock. The pipeline, the fact-checker and the gates are proven; whether
-  the prose is *good* on a real codebase is untested here. This remains
-  the highest-value next step.
+- **Summary and recommendation quality with a real LLM.** Automated synthesis
+  and Studio conversations run on the mock. Their pipelines, contracts,
+  persistence, provenance, and gates are proven; whether the prose is *good*
+  on a real codebase is untested here. This remains the highest-value next step.
 - **`[llm].parallel > 1` against a real LLM CLI.** Correct against the
   mock; left defaulting to 1 because whether a given CLI tolerates
   concurrent invocations is unknown.
 - **Live calls through every provider adapter.** Local CLI help was inspected
   and argument construction is covered with subprocess fakes, but this audit
   did not spend tokens against Claude, Codex, agy, or Ollama.
+- **Live calls through every search backend.** DuckDuckGo and a one-package OSV
+  batch were exercised against the real services, and Brave/Tavily/SearXNG
+  contracts are unit-tested; this run did not use real Brave/Tavily keys, a
+  live SearXNG instance, or an application lockfile containing vulnerable
+  dependency versions.
 - **The new native OS CI matrix.** Its workflow is configured for Ubuntu,
   macOS, and Windows, but this working tree is uncommitted, so those hosted
   jobs have not run yet. Local macOS checks passed on Python 3.11 and 3.14.
