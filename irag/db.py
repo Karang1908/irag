@@ -11,7 +11,7 @@ import sqlite3
 import datetime as _datetime
 from pathlib import Path
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -162,8 +162,12 @@ CREATE TABLE IF NOT EXISTS sessions (
                                           -- change_summary}, ...] for every
                                           -- revision written this session
   session_key       TEXT,
-  critical_context  TEXT                 -- lossless JSON decisions, lessons,
+  critical_context  TEXT,                -- lossless JSON decisions, lessons,
                                           -- commits, files, revision details
+  task_label        TEXT,
+  branch_name       TEXT,
+  worktree_path     TEXT,
+  head_sha          TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_time ON sessions(started_at);
 
@@ -292,6 +296,67 @@ CREATE TABLE IF NOT EXISTS studio_ideas (
 );
 CREATE INDEX IF NOT EXISTS idx_studio_ideas_created
   ON studio_ideas(status, idea_id DESC);
+
+-- Review is a workflow, not a pile of warnings. Finding ids are stable across
+-- scans, so a developer can resolve, accept, or defer one with an explicit
+-- rationale while a future scan continues to recognize the same evidence.
+CREATE TABLE IF NOT EXISTS audit_triage (
+  finding_id    TEXT PRIMARY KEY,
+  status        TEXT NOT NULL DEFAULT 'open',
+  rationale     TEXT NOT NULL DEFAULT '',
+  expires_at    TEXT,
+  updated_at    TEXT DEFAULT (datetime('now'))
+);
+
+-- Product work needs the same durable evidence trail as code work. Experiments
+-- connect an idea to a falsifiable hypothesis, metric, outcome, and decision.
+CREATE TABLE IF NOT EXISTS experiments (
+  experiment_id INTEGER PRIMARY KEY,
+  title         TEXT NOT NULL,
+  hypothesis    TEXT NOT NULL,
+  metric        TEXT NOT NULL,
+  target        TEXT NOT NULL DEFAULT '',
+  status        TEXT NOT NULL DEFAULT 'planned',
+  outcome       TEXT NOT NULL DEFAULT '',
+  decision      TEXT NOT NULL DEFAULT '',
+  created_at    TEXT DEFAULT (datetime('now')),
+  updated_at    TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_experiments_status
+  ON experiments(status, experiment_id DESC);
+
+-- Watchlists never pretend model memory is current. Every refresh stores the
+-- exact dated search evidence so the user can see what changed between runs.
+CREATE TABLE IF NOT EXISTS watchlists (
+  watchlist_id  INTEGER PRIMARY KEY,
+  name          TEXT NOT NULL,
+  query         TEXT NOT NULL,
+  status        TEXT NOT NULL DEFAULT 'active',
+  created_at    TEXT DEFAULT (datetime('now')),
+  updated_at    TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS watchlist_snapshots (
+  snapshot_id   INTEGER PRIMARY KEY,
+  watchlist_id  INTEGER NOT NULL REFERENCES watchlists(watchlist_id),
+  provider      TEXT NOT NULL,
+  retrieved_at  TEXT NOT NULL,
+  results_json  TEXT NOT NULL,
+  added_json    TEXT NOT NULL DEFAULT '[]',
+  removed_json  TEXT NOT NULL DEFAULT '[]',
+  created_at    TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_watchlist_snapshots
+  ON watchlist_snapshots(watchlist_id, snapshot_id DESC);
+
+-- Mergeable team-memory bundles use content-derived record ids. This ledger
+-- makes imports idempotent without making a shared SQLite file a Git merge
+-- target, and intentionally excludes transcripts and executable facts.
+CREATE TABLE IF NOT EXISTS memory_imports (
+  record_id     TEXT PRIMARY KEY,
+  record_type   TEXT NOT NULL,
+  content_hash  TEXT NOT NULL DEFAULT '',
+  imported_at   TEXT DEFAULT (datetime('now'))
+);
 
 -- ---------------------------------------------------------------
 -- Inverted index: FTS5 over revision bodies (external-content table)
@@ -566,6 +631,16 @@ def _migration_7_intelligence_surfaces(conn: sqlite3.Connection) -> None:
     conn.execute("SELECT 1")
 
 
+def _migration_8_delivery_and_evidence(conn: sqlite3.Connection) -> None:
+    """Add branch-aware sessions and durable review/product evidence."""
+    _add_column_if_missing(conn, "sessions", "task_label", "TEXT")
+    _add_column_if_missing(conn, "sessions", "branch_name", "TEXT")
+    _add_column_if_missing(conn, "sessions", "worktree_path", "TEXT")
+    _add_column_if_missing(conn, "sessions", "head_sha", "TEXT")
+    _add_column_if_missing(conn, "memory_imports", "content_hash",
+                           "TEXT NOT NULL DEFAULT ''")
+
+
 MIGRATIONS = (
     (1, "legacy columns", _migration_1_legacy_columns),
     (2, "contradiction integrity", _migration_2_resolution_integrity),
@@ -574,6 +649,7 @@ MIGRATIONS = (
     (5, "race-safe open contradictions", _migration_5_contradiction_uniqueness),
     (6, "lossless session critical context", _migration_6_lossless_session_context),
     (7, "audit and thinking studio history", _migration_7_intelligence_surfaces),
+    (8, "delivery, triage, and product evidence", _migration_8_delivery_and_evidence),
 )
 
 
