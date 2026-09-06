@@ -215,6 +215,15 @@ def collect(conn: sqlite3.Connection, cfg: dict, repo: Path,
     else:
         fail("LLM provider", provider_detail)
 
+    # Live research is optional for core memory, but its exact readiness must
+    # be visible before a Studio request fails halfway through a model call.
+    from . import websearch
+    search_state = websearch.availability(cfg)
+    if search_state["ready"]:
+        ok("web search", search_state["detail"])
+    else:
+        warn("web search", search_state["detail"])
+
     # hooks — only applicable when the project root IS a git toplevel;
     # snapshot-scoped projects (plain folders, or dirs inside a larger
     # repo) have no hooks by design
