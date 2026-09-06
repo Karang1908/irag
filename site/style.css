@@ -15,9 +15,9 @@
   --side-w:250px; --toc-w:200px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html{scroll-behavior:smooth;scroll-padding-top:90px;scrollbar-color:rgba(235,240,255,.2) transparent}
+html{scroll-behavior:smooth;scroll-padding-top:90px;scrollbar-color:rgba(235,240,255,.2) transparent;overflow-x:clip}
 @media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
-body{background:var(--bg);color:var(--text);font:16px/1.68 var(--sans);-webkit-font-smoothing:antialiased}
+body{background:var(--bg);color:var(--text);font:16px/1.68 var(--sans);-webkit-font-smoothing:antialiased;overflow-x:clip}
 body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
   background:
     radial-gradient(900px circle at 85% -10%, rgba(88,166,255,.05), transparent 60%),
@@ -177,6 +177,7 @@ article table,.table-wrap table{border-collapse:collapse;width:100%;font-size:14
 
 /* hero */
 .hero{display:grid;grid-template-columns:1.05fr .9fr;gap:64px;align-items:center;padding:92px 0 76px}
+.hero>*{min-width:0}
 .hero-name{font-family:var(--display);font-weight:700;font-size:clamp(92px,13vw,168px);
   line-height:1;letter-spacing:-.04em;margin:6px 0 0;padding-bottom:.08em;
   margin-bottom:-.08em;overflow:hidden}
@@ -457,6 +458,7 @@ html.lenis,html.lenis body{height:auto}
   .nav-sec{display:none}
   .landing{padding:0 22px}
   .hero{padding:54px 0 46px}
+  .hero-name{font-size:clamp(68px,20vw,92px)}
   .sec{padding:70px 0 62px}
   .quote{padding:84px 0}
   .closing{padding:80px 0 70px}
