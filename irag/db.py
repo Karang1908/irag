@@ -11,7 +11,7 @@ import sqlite3
 import datetime as _datetime
 from pathlib import Path
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -251,6 +251,47 @@ CREATE TABLE IF NOT EXISTS llm_runs (
   created_at           TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_llm_runs_created ON llm_runs(created_at DESC);
+
+-- Deterministic audit snapshots. The complete JSON result is retained so a
+-- developer can compare what the scanner saw with the tree fingerprint that
+-- produced it; a stale report is never presented as current.
+CREATE TABLE IF NOT EXISTS audit_runs (
+  audit_id      INTEGER PRIMARY KEY,
+  tree_fingerprint TEXT NOT NULL,
+  files_scanned INTEGER NOT NULL DEFAULT 0,
+  lines_scanned INTEGER NOT NULL DEFAULT 0,
+  finding_count INTEGER NOT NULL DEFAULT 0,
+  result_json   TEXT NOT NULL,
+  duration_ms   INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_audit_runs_created
+  ON audit_runs(created_at DESC, audit_id DESC);
+
+-- The Thinking Studio is project memory too. Chat history and generated idea
+-- sets live beside sessions rather than disappearing with browser storage.
+CREATE TABLE IF NOT EXISTS studio_messages (
+  message_id    INTEGER PRIMARY KEY,
+  role          TEXT NOT NULL,       -- user | assistant
+  mode          TEXT NOT NULL,
+  content       TEXT NOT NULL,
+  sources_json  TEXT NOT NULL DEFAULT '[]',
+  created_at    TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_studio_messages_created
+  ON studio_messages(message_id DESC);
+
+CREATE TABLE IF NOT EXISTS studio_ideas (
+  idea_id       INTEGER PRIMARY KEY,
+  mode          TEXT NOT NULL,
+  title         TEXT NOT NULL,
+  body_markdown TEXT NOT NULL,
+  sources_json  TEXT NOT NULL DEFAULT '[]',
+  status        TEXT NOT NULL DEFAULT 'active', -- active | archived
+  created_at    TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_studio_ideas_created
+  ON studio_ideas(status, idea_id DESC);
 
 -- ---------------------------------------------------------------
 -- Inverted index: FTS5 over revision bodies (external-content table)
@@ -515,6 +556,16 @@ def _migration_6_lossless_session_context(conn: sqlite3.Connection) -> None:
     _add_column_if_missing(conn, "sessions", "critical_context", "TEXT")
 
 
+def _migration_7_intelligence_surfaces(conn: sqlite3.Connection) -> None:
+    """Record the dashboard audit/studio storage boundary.
+
+    ``SCHEMA`` creates the additive tables before ordered migrations run. The
+    explicit ledger entry remains important: old binaries can refuse this
+    database instead of silently ignoring newer project intelligence.
+    """
+    conn.execute("SELECT 1")
+
+
 MIGRATIONS = (
     (1, "legacy columns", _migration_1_legacy_columns),
     (2, "contradiction integrity", _migration_2_resolution_integrity),
@@ -522,6 +573,7 @@ MIGRATIONS = (
     (4, "durable jobs and incremental scans", _migration_4_runtime_contracts),
     (5, "race-safe open contradictions", _migration_5_contradiction_uniqueness),
     (6, "lossless session critical context", _migration_6_lossless_session_context),
+    (7, "audit and thinking studio history", _migration_7_intelligence_surfaces),
 )
 
 
