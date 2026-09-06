@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import ast
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import hashlib
 import json
 import os
@@ -140,8 +140,15 @@ def run(conn: sqlite3.Connection, cfg: dict, root: Path, *,
     findings.sort(key=lambda item: (
         SEVERITY_ORDER.get(item["severity"], 9), item["file"], item["line"],
         item["rule"]))
-    counts = Counter(item["severity"] for item in findings)
-    category_counts = Counter(item["category"] for item in findings)
+    _assign_stable_finding_ids(findings)
+    _apply_triage(conn, findings)
+    active_findings = [item for item in findings
+                       if item["triage"]["effective_status"] == "open"]
+    counts = Counter(item["severity"] for item in active_findings)
+    raw_counts = Counter(item["severity"] for item in findings)
+    category_counts = Counter(item["category"] for item in active_findings)
+    triage_counts = Counter(item["triage"]["effective_status"]
+                            for item in findings)
     fingerprint = structure.scan_fingerprint(conn, root) or _fallback_fingerprint(file_rows)
     duration_ms = int((time.monotonic() - started) * 1000)
     report: dict[str, Any] = {
@@ -151,8 +158,12 @@ def run(conn: sqlite3.Connection, cfg: dict, root: Path, *,
         "lines_scanned": total_lines,
         "skipped_large_files": skipped_large,
         "findings": findings,
+        "active_findings": active_findings,
         "counts": {level: counts.get(level, 0)
                    for level in ("critical", "high", "medium", "low")},
+        "raw_counts": {level: raw_counts.get(level, 0)
+                       for level in ("critical", "high", "medium", "low")},
+        "triage_counts": dict(sorted(triage_counts.items())),
         "category_counts": dict(sorted(category_counts.items())),
         "api": {
             "routes": routes,
@@ -171,7 +182,7 @@ def run(conn: sqlite3.Connection, cfg: dict, root: Path, *,
             "dependency_cycles": cycles,
             "languages": dict(languages.most_common()),
         },
-        "recommendations": _recommendations(findings, routes, advisory),
+        "recommendations": _recommendations(active_findings, routes, advisory),
         "duration_ms": duration_ms,
         "disclaimer": ("Heuristic findings require developer review. OSV matches are known "
                        "advisories for the detected package/version, not proof that a vulnerable "
@@ -201,7 +212,146 @@ def latest(conn: sqlite3.Connection, root: Path) -> dict[str, Any] | None:
         return None
     current = structure.scan_fingerprint(conn, root)
     value["stale"] = bool(current and current != row["tree_fingerprint"])
+    findings = value.get("findings")
+    if isinstance(findings, list):
+        _apply_triage(conn, findings)
+        active = [item for item in findings
+                  if item["triage"]["effective_status"] == "open"]
+        value["active_findings"] = active
+        counts = Counter(item.get("severity") for item in active)
+        value["counts"] = {level: counts.get(level, 0)
+                           for level in ("critical", "high", "medium", "low")}
+        raw = Counter(item.get("severity") for item in findings)
+        value["raw_counts"] = {level: raw.get(level, 0)
+                               for level in ("critical", "high", "medium", "low")}
+        value["triage_counts"] = dict(Counter(
+            item["triage"]["effective_status"] for item in findings))
+        value["category_counts"] = dict(sorted(Counter(
+            item.get("category") for item in active).items()))
+        routes = ((value.get("api") or {}).get("routes") or [])
+        advisory = ((value.get("dependencies") or {}).get("advisory_scan") or
+                    {"status": "not_run"})
+        value["recommendations"] = _recommendations(active, routes, advisory)
     return value
+
+
+TRIAGE_STATUSES = {"open", "resolved", "false-positive", "risk-accepted"}
+
+
+def triage_finding(conn: sqlite3.Connection, root: Path, finding_id: str,
+                   status: str, rationale: str = "",
+                   expires_at: str = "") -> dict[str, Any]:
+    """Persist a review decision for one stable audit finding."""
+    finding_id = finding_id.strip()
+    status = status.strip().lower()
+    rationale = rationale.strip()
+    expires_at = expires_at.strip()
+    if not re.fullmatch(r"[0-9a-f]{12}", finding_id):
+        raise ValueError("finding id must be a 12-character hexadecimal id")
+    if status not in TRIAGE_STATUSES:
+        raise ValueError("status must be open, resolved, false-positive, or risk-accepted")
+    if status != "open" and not rationale:
+        raise ValueError("a rationale is required when closing or accepting a finding")
+    if len(rationale) > 5_000:
+        raise ValueError("rationale must be at most 5000 characters")
+    if expires_at:
+        try:
+            date.fromisoformat(expires_at)
+        except ValueError:
+            raise ValueError("expiry must be an ISO date such as 2026-12-31") from None
+    report = latest(conn, root)
+    if not report or not any(item.get("id") == finding_id
+                             for item in report.get("findings", [])):
+        raise ValueError("finding is not present in the latest audit")
+    conn.execute(
+        "INSERT INTO audit_triage(finding_id,status,rationale,expires_at,updated_at) "
+        "VALUES(?,?,?,?,datetime('now')) ON CONFLICT(finding_id) DO UPDATE SET "
+        "status=excluded.status,rationale=excluded.rationale,"
+        "expires_at=excluded.expires_at,updated_at=datetime('now')",
+        (finding_id, status, rationale, expires_at or None))
+    conn.commit()
+    refreshed = latest(conn, root)
+    if refreshed is None:  # the audit row cannot disappear inside this write
+        raise RuntimeError("latest audit disappeared while saving triage")
+    item = next(value for value in refreshed["findings"]
+                if value.get("id") == finding_id)
+    return item
+
+
+def sarif(report: dict[str, Any], *, include_triaged: bool = False) -> dict[str, Any]:
+    """Convert an audit snapshot into SARIF 2.1.0 for CI/code-host UIs."""
+    findings = report.get("findings", []) if include_triaged else (
+        report.get("active_findings") or [])
+    rules: dict[str, dict[str, Any]] = {}
+    results = []
+    levels = {"critical": "error", "high": "error", "medium": "warning",
+              "low": "note"}
+    for item in findings:
+        rule = str(item.get("rule") or "irag.unknown")
+        rules.setdefault(rule, {
+            "id": rule,
+            "shortDescription": {"text": str(item.get("title") or rule)[:1024]},
+            "help": {"text": str(item.get("remediation") or
+                                  "Review the evidence.")[:20_000]},
+            "properties": {"category": item.get("category"),
+                           "precision": item.get("confidence")},
+        })
+        location = {"physicalLocation": {
+            "artifactLocation": {"uri": str(item.get("file") or ".")},
+            "region": {"startLine": max(1, int(item.get("line") or 1))},
+        }}
+        result: dict[str, Any] = {
+            "ruleId": rule,
+            "level": levels.get(str(item.get("severity")), "warning"),
+            "message": {"text": (f"{item.get('title', rule)}. "
+                                 f"{item.get('evidence', '')} "
+                                 f"Remediation: {item.get('remediation', '')}")[:20_000]},
+            "locations": [location],
+            "partialFingerprints": {"iragFindingId": item.get("id")},
+            "properties": {"severity": item.get("severity"),
+                           "confidence": item.get("confidence"),
+                           "auditId": report.get("audit_id")},
+        }
+        if item.get("url"):
+            result["properties"]["advisoryUrl"] = item["url"]
+        results.append(result)
+    return {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {"name": "iRAG Code Audit",
+                                "informationUri": "https://karang1908.github.io/irag/",
+                                "rules": list(rules.values())}},
+            "automationDetails": {"id": f"irag/audit/{report.get('audit_id', 'unknown')}"},
+            "results": results,
+        }],
+    }
+
+
+def _apply_triage(conn: sqlite3.Connection,
+                  findings: list[dict[str, Any]]) -> None:
+    rows = {row["finding_id"]: dict(row) for row in conn.execute(
+        "SELECT finding_id,status,rationale,expires_at,updated_at FROM audit_triage")}
+    today = date.today()
+    for item in findings:
+        stored = rows.get(item.get("id"))
+        status = str((stored or {}).get("status") or "open")
+        expires = str((stored or {}).get("expires_at") or "")
+        expired = False
+        if expires:
+            try:
+                expired = date.fromisoformat(expires) < today
+            except ValueError:
+                expired = True
+        effective = "open" if expired else status
+        item["triage"] = {
+            "status": status,
+            "effective_status": effective,
+            "rationale": str((stored or {}).get("rationale") or ""),
+            "expires_at": expires,
+            "expired": expired,
+            "updated_at": (stored or {}).get("updated_at"),
+        }
 
 
 def check_local_api(base_url: str, routes: list[dict], *,
@@ -701,13 +851,30 @@ def _osv_findings(packages: list[dict]) -> list[dict]:
 def _finding(rule: str, severity: str, category: str, file: str, line: int,
              title: str, evidence: str, remediation: str, confidence: str,
              *, url: str = "") -> dict:
-    stable = hashlib.sha1(
-        f"{rule}\0{file}\0{line}\0{title}".encode("utf-8")).hexdigest()[:12]
-    return {"id": stable, "rule": rule, "severity": severity,
+    return {"id": "", "rule": rule, "severity": severity,
             "category": category, "file": file, "line": int(line),
             "title": title, "evidence": evidence[:2000],
             "remediation": remediation, "confidence": confidence,
             "url": url}
+
+
+def _assign_stable_finding_ids(findings: list[dict]) -> None:
+    """Identify evidence across harmless line moves, without collisions.
+
+    Line numbers are locations, not identities: inserting a comment above a
+    finding must not discard a developer's review. The occurrence ordinal only
+    disambiguates identical evidence repeated within one file and remains
+    stable when later duplicates are appended.
+    """
+    seen: Counter[str] = Counter()
+    for item in findings:
+        evidence = " ".join(str(item.get("evidence") or "").split())
+        identity = "\0".join((
+            str(item.get("rule") or ""), str(item.get("file") or ""),
+            str(item.get("title") or ""), evidence))
+        seen[identity] += 1
+        item["id"] = hashlib.sha256(
+            f"{identity}\0{seen[identity]}".encode("utf-8")).hexdigest()[:12]
 
 
 def _call_name(node: ast.AST) -> str:
