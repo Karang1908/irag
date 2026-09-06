@@ -4,6 +4,80 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.49.0 — 2026-09-07
+
+Turns project intelligence into a delivery workflow: understand the diff,
+verify the right behavior, manage security evidence, preserve product
+experiments, and hand the same concrete plan to a person or any MCP agent.
+
+### Added
+
+- **Delivery intelligence** compares the working tree to any validated Git
+  base, distinguishes added/modified/deleted paths, maps transitive impact,
+  detects removed public symbols and routes, finds related tests, recommends
+  repository-native verification gates, and builds a copyable release brief.
+  It also handles unborn repositories and snapshot-mode projects.
+- **Memory Trust** gives Main Summary a deterministic, explained health score
+  covering summary coverage, currentness, traceability, contradictions,
+  session ledgers, and audit freshness/severity. It is explicitly a signal—not a claim
+  that model-written prose is infallible.
+- **Security review lifecycle** attaches durable open/resolved/false-positive/
+  risk-accepted decisions, rationales, and optional expiries to stable audit
+  finding IDs. Open findings export as SARIF 2.1.0 for existing CI and code-host
+  review surfaces.
+- **Team-safe memory bundles** export decisions, lessons, topics, experiments,
+  watchlists, and audit triage as bounded, reviewable JSON. Content-derived
+  identities and hashes make repeated imports idempotent while later outcomes
+  still merge. Source code, transcripts, prompts, and executable facts are
+  intentionally excluded.
+- A durable **experiment ledger** links a recommendation to its hypothesis,
+  metric, target, outcome, and decision. Explicitly refreshed **watchlists**
+  retain source URLs, provider, retrieval time, and what changed since the
+  previous live-web result set.
+- Five universal MCP tools expose delivery plans, team-memory exchange, audit
+  triage, experiments, and watchlists to every compatible coding client,
+  bringing the server to 21 provider-neutral tools.
+
+### Changed
+
+- New sessions record their task label, branch, worktree path, and starting
+  commit so concurrent agent history stays visibly scoped to the work that
+  produced it.
+- The former Tools workspace is now Delivery. Existing context preview,
+  time-travel, backup, doctor, and maintenance controls remain available below
+  the new review/release workflow; no extra navigation tab was added.
+- The loopback API checker refuses to use a missing or stale route inventory,
+  preventing a reassuring zero-route result or probes against outdated code.
+- Direct SARIF downloads and API probes first refresh structural drift and fail
+  closed when the audit no longer describes the current tree; bypassing the
+  dashboard's normal refresh path cannot serve stale assurance.
+- Audit counts, categories, recommendations, release gates, and SARIF all use
+  the effective open set after rationales and expiries are applied.
+
+### Fixed
+
+- Dashboard and MCP audit, Studio, triage, contradiction, session, and durable-
+  memory mutations now use the same cross-process repository lock as CLI
+  updates, closing races between an open dashboard and external coding agents.
+- Team-memory exports normalize optional expiry values, deduplicate logical
+  records, ignore transport timestamps in semantic hashes, and avoid duplicating
+  native decisions/lessons when re-imported into the source project. Conflicting
+  duplicate bundle IDs fail closed; repeated export/import cycles are stable.
+- Experiment API payloads can round-trip the returned `experiment_id` without
+  accidentally creating a second experiment, and conflicting identifiers are
+  rejected.
+- Delivery rejects Git bases that look like command options and detects pytest
+  configuration even when tests live outside a conventional `tests/` folder.
+- Delivery briefs mark repository-derived paths/contracts as untrusted evidence
+  and escape control characters and boundary delimiters, preventing a hostile
+  filename or route from becoming instructions when the brief reaches an agent.
+- Imported audit triage now enforces the same rationale and ISO-expiry rules as
+  direct review, and MCP rejects/drains newline frames above 2 MB without
+  desynchronizing the following request.
+- Audit identities exclude volatile line numbers and use normalized evidence
+  plus a deterministic occurrence index, so a comment or other harmless line
+  shift no longer discards an existing review decision.
+
 ## 4.48.0 — 2026-09-06
 
 Turns the dashboard into a complete developer intelligence workspace while
