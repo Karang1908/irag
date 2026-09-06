@@ -743,6 +743,65 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
 .studio-readiness{font:var(--fs-2xs) var(--mono);color:var(--text-faint);margin-left:auto}
 .studio-readiness .ok{color:var(--green)}.studio-readiness .bad{color:var(--red)}
 
+/* ---------- delivery, trust, triage, and product evidence ---------- */
+.trust-wrap{display:grid;grid-template-columns:180px minmax(0,1fr);gap:var(--sp-5);align-items:start;
+  margin-bottom:var(--sp-4)}
+.trust-score{padding:var(--sp-4);background:var(--bg-inset);border:1px solid var(--border);border-radius:var(--r-md)}
+.trust-score b{display:block;font:600 2.4rem/1 var(--display);letter-spacing:-.02em}
+.trust-score span{display:block;margin-top:7px;color:var(--text-dim);font:var(--fs-xs) var(--mono)}
+.trust-signals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);
+  border:1px solid var(--border)}
+.trust-signals>div{background:var(--bg-inset);padding:10px 12px;min-width:0}
+.trust-signals b{display:block;font:600 var(--fs-lg) var(--display)}
+.trust-signals span{display:block;font:var(--fs-2xs) var(--mono);color:var(--text-faint);overflow-wrap:anywhere}
+.trust-issues{margin-top:var(--sp-3);font-size:var(--fs-xs);color:var(--text-dim)}
+.trust-issues li{margin:3px 0 3px 18px}
+
+.finding.closed{opacity:.68}.finding-review{grid-column:2/-1;margin-top:4px}
+.finding-review summary{cursor:pointer;color:var(--accent);font:var(--fs-2xs) var(--mono);width:max-content}
+.triage-form{display:grid;grid-template-columns:150px minmax(180px,1fr) 150px auto;gap:var(--sp-2);
+  align-items:center;margin-top:var(--sp-2)}
+.triage-form select,.triage-form input,.evidence-form input,.evidence-form textarea{width:100%;min-width:0;
+  background:var(--bg-inset);border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);
+  padding:8px 9px;font:var(--fs-xs)/1.4 var(--sans)}
+.triage-form input:focus,.triage-form select:focus,.evidence-form input:focus,.evidence-form textarea:focus{
+  border-color:var(--accent-ring);outline:none}
+.triage-tag{display:inline-block;margin-top:5px;color:var(--text-faint);font:var(--fs-2xs) var(--mono)}
+.triage-tag.open{color:var(--orange)}.triage-tag.resolved,.triage-tag.false-positive{color:var(--green)}
+
+.evidence-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-4);margin-top:var(--sp-4)}
+.evidence-create{border-bottom:1px solid var(--border);padding-bottom:var(--sp-3);margin-bottom:var(--sp-2)}
+.evidence-create summary{cursor:pointer;color:var(--accent);font-size:var(--fs-xs);width:max-content}
+.evidence-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-2);margin-top:var(--sp-3)}
+.evidence-form textarea{grid-column:1/-1;resize:vertical;min-height:70px}.evidence-form button{justify-self:start}
+.evidence-form.compact{grid-template-columns:minmax(120px,.6fr) minmax(180px,1fr) auto;margin:0 0 var(--sp-2)}
+.evidence-item{padding:var(--sp-3) 0;border-top:1px solid var(--border)}
+.evidence-item:first-child{border-top:0}.evidence-head{display:flex;align-items:flex-start;gap:var(--sp-2)}
+.evidence-head b{font-size:var(--fs-sm);overflow-wrap:anywhere}.evidence-head .mini{margin-left:auto;flex-shrink:0}
+.evidence-copy{color:var(--text-dim);font-size:var(--fs-xs);line-height:1.5;margin-top:5px;overflow-wrap:anywhere}
+.experiment-edit{display:grid;grid-template-columns:150px minmax(0,1fr);gap:var(--sp-2);margin-top:var(--sp-2)}
+.experiment-edit input,.experiment-edit textarea,.experiment-edit select{width:100%;min-width:0;background:var(--bg-inset);
+  border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);padding:8px 9px;font:var(--fs-xs)/1.4 var(--sans)}
+.experiment-edit input:focus,.experiment-edit textarea:focus,.experiment-edit select:focus{border-color:var(--accent-ring);outline:none}
+.experiment-edit textarea{min-height:54px;resize:vertical}.watch-results{display:flex;flex-direction:column;gap:5px;margin-top:var(--sp-2)}
+.watch-results a{font-size:var(--fs-2xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+.delivery-panel{margin-bottom:var(--sp-4)}.delivery-panel .cap-form{margin-top:var(--sp-3)}
+.delivery-panel .inline-msg{margin:0}.delivery-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:1px;background:var(--border);border:1px solid var(--border);margin:var(--sp-4) 0}
+.delivery-summary>div{background:var(--bg-inset);padding:11px 13px}.delivery-summary b{display:block;font:600 var(--fs-xl) var(--display)}
+.delivery-summary span{font:var(--fs-2xs) var(--mono);color:var(--text-faint)}
+.delivery-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--sp-4)}
+.delivery-list{display:flex;flex-direction:column}.delivery-row{display:grid;grid-template-columns:70px minmax(0,1fr);
+  gap:var(--sp-2);padding:8px 0;border-top:1px solid var(--border);font-size:var(--fs-xs)}
+.delivery-row:first-child{border-top:0}.delivery-row .kind{font:var(--fs-2xs) var(--mono);text-transform:uppercase}
+.delivery-row code{overflow-wrap:anywhere}.delivery-command{padding:8px 0;border-top:1px solid var(--border);font-size:var(--fs-xs)}
+.delivery-command code{display:block;color:var(--accent);white-space:pre-wrap;overflow-wrap:anywhere}
+.release-block{margin-top:var(--sp-4)}.team-actions{display:flex;flex-wrap:wrap;gap:var(--sp-2)}
+.file-action{display:inline-flex;align-items:center;min-height:26px;border:1px solid var(--border-strong);border-radius:99px;
+  padding:3px 11px;color:var(--text-dim);cursor:pointer;font-size:var(--fs-2xs)}
+.file-action:hover{color:var(--text);border-color:var(--text-dim)}.file-action input{position:absolute;width:1px;height:1px;opacity:0}
+
 @media (max-width:1100px) and (min-width:761px){
   .provider-choices{grid-template-columns:repeat(3,minmax(0,1fr))}
   .settings-form{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -756,6 +815,10 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
   .summary-page summary{grid-template-columns:minmax(0,1fr) auto}.summary-page summary::before{grid-column:2}
   .summary-meta{grid-column:1}.studio-layout{grid-template-columns:minmax(0,1fr)}
   .studio-chat{height:auto;min-height:620px}.ideas-panel{position:static;max-height:none}
+  .trust-wrap,.evidence-grid,.delivery-columns{grid-template-columns:minmax(0,1fr)}
+  .trust-signals,.delivery-summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .triage-form,.evidence-form,.evidence-form.compact,.experiment-edit{grid-template-columns:minmax(0,1fr)}
+  .evidence-form textarea{grid-column:1}.finding-review{grid-column:1/-1}
   .finding{grid-template-columns:68px minmax(0,1fr)}.finding-place{grid-column:2;text-align:left;max-width:none}
   .api-row{grid-template-columns:58px minmax(0,1fr) 72px}.api-row span:last-child{display:none}
   .ver-row,.ver-row.compact{grid-template-columns:40px minmax(0,1fr);row-gap:4px}
@@ -794,7 +857,7 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
       <button data-tab="viz" aria-label="Visualize"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5"/><path d="M12 12v10"/></svg><span>Visualize</span></button>
       <button data-tab="map" aria-label="Map"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="2.8"/><circle cx="6" cy="12" r="2.8"/><circle cx="18" cy="19" r="2.8"/><line x1="8.4" y1="13.4" x2="15.6" y2="17.6"/><line x1="15.6" y1="6.4" x2="8.4" y2="10.6"/></svg><span>Map</span></button>
       <button data-tab="sessions" aria-label="Sessions"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg><span>Sessions</span></button>
-      <button data-tab="tools" aria-label="Tools"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3z"/><circle cx="17.5" cy="6.5" r="3.5"/></svg><span>Tools</span></button>
+      <button data-tab="tools" aria-label="Delivery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3z"/><circle cx="17.5" cy="6.5" r="3.5"/></svg><span>Delivery</span></button>
       <button data-tab="docs" aria-label="Docs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg><span>Docs</span></button>
     </nav>
     <div class="sidebar-foot">
@@ -937,6 +1000,7 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
     <div class="page-sub">A defensive review of code quality, API boundaries, secret patterns, dependency cycles, and known package advisories. Local checks use no model; OSV is the only network call.</div>
     <div class="audit-toolbar">
       <button class="primary" id="run-audit" type="button">Run deep audit</button>
+      <button class="mini" id="audit-sarif" type="button">Download open findings · SARIF</button>
       <label class="check-label"><input id="audit-osv" type="checkbox" checked> Check current OSV advisories</label>
       <span class="config-state" id="audit-state">No audit loaded.</span>
     </div>
@@ -993,6 +1057,35 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
         <div id="idea-state" class="inline-msg"></div>
         <div id="ideas-list"><div class="empty">No saved recommendations yet.</div></div>
       </aside>
+    </div>
+    <div class="evidence-grid">
+      <div class="panel">
+        <h3>Experiment ledger <span class="pill" id="experiment-count">0</span></h3>
+        <p class="hint">Turn a recommendation into a falsifiable test. Keep the hypothesis, metric, result, and final decision together.</p>
+        <details class="evidence-create">
+          <summary>Add an experiment</summary>
+          <form id="experiment-form" class="evidence-form">
+            <input id="experiment-title" maxlength="300" placeholder="Experiment title" required>
+            <textarea id="experiment-hypothesis" maxlength="20000" placeholder="If we change…, then…, because…" required></textarea>
+            <input id="experiment-metric" maxlength="500" placeholder="Primary metric" required>
+            <input id="experiment-target" maxlength="500" placeholder="Success target (optional)">
+            <button class="mini" type="submit">Save experiment</button>
+            <span id="experiment-state" class="inline-msg"></span>
+          </form>
+        </details>
+        <div id="experiments-list"><div class="empty">No experiments recorded yet.</div></div>
+      </div>
+      <div class="panel">
+        <h3>Source-backed watchlists <span class="pill" id="watchlist-count">0</span></h3>
+        <p class="hint">Track a market, competitor, technology, or customer problem. Refresh is explicit and every result keeps its URL and retrieval time.</p>
+        <form id="watchlist-form" class="evidence-form compact">
+          <input id="watchlist-name" maxlength="200" placeholder="Watchlist name" required>
+          <input id="watchlist-query" maxlength="1000" placeholder="Exact live-web query" required>
+          <button class="mini" type="submit">Add watchlist</button>
+        </form>
+        <div id="watchlist-state" class="inline-msg"></div>
+        <div id="watchlists-list"><div class="empty">No watchlists yet.</div></div>
+      </div>
     </div>
   </section>
 
@@ -1146,8 +1239,37 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
   </section>
 
   <section id="tools">
-    <h2 class="page-title">Tools</h2>
-    <div class="page-sub">The core maintenance and provenance paths. See exactly what your agent is fed, travel back in time, diagnose the setup, and run everyday operations without a terminal.</div>
+    <h2 class="page-title">Delivery</h2>
+    <div class="page-sub">Know what changed, what could break, how to verify it, and whether it is safe to ship. Then hand the exact same evidence to any coding agent.</div>
+
+    <div class="panel delivery-panel">
+      <div class="panel-heading"><h3>Change intelligence</h3><span class="pill" id="delivery-scope">current worktree</span></div>
+      <p class="hint">Compares the working tree to a Git base, maps transitive impact, detects removed public symbols and routes, finds relevant tests, and builds release gates. It never executes suggested commands.</p>
+      <form id="delivery-form" class="cap-form">
+        <input id="delivery-base" value="HEAD" maxlength="200" aria-label="Git base revision" placeholder="HEAD, main, or a commit SHA" required>
+        <button class="primary" id="delivery-run" type="submit">Analyze changes</button>
+        <button class="mini" id="delivery-copy" type="button" disabled>Copy agent brief</button>
+        <span id="delivery-state" class="inline-msg">No change analysis loaded.</span>
+      </form>
+      <div id="delivery-content"><div class="empty">Analyze the current change set before review or release.</div></div>
+    </div>
+
+    <div class="row equal">
+      <div class="panel">
+        <h3>Team-safe memory</h3>
+        <p class="hint">Exchange reviewable JSON records instead of committing a live SQLite database. Bundles exclude source code, transcripts, prompts, session narratives, and executable commands.</p>
+        <div class="team-actions">
+          <button class="mini" id="team-export" type="button">Export team memory</button>
+          <label class="file-action">Import team memory<input id="team-import" type="file" accept="application/json,.json"></label>
+        </div>
+        <div id="team-memory-state" class="inline-msg"></div>
+      </div>
+      <div class="panel">
+        <h3>Release discipline</h3>
+        <p class="hint">The delivery plan checks current audit findings, memory contradictions, mapped tests, contract changes, and stale summaries. A green state means “ready to verify,” never “automatically safe.”</p>
+        <div class="prov-card"><div class="prov-row"><span class="pk">scope</span><span>Branch and worktree are recorded with every new agent session.</span></div><div class="prov-row"><span class="pk">authority</span><span>Verification and deployment commands remain under developer control.</span></div><div class="prov-row"><span class="pk">handoff</span><span>The generated brief is available here and through universal MCP.</span></div></div>
+      </div>
+    </div>
 
     <div class="panel">
       <h3>What your agent sees <span class="pill">irag context</span></h3>
@@ -1263,6 +1385,15 @@ async function api(p,opt){
 const errorText=err=>String(err&&err.message||err||"Request failed");
 function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")}
 function fmt(n){return n>=1e6?(n/1e6).toFixed(2)+"M":n>=1e3?(n/1e3).toFixed(1)+"k":String(n)}
+function downloadJSON(value,name,type="application/json"){
+  const blob=new Blob([JSON.stringify(value,null,2)+"\n"],{type}),url=URL.createObjectURL(blob),link=document.createElement("a");
+  link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+async function copyText(value){
+  if(navigator.clipboard&&isSecureContext){await navigator.clipboard.writeText(value);return}
+  const area=document.createElement("textarea");area.value=value;area.style.position="fixed";area.style.opacity="0";
+  document.body.appendChild(area);area.select();if(!document.execCommand("copy")){area.remove();throw new Error("Copy is unavailable in this browser")};area.remove();
+}
 const reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches;
 const MONO="ui-monospace,Menlo,monospace",SANS="-apple-system,Segoe UI,sans-serif";
 const SV=p=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${p}</svg>`;
@@ -1279,7 +1410,7 @@ const IC={
 };
 
 /* ---------- tabs ---------- */
-const TITLES={overview:"Overview",summary:"Main Summary",audit:"Code Audit",studio:"Thinking Studio",chat:"Chat",pages:"Pages",viz:"Visualize",health:"Health",map:"Map",sessions:"Sessions",tools:"Tools",docs:"Docs"};
+const TITLES={overview:"Overview",summary:"Main Summary",audit:"Code Audit",studio:"Thinking Studio",chat:"Chat",pages:"Pages",viz:"Visualize",health:"Health",map:"Map",sessions:"Sessions",tools:"Delivery",docs:"Docs"};
 const perTab={
   overview:()=>{refreshStatus();refreshBurn();refreshFeed();loadSettings()},
   summary:refreshMainSummary,
@@ -1355,6 +1486,7 @@ const ACTION_CMDS=[
   {kind:"action",label:"Run deep code audit",hint:"security, APIs, dependencies",run:()=>{switchTab("audit");setTimeout(()=>$("#run-audit").click(),120)}},
   {kind:"action",label:"Open complete project summary",hint:"every current memory page",run:()=>switchTab("summary")},
   {kind:"action",label:"Generate strategic recommendations",hint:"live web + project evidence",run:()=>{switchTab("studio");setTimeout(()=>$("#idea-generate").click(),120)}},
+  {kind:"action",label:"Analyze current changes",hint:"risk, contracts, tests, release gates",run:()=>{switchTab("tools");setTimeout(()=>$("#delivery-form").requestSubmit(),120)}},
   {kind:"action",label:"Preview what the agent sees",hint:"irag context",run:()=>{switchTab("tools");setTimeout(()=>$("#ctx-form").requestSubmit(),120)}},
   {kind:"action",label:"Run doctor",hint:"diagnose the setup",run:()=>{switchTab("tools");setTimeout(()=>$("#do-doctor").click(),120)}},
   {kind:"action",label:"Back up the database",hint:"timestamped copy",run:()=>{switchTab("tools");setTimeout(()=>$("#do-backup").click(),120)}},
@@ -1504,7 +1636,7 @@ function renderMainSummary(){
   const data=_summaryData;if(!data)return;
   const needle=$("#summary-search").value.trim().toLowerCase();
   const pages=(data.pages||[]).filter(page=>!needle||(page.subject_id+" "+page.title+" "+page.body_markdown).toLowerCase().includes(needle));
-  const status=data.status||{},audit=data.latest_audit;
+  const status=data.status||{},audit=data.latest_audit,trust=data.trust||{score:0,label:"unknown",signals:{},issues:[]};
   const rootSummary=data.overview_markdown
     ?`<div class="summary-overview">${md(esc(data.overview_markdown))}</div>`
     :`<div class="empty">The root project summary has not been written yet. Run Update to synthesize it; all available page summaries are still listed below.</div>`;
@@ -1518,10 +1650,16 @@ function renderMainSummary(){
     `<div class="prob"><span class="sev-${esc(item.severity)}">${esc(item.severity)}</span><div><b>${esc(item.subject_id)}</b><span class="prob-truth">${esc(item.claim)} → ${esc(item.truth)}</span></div></div>`).join("")||`<div class="empty">No open contradictions.</div>`;
   const sessions=(data.sessions||[]).slice(0,12).map(item=>
     `<div class="fr"><span class="t">${esc((item.ended_at||item.started_at||"").slice(0,16))}</span><span class="subj">#${item.session_id} · ${esc(item.agent||"")}</span><span class="detail">${esc(item.summary||"No narrative summary")}</span></div>`).join("")||`<div class="empty">No project sessions recorded.</div>`;
+  const signal=trust.signals||{};
+  const trustHtml=`<div class="panel"><h3>Memory trust <span class="pill">${esc(trust.label)}</span></h3>
+    <div class="trust-wrap"><div class="trust-score"><b>${trust.score}/100</b><span>deterministic health signal</span></div>
+      <div><div class="trust-signals"><div><b>${signal.summary_coverage||0}%</b><span>summary coverage</span></div><div><b>${signal.current_pages||0}%</b><span>current pages</span></div><div><b>${signal.traceable_pages||0}%</b><span>traceable pages</span></div><div><b>${signal.audit_current?"yes":"no"}</b><span>current audit</span></div></div>
+      <div class="trust-issues">${(trust.issues||[]).length?`<ul>${trust.issues.map(item=>`<li>${esc(item)}</li>`).join("")}</ul>`:"No trust signals need attention."}</div></div></div>
+    <p class="privacy-note">${esc(trust.meaning||"")}</p></div>`;
   $("#summary-content").innerHTML=`${warning}<div class="summary-ledger">
       <div><b>${fmt(data.pages.length)}</b><span>current pages</span></div><div><b>${fmt(status.revisions||0)}</b><span>versions retained</span></div>
       <div><b>${fmt((data.contradictions||[]).length)}</b><span>contradictions</span></div><div><b>${audit?Object.values(audit.counts||{}).reduce((a,b)=>a+b,0):"—"}</b><span>${audit?(audit.stale?"stale audit findings":"audit findings"):"audit not run"}</span></div>
-    </div><div class="panel"><h3>Project-wide synthesis <span class="pill">${data.overview_current?"current":"update due"}</span></h3>${rootSummary}</div>
+    </div>${trustHtml}<div class="panel" style="margin-top:var(--sp-4)"><h3>Project-wide synthesis <span class="pill">${data.overview_current?"current":"update due"}</span></h3>${rootSummary}</div>
     <div class="panel" style="margin-top:var(--sp-4)"><h3>Every current summary <span class="pill">${pages.length} of ${data.pages.length}</span></h3><div class="summary-pages">${pageHtml}</div></div>
     <div class="row equal"><div class="panel"><h3>Unresolved contradictions</h3>${contradictions}</div><div class="panel"><h3>Recent project sessions</h3><div class="feed">${sessions}</div></div></div>`;
   $("#summary-updated").textContent="Live view · "+new Date(data.generated_at).toLocaleString();
@@ -1541,34 +1679,43 @@ async function runAudit(){
   if(_auditBusy)return;_auditBusy=true;const button=$("#run-audit"),el=$("#audit-state");
   button.disabled=true;button.textContent="Auditing…";el.textContent="Scanning code, APIs, architecture, and dependencies…";el.className="config-state";
   try{_auditData=await api("/api/audit",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({check_advisories:$("#audit-osv").checked})});renderAudit();showToast("Deep audit complete.",`${_auditData.findings.length} finding(s) ready to review.`)}
+    body:JSON.stringify({check_advisories:$("#audit-osv").checked})});renderAudit();showToast("Deep audit complete.",`${(_auditData.active_findings||_auditData.findings).length} open finding(s) ready to review.`)}
   catch(err){el.textContent=errorText(err);el.className="config-state bad"}
   finally{_auditBusy=false;button.disabled=false;button.textContent="Run deep audit"}
 }
 function renderAudit(){
   const data=_auditData;if(!data)return;const counts=data.counts||{};
-  const filter=$("#audit-text")?.value.trim().toLowerCase()||"",severity=$("#audit-severity")?.value||"all",category=$("#audit-category")?.value||"all";
-  const findings=(data.findings||[]).filter(item=>(severity==="all"||item.severity===severity)&&(category==="all"||item.category===category)&&(!filter||JSON.stringify(item).toLowerCase().includes(filter)));
+  const filter=$("#audit-text")?.value.trim().toLowerCase()||"",severity=$("#audit-severity")?.value||"all",category=$("#audit-category")?.value||"all",triage=$("#audit-triage-filter")?.value||"open";
+  const findings=(data.findings||[]).filter(item=>{const open=(item.triage?.effective_status||"open")==="open";return(severity==="all"||item.severity===severity)&&(category==="all"||item.category===category)&&(triage==="all"||(triage==="open"?open:!open))&&(!filter||JSON.stringify(item).toLowerCase().includes(filter))});
   const categories=[...new Set((data.findings||[]).map(item=>item.category))];
-  const findingHtml=findings.length?findings.map(item=>`<div class="finding">
-      <span class="finding-sev sev-${esc(item.severity)}">${esc(item.severity)}</span><div class="finding-main"><b>${esc(item.title)}</b><p>${esc(item.evidence)}</p><div class="finding-fix">Fix: ${esc(item.remediation)}${item.url?` · <a href="${esc(item.url)}" target="_blank" rel="noopener">advisory ↗</a>`:""}</div></div><span class="finding-place">${esc(item.file)}:${item.line}<br>${esc(item.confidence)} confidence</span>
-    </div>`).join(""):`<div class="empty">No findings match this filter.</div>`;
+  const findingHtml=findings.length?findings.map(item=>{const review=item.triage||{status:"open",effective_status:"open",rationale:"",expires_at:""},closed=review.effective_status!=="open";return `<div class="finding${closed?" closed":""}">
+      <span class="finding-sev sev-${esc(item.severity)}">${esc(item.severity)}</span><div class="finding-main"><b>${esc(item.title)}</b><p>${esc(item.evidence)}</p><div class="finding-fix">Fix: ${esc(item.remediation)}${item.url?` · <a href="${esc(item.url)}" target="_blank" rel="noopener">advisory ↗</a>`:""}</div><span class="triage-tag ${esc(review.effective_status)}">${esc(review.effective_status)}${review.expired?" · previous acceptance expired":""}${review.rationale?" · "+esc(review.rationale):""}</span></div><span class="finding-place">${esc(item.file)}:${item.line}<br>${esc(item.confidence)} confidence</span>
+      <details class="finding-review"><summary>Review finding</summary><form class="triage-form" data-finding="${esc(item.id)}"><select aria-label="Finding status">${["open","resolved","false-positive","risk-accepted"].map(value=>`<option value="${value}"${review.status===value?" selected":""}>${value}</option>`).join("")}</select><input maxlength="5000" aria-label="Review rationale" placeholder="Required rationale when closing" value="${esc(review.rationale).replace(/"/g,"&quot;")}"><input type="date" aria-label="Review expiry" value="${esc(review.expires_at||"")}"><button class="mini" type="submit">Save review</button></form></details>
+    </div>`}).join(""):`<div class="empty">No findings match this filter.</div>`;
   const routes=(data.api?.routes||[]).slice(0,200).map(route=>`<tr><td>${esc(route.method)}</td><td>${esc(route.path)}</td><td>${esc(route.file)}:${route.line}</td><td>${route.auth==="observed"?'<span class="sev-low">observed</span>':'<span class="sev-medium">unknown</span>'}</td></tr>`).join("")||`<tr><td colspan="4">No framework routes detected.</td></tr>`;
   $("#audit-content").innerHTML=`${data.stale?'<div class="confirm-bar"><b>This report is stale.</b> The code changed after it ran. Run a fresh audit before acting on it.</div>':""}
     <div class="audit-score"><div class="critical"><b>${counts.critical||0}</b><span>critical</span></div><div class="high"><b>${counts.high||0}</b><span>high</span></div><div class="medium"><b>${counts.medium||0}</b><span>medium</span></div><div><b>${counts.low||0}</b><span>low</span></div></div>
     <div class="row"><div class="panel"><h3>Review queue <span class="pill">${findings.length} shown · ${data.findings.length} total</span></h3>
-      <div class="audit-filter"><input id="audit-text" placeholder="Filter findings…" value="${esc(filter).replace(/"/g,"&quot;")}"><select id="audit-severity"><option value="all">All severities</option>${["critical","high","medium","low"].map(v=>`<option value="${v}"${severity===v?" selected":""}>${v}</option>`).join("")}</select><select id="audit-category"><option value="all">All categories</option>${categories.map(v=>`<option value="${esc(v)}"${category===v?" selected":""}>${esc(v)}</option>`).join("")}</select></div><div class="finding-list">${findingHtml}</div></div>
+      <div class="audit-filter"><input id="audit-text" placeholder="Filter findings…" value="${esc(filter).replace(/"/g,"&quot;")}"><select id="audit-severity"><option value="all">All severities</option>${["critical","high","medium","low"].map(v=>`<option value="${v}"${severity===v?" selected":""}>${v}</option>`).join("")}</select><select id="audit-category"><option value="all">All categories</option>${categories.map(v=>`<option value="${esc(v)}"${category===v?" selected":""}>${esc(v)}</option>`).join("")}</select><select id="audit-triage-filter"><option value="open"${triage==="open"?" selected":""}>Open only</option><option value="closed"${triage==="closed"?" selected":""}>Reviewed only</option><option value="all"${triage==="all"?" selected":""}>All review states</option></select></div><div class="finding-list">${findingHtml}</div></div>
       <div class="panel"><h3>Scan coverage</h3><div class="prov-card"><div class="prov-row"><span class="pk">scope</span><span>${fmt(data.files_scanned)} files · ${fmt(data.lines_scanned)} lines</span></div><div class="prov-row"><span class="pk">API</span><span>${data.api.route_count} routes · ${data.api.auth_observed} auth marker(s) observed</span></div><div class="prov-row"><span class="pk">tests</span><span>${data.quality.test_files} test files / ${data.quality.source_files} source files</span></div><div class="prov-row"><span class="pk">cycles</span><span>${data.quality.dependency_cycles.length} dependency cycle(s)</span></div><div class="prov-row"><span class="pk">OSV</span><span>${esc(data.dependencies.advisory_scan.status)} · ${data.dependencies.advisory_scan.packages_checked} versions${data.dependencies.advisory_scan.error?" · "+esc(data.dependencies.advisory_scan.error):""}</span></div></div></div></div>
     <div class="panel" style="margin-top:var(--sp-4)"><h3>Discovered API routes <span class="pill">${data.api.route_count}</span></h3><table><thead><tr><th>method</th><th>path</th><th>source</th><th>auth marker</th></tr></thead><tbody>${routes}</tbody></table></div>`;
   const filterInput=$("#audit-text");filterInput.addEventListener("input",()=>{
     clearTimeout(filterInput._timer);filterInput._timer=setTimeout(()=>{renderAudit();const next=$("#audit-text");next.focus();next.setSelectionRange(next.value.length,next.value.length)},140)});
-  $("#audit-severity").onchange=renderAudit;$("#audit-category").onchange=renderAudit;
+  $("#audit-severity").onchange=renderAudit;$("#audit-category").onchange=renderAudit;$("#audit-triage-filter").onchange=renderAudit;
+  document.querySelectorAll(".triage-form").forEach(form=>form.onsubmit=event=>saveAuditTriage(event,form));
   const advisory=data.dependencies.advisory_scan;
   const stateEl=$("#audit-state");stateEl.textContent=`Audit #${data.audit_id} · ${new Date(data.created_at).toLocaleString()} · ${data.duration_ms}ms${advisory.status==="unavailable"?" · OSV unavailable":""}`;
   stateEl.className="config-state "+(data.stale||advisory.status==="unavailable"?"bad":"ok");
   $("#audit-recommendations").innerHTML=(data.recommendations||[]).map(item=>`<div class="prov-row"><span class="pk">${esc(item.priority)}</span><span><b>${esc(item.title)}</b><br>${esc(item.detail)}</span></div>`).join("")||`<div class="empty">No recommendations generated.</div>`;
 }
+async function saveAuditTriage(event,form){
+  event.preventDefault();const button=form.querySelector("button"),fields=form.querySelectorAll("select,input"),status=fields[0].value,rationale=fields[1].value.trim(),expires_at=fields[2].value;
+  button.disabled=true;button.textContent="Saving…";
+  try{await api("/api/audit-triage",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:form.dataset.finding,status,rationale,expires_at})});await refreshAudit();showToast("Finding review saved.",status==="open"?"The finding is active again.":"The rationale stays attached to future scans.")}
+  catch(err){showToast("Could not save the finding review.",errorText(err))}finally{button.disabled=false;button.textContent="Save review"}
+}
 $("#run-audit").onclick=runAudit;
+$("#audit-sarif").onclick=async()=>{const button=$("#audit-sarif");button.disabled=true;try{const value=await api("/api/audit-sarif");downloadJSON(value,`irag-audit-${_auditData?.audit_id||"latest"}.sarif`,"application/sarif+json");showToast("SARIF downloaded.","Only currently open findings were included.")}catch(err){showToast("Could not export SARIF.",errorText(err))}finally{button.disabled=false}};
 $("#api-check-form").onsubmit=async event=>{
   event.preventDefault();const button=event.currentTarget.querySelector("button"),state=$("#api-check-state");button.disabled=true;state.textContent="Probing read-only local routes…";state.className="inline-msg";
   try{const data=await api("/api/api-check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({base_url:$("#api-base").value})});
@@ -1596,7 +1743,28 @@ function renderStudio(){
   $("#ideas-list").innerHTML=(data.ideas||[]).map(item=>`<div class="idea"><div class="idea-top"><b>${esc(item.title)}</b><button class="mini danger" type="button" data-archive="${item.idea_id}">Archive</button></div><div class="idea-body">${md(esc(item.body_markdown))}</div>${sourceList(item.sources)}<button class="mini" type="button" data-use-idea="${item.idea_id}">Discuss this idea</button></div>`).join("")||`<div class="empty">No saved recommendations yet.</div>`;
   $("#ideas-list").querySelectorAll("[data-use-idea]").forEach(button=>button.onclick=()=>{const idea=data.ideas.find(x=>x.idea_id===Number(button.dataset.useIdea));if(!idea)return;$("#studio-input").value=`Pressure-test this recommendation for our project:\n\n${idea.title}\n${idea.body_markdown}`;$("#studio-input").focus()});
   $("#ideas-list").querySelectorAll("[data-archive]").forEach(button=>button.onclick=()=>archiveIdea(Number(button.dataset.archive)));
+  renderEvidence(data);
 }
+function renderEvidence(data){
+  const experiments=data.experiments||[],watchlists=data.watchlists||[];
+  $("#experiment-count").textContent=experiments.length;$("#watchlist-count").textContent=watchlists.length;
+  $("#experiments-list").innerHTML=experiments.map(item=>`<div class="evidence-item"><div class="evidence-head"><b>${esc(item.title)}</b><span class="pill">${esc(item.status)}</span></div><div class="evidence-copy"><b>Hypothesis:</b> ${esc(item.hypothesis)}<br><b>Metric:</b> ${esc(item.metric)}${item.target?` · target ${esc(item.target)}`:""}${item.outcome?`<br><b>Outcome:</b> ${esc(item.outcome)}`:""}${item.decision?`<br><b>Decision:</b> ${esc(item.decision)}`:""}</div><details class="evidence-create"><summary>Update result and decision</summary><form class="experiment-edit" data-experiment="${item.experiment_id}"><input maxlength="300" aria-label="Experiment title" value="${esc(item.title).replace(/"/g,"&quot;")}" required><textarea maxlength="20000" aria-label="Hypothesis" required>${esc(item.hypothesis)}</textarea><input maxlength="500" aria-label="Metric" value="${esc(item.metric).replace(/"/g,"&quot;")}" required><input maxlength="500" aria-label="Target" value="${esc(item.target).replace(/"/g,"&quot;")}"><select aria-label="Experiment status">${["planned","running","won","lost","inconclusive","archived"].map(value=>`<option value="${value}"${item.status===value?" selected":""}>${value}</option>`).join("")}</select><textarea maxlength="20000" aria-label="Outcome" placeholder="Observed result">${esc(item.outcome)}</textarea><textarea maxlength="20000" aria-label="Decision" placeholder="What will we do because of this?">${esc(item.decision)}</textarea><button class="mini" type="submit">Save experiment</button></form></details></div>`).join("")||`<div class="empty">No experiments recorded yet. Turn a recommendation into a measurable test.</div>`;
+  document.querySelectorAll(".experiment-edit").forEach(form=>form.onsubmit=event=>saveExperiment(event,form));
+  $("#watchlists-list").innerHTML=watchlists.map(item=>{const latest=item.latest,results=(latest?.results||[]).slice(0,5);return `<div class="evidence-item"><div class="evidence-head"><b>${esc(item.name)}</b><button class="mini" type="button" data-watch-refresh="${item.watchlist_id}">Refresh</button><button class="mini danger" type="button" data-watch-archive="${item.watchlist_id}">Archive</button></div><div class="evidence-copy">${esc(item.query)}${latest?`<br>${esc(latest.provider)} · retrieved ${esc((latest.retrieved_at||"").replace("T"," ").slice(0,19))} UTC · ${latest.added.length} new · ${latest.removed.length} no longer returned`:" · never refreshed"}</div><div class="watch-results">${results.map(result=>/^(https?:\/\/)[^\s"'<>]+$/i.test(result.url||"")?`<a href="${esc(result.url)}" target="_blank" rel="noopener">${esc(result.title||result.domain||result.url)}</a>`:"").join("")}</div></div>`}).join("")||`<div class="empty">No watchlists yet. Add one precise query, then refresh it when current evidence matters.</div>`;
+  document.querySelectorAll("[data-watch-refresh]").forEach(button=>button.onclick=()=>refreshWatchlist(button,Number(button.dataset.watchRefresh)));
+  document.querySelectorAll("[data-watch-archive]").forEach(button=>button.onclick=()=>archiveWatchlist(Number(button.dataset.watchArchive)));
+}
+async function saveExperiment(event,form){
+  event.preventDefault();const controls=form.querySelectorAll("input,textarea,select"),button=form.querySelector("button"),value={id:Number(form.dataset.experiment),title:controls[0].value,hypothesis:controls[1].value,metric:controls[2].value,target:controls[3].value,status:controls[4].value,outcome:controls[5].value,decision:controls[6].value};button.disabled=true;
+  try{await api("/api/experiment",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({experiment:value})});await refreshStudio();showToast("Experiment saved.","The evidence and decision remain attached to this project.")}
+  catch(err){showToast("Could not save the experiment.",errorText(err))}finally{button.disabled=false}
+}
+async function refreshWatchlist(button,id){
+  button.disabled=true;button.textContent="Searching…";const state=$("#watchlist-state");state.textContent="Fetching dated live-web evidence…";
+  try{const value=await api("/api/watchlist/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});state.textContent=`Saved ${value.snapshot.results.length} source(s); ${value.snapshot.added.length} new since the last refresh.`;state.className="inline-msg ok";await refreshStudio()}
+  catch(err){state.textContent=errorText(err);state.className="inline-msg bad"}finally{button.disabled=false;button.textContent="Refresh"}
+}
+async function archiveWatchlist(id){try{await api("/api/watchlist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"archive",id})});await refreshStudio()}catch(err){showToast("Could not archive the watchlist.",errorText(err))}}
 function sourceList(sources){
   if(!sources||!sources.length)return "";
   const first=sources[0]||{},meta=(first.provider||first.retrieved_at)
@@ -1615,6 +1783,8 @@ $("#idea-form").onsubmit=async event=>{
   catch(err){state.textContent=errorText(err);state.className="inline-msg bad"}finally{_studioBusy=false;button.disabled=false;button.textContent="Generate";await refreshStudio()}
 };
 async function archiveIdea(id){try{await api("/api/studio-idea/archive",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});await refreshStudio()}catch(err){showToast("Could not archive that idea.",errorText(err))}}
+$("#experiment-form").onsubmit=async event=>{event.preventDefault();const button=event.currentTarget.querySelector("button"),state=$("#experiment-state"),value={title:$("#experiment-title").value,hypothesis:$("#experiment-hypothesis").value,metric:$("#experiment-metric").value,target:$("#experiment-target").value,status:"planned",outcome:"",decision:""};button.disabled=true;try{await api("/api/experiment",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({experiment:value})});event.currentTarget.reset();event.currentTarget.closest("details").open=false;state.textContent="Experiment saved.";state.className="inline-msg ok";await refreshStudio()}catch(err){state.textContent=errorText(err);state.className="inline-msg bad"}finally{button.disabled=false}};
+$("#watchlist-form").onsubmit=async event=>{event.preventDefault();const button=event.currentTarget.querySelector("button"),state=$("#watchlist-state");button.disabled=true;try{await api("/api/watchlist",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"create",name:$("#watchlist-name").value,query:$("#watchlist-query").value})});event.currentTarget.reset();state.textContent="Watchlist saved. Refresh it when you need current evidence.";state.className="inline-msg ok";await refreshStudio()}catch(err){state.textContent=errorText(err);state.className="inline-msg bad"}finally{button.disabled=false}};
 
 /* ---------- count-up ---------- */
 function countUp(el,to){
@@ -2208,7 +2378,30 @@ $("#why-form").onsubmit=async e=>{
     ${ev&&ev.text?`<div class="prov-row"><span class="pk">note</span><span>${esc(ev.text)}</span></div>`:''}
   </div>`;
 };
-/* ---------- tools: agent view, time travel, operations ---------- */
+/* ---------- delivery: change intelligence, team memory, operations ---------- */
+let _deliveryData=null,_deliveryBusy=false;
+$("#delivery-form").onsubmit=async event=>{
+  event.preventDefault();if(_deliveryBusy)return;_deliveryBusy=true;const button=$("#delivery-run"),state=$("#delivery-state");
+  button.disabled=true;button.textContent="Analyzing…";state.className="inline-msg";state.textContent="Refreshing structure and mapping the change set…";
+  try{_deliveryData=await api("/api/delivery?base="+encodeURIComponent($("#delivery-base").value.trim()||"HEAD"));renderDelivery();$("#delivery-copy").disabled=false}
+  catch(err){state.className="inline-msg bad";state.textContent=errorText(err);$("#delivery-content").innerHTML=`<div class="empty">${esc(errorText(err))}</div>`}
+  finally{_deliveryBusy=false;button.disabled=false;button.textContent="Analyze changes"}
+};
+function renderDelivery(){
+  const data=_deliveryData;if(!data)return;const release=data.release||{},workspace=data.workspace||{},changes=data.changes||[],risks=data.risks||[],contracts=data.contracts||[];
+  $("#delivery-scope").textContent=`${workspace.branch||"snapshot"} · ${workspace.workspace_id||""}`;
+  $("#delivery-state").className="inline-msg "+(release.status==="blocked"?"bad":"ok");$("#delivery-state").textContent=`${changes.length} changed file(s) · release state: ${release.status}`;
+  const changeRows=changes.slice(0,100).map(item=>`<div class="delivery-row"><span class="kind">${esc(item.status)}</span><code>${esc(item.path)}</code></div>`).join("")||`<div class="empty">Working tree is clean relative to this base.</div>`;
+  const riskRows=risks.slice(0,100).map(item=>`<div class="delivery-row"><span class="kind sev-${esc(item.severity)}">${esc(item.severity)}</span><span><code>${esc(item.file)}</code><br>${esc(item.reason)}</span></div>`).join("")||`<div class="empty">No change-specific risks detected.</div>`;
+  const contractRows=contracts.slice(0,100).map(item=>`<div class="delivery-row"><span class="kind sev-${esc(item.severity)}">${esc(item.kind)}</span><span><code>${esc(item.file)}</code><br>${esc(item.detail)}</span></div>`).join("")||`<div class="empty">No removed public routes or symbols detected.</div>`;
+  const commands=(data.verification_commands||[]).map(item=>`<div class="delivery-command"><code>${esc(item.command)}</code><span>${esc(item.why)}</span></div>`).join("")||`<div class="empty">No conventional verification command was detected.</div>`;
+  const gates=[...(release.blockers||[]).map(item=>`<li class="sev-high">${esc(item)}</li>`),...(release.warnings||[]).map(item=>`<li>${esc(item)}</li>`),...(release.checklist||[]).map(item=>`<li>${esc(item)}</li>`)].join("")||`<li>No release gates were generated.</li>`;
+  $("#delivery-content").innerHTML=`<div class="delivery-summary"><div><b>${changes.length}</b><span>changed files</span></div><div><b>${data.risk_counts?.high||0}</b><span>high risks</span></div><div><b>${(data.tests||[]).length}</b><span>mapped tests</span></div><div><b>${esc(release.status||"unknown")}</b><span>release state</span></div></div><div class="delivery-columns"><div class="panel"><h3>Changed files</h3><div class="delivery-list">${changeRows}</div></div><div class="panel"><h3>Risk and blast radius</h3><div class="delivery-list">${riskRows}</div></div><div class="panel"><h3>Contract changes</h3><div class="delivery-list">${contractRows}</div></div><div class="panel"><h3>Verification plan</h3>${commands}</div></div><div class="panel release-block"><h3>Release gates</h3><ul class="trust-issues">${gates}</ul></div>`;
+}
+$("#delivery-copy").onclick=async()=>{if(!_deliveryData)return;try{await copyText(_deliveryData.agent_brief);showToast("Agent brief copied.","Paste it into any coding agent; it contains the same scoped evidence.")}catch(err){showToast("Could not copy the brief.",errorText(err))}};
+$("#team-export").onclick=async()=>{const button=$("#team-export"),state=$("#team-memory-state");button.disabled=true;state.className="inline-msg";state.textContent="Building a reviewable bundle…";try{const bundle=await api("/api/team-memory");downloadJSON(bundle,`irag-team-memory-${new Date().toISOString().slice(0,10)}.json`);state.className="inline-msg "+(bundle.warning?"bad":"ok");state.textContent=`Exported ${bundle.record_count} shareable record(s).${bundle.warning?" "+bundle.warning:""}`}catch(err){state.className="inline-msg bad";state.textContent=errorText(err)}finally{button.disabled=false}};
+$("#team-import").onchange=async event=>{const input=event.currentTarget,state=$("#team-memory-state"),file=input.files?.[0];if(!file)return;if(file.size>900000){state.className="inline-msg bad";state.textContent="Bundle must be at most 900 KB so it fits the dashboard's protected request limit.";input.value="";return}state.className="inline-msg";state.textContent="Validating and importing records…";try{const bundle=JSON.parse(await file.text()),value=await api("/api/team-memory/import",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({bundle})});state.className="inline-msg ok";state.textContent=`Imported ${value.imported}; skipped ${value.skipped_existing} already-present record(s).`;refreshStatus()}catch(err){state.className="inline-msg bad";state.textContent=err instanceof SyntaxError?"That file is not valid JSON.":errorText(err)}finally{input.value=""}};
+
 $("#ctx-form").onsubmit=async e=>{
   e.preventDefault();
   const q=$("#ctx-query").value.trim(),b=$("#ctx-budget").value||3000;
@@ -2290,7 +2483,7 @@ function renderMapTables(){
   $("#mapfiles tbody").innerHTML=m.files.length
     ?sortRows("mapfiles",m.files).map(f=>
       `<tr><td>${esc(f.subject_id)}</td><td style="color:var(--text-dim)">${f.n}</td></tr>`).join("")
-    :`<tr><td colspan="2">No structural map yet — run Scan map from the Tools tab.</td></tr>`;
+    :`<tr><td colspan="2">No structural map yet — run Scan map from the Delivery tab.</td></tr>`;
   $("#mapdeps tbody").innerHTML=m.deps.length
     ?sortRows("mapdeps",m.deps).map(d=>
       `<tr><td>${esc(d.s)}</td><td style="color:var(--text-faint)">→</td><td>${esc(d.t)}</td>
@@ -2423,7 +2616,7 @@ async function refreshSessions(){
        <div class="sess-row-top"><span class="badge status-${r.status}">${r.status}</span>
          <span class="pill">${esc(r.agent||"")}</span><span class="sess-time">${(r.started_at||"").slice(0,16)}</span></div>
        <div class="sess-summary">${esc((r.summary||"(no summary)").slice(0,140))}</div>
-       <div class="sess-meta">${r.files_changed.length} file(s) · ${r.versions_written} version(s) · ${r.decisions}d/${r.lessons}l</div>
+       <div class="sess-meta">${r.files_changed.length} file(s) · ${r.versions_written} version(s) · ${r.decisions}d/${r.lessons}l${r.branch_name?` · ${esc(r.branch_name)}`:""}${r.task_label?` · ${esc(r.task_label)}`:""}</div>
      </div>`).join("");
   list.onkeydown=e=>{
     if(e.key!=="Enter"&&e.key!==" ")return;
@@ -2444,7 +2637,7 @@ window.viewSession=id=>{
     :`<div class="empty">No page changes recorded for this session.</div>`;
   d.innerHTML=`<h3>Session #${r.session_id}</h3>
     <div class="sess-meta">${esc(r.agent||"")} · ${(r.started_at||"").slice(0,16)} → ${r.ended_at?r.ended_at.slice(0,16):"—"}
-      · <span class="badge status-${r.status}">${r.status}</span></div>
+      · <span class="badge status-${r.status}">${r.status}</span>${r.branch_name?` · branch ${esc(r.branch_name)}`:""}${r.task_label?` · task ${esc(r.task_label)}`:""}${r.head_sha?` · ${esc(r.head_sha.slice(0,12))}`:""}</div>
     <p class="sess-full-summary">${esc(r.summary||"No summary recorded.")}</p>
     <h4>Changes this session</h4>${changes}
     <div id="sess-transcript"><h4>Transcript</h4><div class="empty">Loading…</div></div>`;
