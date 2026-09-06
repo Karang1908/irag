@@ -72,11 +72,11 @@ are never served without a warning; `irag check` fails CI while memory and
 code disagree. The model writes prose; deterministic checks decide what can be trusted.
 
 <p align="center">
-  <img src="docs/assets/health-contradiction.jpg" alt="Health view: memory claimed argon2-cffi 21.1.0, the manifest declares 23.1.0 — caught mechanically, with a one-click resolve" width="100%">
+  <img src="docs/assets/health-contradiction.jpg" alt="Health view: every open contradiction as claim versus observed truth, with a master agent repair brief and a staleness ranking" width="100%">
 </p>
 
 <p align="center">
-  <sub>A real catch: the summary claimed <code>argon2-cffi 21.1.0</code>, the manifest says <code>23.1.0</code>.<br>Nobody read the page to notice — a query did.</sub>
+  <sub>Real catches, from irag's own memory: a page claimed <code>irag/dashboard.py</code> references <code>_State.cfg</code>,<br>and that <code>irag/providers.py</code> defines <code>validator()</code>. Neither exists. Nobody read the pages to notice — a query did.</sub>
 </p>
 
 **⚡ Reads are free — structurally, not "cheaply".**
@@ -252,6 +252,24 @@ your summaries. Instant, zero tokens.
 - **Docs** — the setup, architecture, MCP, and CLI manuals ship inside the
   dashboard, so the operating contract stays available with the tool.
 
+**The audit is deterministic — no model on that path.** Every finding carries
+its file, line, confidence and a concrete fix, suspected secret values are
+redacted before they are printed or stored, and the only network call is the
+optional OSV advisory lookup.
+
+<p align="center">
+  <img src="docs/assets/code-audit.jpg" alt="Code Audit: severity-ranked findings with evidence, confidence and fixes, beside scan coverage and API inventory" width="100%">
+</p>
+
+**Main Summary is the whole project on one page; the Studio turns it into
+decisions.** Repository facts, model reasoning and dated web sources stay
+visibly apart, and a recommendation cites the real file and line it came from.
+
+<p align="center">
+  <img src="docs/assets/main-summary.jpg" alt="Main Summary: every current page, health, contradictions and sessions in one live document" width="49%">
+  <img src="docs/assets/thinking-studio.jpg" alt="Thinking Studio: grounded code-review recommendations citing real files and lines" width="49%">
+</p>
+
 <p align="center">
   <img src="docs/assets/dependency-graph.jpg" alt="Interactive dependency graph" width="49%">
   <img src="docs/assets/sessions.jpg" alt="Session diary with per-file changes and transcript" width="49%">
@@ -271,13 +289,13 @@ every few seconds, so new files show up without a refresh.
 
 ## Measured, not claimed
 
-Run on irag's own source on a laptop (the benchmark below predates the new
-MCP/provider/report modules, so it is retained as a reproducible baseline):
+Run on irag's own source on a laptop, re-measured on the current tree:
 
 | | |
 |---|---|
-| Full structural scan | **259 symbols, 83 import edges, 0.12s, 0 tokens** |
-| `irag impact irag/db.py` | **13 dependent modules, 0.08s, 0 tokens** |
+| Full structural scan | **416 symbols, 161 import edges, 0.18s, 0 tokens** |
+| `irag impact irag/db.py` | **23 dependent modules, 0.15s, 0 tokens** |
+| `irag audit --offline` | **42 files, 21.6k lines, 0.26s, 0 tokens** |
 | Resume a past conversation | **~87 tokens** |
 | Brief a fresh session | **~650 tokens** effective, budget-capped |
 | Runtime dependencies | **0** |
