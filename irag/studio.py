@@ -37,7 +37,31 @@ def state(conn: sqlite3.Connection) -> dict[str, Any]:
         item = dict(row)
         item["sources"] = _json_list(item.pop("sources_json", "[]"))
         ideas.append(item)
+    experiments = [dict(row) for row in conn.execute(
+        "SELECT * FROM experiments WHERE status!='archived' "
+        "ORDER BY experiment_id DESC LIMIT 40")]
+    watchlists = []
+    for row in conn.execute(
+            "SELECT * FROM watchlists WHERE status='active' "
+            "ORDER BY watchlist_id DESC LIMIT 30"):
+        item = dict(row)
+        snapshot = conn.execute(
+            "SELECT provider,retrieved_at,results_json,added_json,removed_json "
+            "FROM watchlist_snapshots WHERE watchlist_id=? "
+            "ORDER BY snapshot_id DESC LIMIT 1", (row["watchlist_id"],)).fetchone()
+        if snapshot:
+            item["latest"] = {
+                "provider": snapshot["provider"],
+                "retrieved_at": snapshot["retrieved_at"],
+                "results": _json_list(snapshot["results_json"]),
+                "added": _json_list(snapshot["added_json"]),
+                "removed": _json_list(snapshot["removed_json"]),
+            }
+        else:
+            item["latest"] = None
+        watchlists.append(item)
     return {"messages": messages, "ideas": ideas,
+            "experiments": experiments, "watchlists": watchlists,
             "modes": [{"id": key, "label": MODE_LABELS[key]}
                       for key in MODES]}
 
@@ -159,6 +183,139 @@ def archive_idea(conn: sqlite3.Connection, idea_id: int) -> bool:
         "AND status='active'", (idea_id,))
     conn.commit()
     return cursor.rowcount > 0
+
+
+EXPERIMENT_STATUSES = {"planned", "running", "won", "lost",
+                       "inconclusive", "archived"}
+
+
+def save_experiment(conn: sqlite3.Connection, value: object) -> dict[str, Any]:
+    """Create or update one falsifiable product experiment."""
+    if not isinstance(value, dict):
+        raise ValueError("experiment must be an object")
+    title = _bounded(value.get("title"), "title", 300, required=True)
+    hypothesis = _bounded(value.get("hypothesis"), "hypothesis", 20_000,
+                          required=True)
+    metric = _bounded(value.get("metric"), "metric", 500, required=True)
+    target = _bounded(value.get("target"), "target", 500)
+    status = _bounded(value.get("status") or "planned", "status", 30)
+    outcome = _bounded(value.get("outcome"), "outcome", 20_000)
+    decision = _bounded(value.get("decision"), "decision", 20_000)
+    if status not in EXPERIMENT_STATUSES:
+        raise ValueError("invalid experiment status")
+    raw_id = value.get("id")
+    returned_id = value.get("experiment_id")
+    if (raw_id not in (None, "", 0) and
+            returned_id not in (None, "", 0)):
+        try:
+            if int(str(raw_id)) != int(str(returned_id)):
+                raise ValueError(
+                    "id and experiment_id must identify the same experiment")
+        except (TypeError, ValueError):
+            raise ValueError(
+                "id and experiment_id must identify the same experiment") from None
+    if raw_id in (None, "", 0):
+        raw_id = returned_id
+    if raw_id in (None, "", 0):
+        cursor = conn.execute(
+            "INSERT INTO experiments(title,hypothesis,metric,target,status,"
+            "outcome,decision) VALUES(?,?,?,?,?,?,?)",
+            (title, hypothesis, metric, target, status, outcome, decision))
+        if cursor.lastrowid is None:
+            raise RuntimeError("experiment insert did not return an id")
+        experiment_id = int(cursor.lastrowid)
+    else:
+        if not isinstance(raw_id, (str, int)):
+            raise ValueError("experiment id must be an integer")
+        try:
+            experiment_id = int(raw_id)
+        except (TypeError, ValueError):
+            raise ValueError("experiment id must be an integer") from None
+        cursor = conn.execute(
+            "UPDATE experiments SET title=?,hypothesis=?,metric=?,target=?,"
+            "status=?,outcome=?,decision=?,updated_at=datetime('now') "
+            "WHERE experiment_id=?",
+            (title, hypothesis, metric, target, status, outcome, decision,
+             experiment_id))
+        if not cursor.rowcount:
+            raise ValueError("no such experiment")
+    conn.commit()
+    row = conn.execute("SELECT * FROM experiments WHERE experiment_id=?",
+                       (experiment_id,)).fetchone()
+    return dict(row)
+
+
+def create_watchlist(conn: sqlite3.Connection, name: object,
+                     query: object) -> dict[str, Any]:
+    name_text = _bounded(name, "name", 200, required=True)
+    query_text = _bounded(query, "query", 1_000, required=True)
+    existing = conn.execute(
+        "SELECT watchlist_id FROM watchlists WHERE status='active' "
+        "AND lower(query)=lower(?)", (query_text,)).fetchone()
+    if existing:
+        raise ValueError("an active watchlist already uses this query")
+    cursor = conn.execute("INSERT INTO watchlists(name,query) VALUES(?,?)",
+                          (name_text, query_text))
+    conn.commit()
+    return {"watchlist_id": cursor.lastrowid, "name": name_text,
+            "query": query_text, "status": "active", "latest": None}
+
+
+def archive_watchlist(conn: sqlite3.Connection, watchlist_id: int) -> bool:
+    cursor = conn.execute(
+        "UPDATE watchlists SET status='archived',updated_at=datetime('now') "
+        "WHERE watchlist_id=? AND status='active'", (watchlist_id,))
+    conn.commit()
+    return cursor.rowcount > 0
+
+
+def refresh_watchlist(conn: sqlite3.Connection, cfg: dict,
+                      watchlist_id: int) -> dict[str, Any]:
+    row = conn.execute(
+        "SELECT * FROM watchlists WHERE watchlist_id=? AND status='active'",
+        (watchlist_id,)).fetchone()
+    if not row:
+        raise ValueError("no active watchlist with that id")
+    previous_row = conn.execute(
+        "SELECT results_json FROM watchlist_snapshots WHERE watchlist_id=? "
+        "ORDER BY snapshot_id DESC LIMIT 1", (watchlist_id,)).fetchone()
+    previous = _json_list(previous_row["results_json"]) if previous_row else []
+    result = websearch.search(cfg, row["query"])
+    current = [item for item in result.get("results", [])
+               if isinstance(item, dict)]
+    old_urls = {str(item.get("url")) for item in previous if item.get("url")}
+    new_urls = {str(item.get("url")) for item in current if item.get("url")}
+    added = [item for item in current if item.get("url") in new_urls - old_urls]
+    removed = [item for item in previous if item.get("url") in old_urls - new_urls]
+    conn.execute(
+        "INSERT INTO watchlist_snapshots(watchlist_id,provider,retrieved_at,"
+        "results_json,added_json,removed_json) VALUES(?,?,?,?,?,?)",
+        (watchlist_id, str(result.get("provider") or "unknown"),
+         str(result.get("retrieved_at") or datetime.now(timezone.utc).isoformat()),
+         json.dumps(current, ensure_ascii=False),
+         json.dumps(added, ensure_ascii=False),
+         json.dumps(removed, ensure_ascii=False)))
+    conn.execute("UPDATE watchlists SET updated_at=datetime('now') "
+                 "WHERE watchlist_id=?", (watchlist_id,))
+    conn.commit()
+    return {"watchlist_id": watchlist_id, "provider": result.get("provider"),
+            "retrieved_at": result.get("retrieved_at"), "results": current,
+            "added": added, "removed": removed}
+
+
+def _bounded(value: object, name: str, limit: int,
+             *, required: bool = False) -> str:
+    if value is None:
+        text = ""
+    elif isinstance(value, str):
+        text = value.strip()
+    else:
+        raise ValueError(f"{name} must be a string")
+    if required and not text:
+        raise ValueError(f"{name} must not be empty")
+    if len(text) > limit:
+        raise ValueError(f"{name} must be at most {limit} characters")
+    return text
 
 
 def _history(conn: sqlite3.Connection, limit: int) -> list[dict]:
