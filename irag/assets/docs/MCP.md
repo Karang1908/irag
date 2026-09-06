@@ -89,6 +89,11 @@ client's PATH, use the absolute path printed by `command -v irag` (Windows:
 | `irag_get_main_summary` | every current memory page plus health, sessions, contradictions, and audit state | no |
 | `irag_audit` | defensive code/API/security/dependency report, optionally with OSV | no |
 | `irag_web_search` | current web evidence with source URLs and retrieval time | no |
+| `irag_delivery_plan` | current diff, blast radius, contract risk, mapped tests, release gates, and agent brief | no |
+| `irag_team_memory` | bounded reviewable export or idempotent import of shareable project knowledge | no |
+| `irag_audit_triage` | durable finding disposition, rationale, and optional acceptance expiry | no |
+| `irag_experiment` | create or update a measured product or engineering experiment | no |
+| `irag_watchlist` | list, create, refresh, or archive source-backed trend watchlists | no |
 | `irag_learn` | durable lesson | no |
 | `irag_record_decision` | durable decision | no |
 | `irag_resolve_contradiction` | dismiss/reopen a proven false positive | no |
@@ -98,9 +103,10 @@ client's PATH, use the absolute path printed by `command -v irag` (Windows:
 Memory read tools and the local audit are deterministic. `irag_web_search` and
 the optional OSV audit tier are explicit open-world reads; neither calls an
 LLM. `irag_update` is explicitly the write path and may invoke the configured
-summary provider. The server uses irag's
-cross-process repository lock, so an MCP update cannot race the dashboard,
-CLI, git hook, or another coding agent into a partial state.
+summary provider. Every MCP mutation uses irag's cross-process repository lock,
+so an update, session, triage decision, experiment, watchlist, or team import
+cannot race the dashboard, CLI, git hook, or another coding agent into a
+partial state.
 
 ## Recommended agent loop
 
@@ -108,11 +114,14 @@ CLI, git hook, or another coding agent into a partial state.
 2. Call `irag_get_context` with the task and currently open files before broad
    exploration.
 3. Use `irag_code_map`, `irag_impact`, and `irag_trace_claim` before edits.
-4. Record decisions and non-obvious lessons as they happen. Modern stateless
+4. Call `irag_delivery_plan` before declaring the task ready: inspect contract
+   changes, test mapping, and release gates rather than relying on a generic
+   test command.
+5. Record decisions and non-obvious lessons as they happen. Modern stateless
    clients pass `session_key` to these calls.
-5. Call `irag_update` after changing files, with the same `session_key` on a
+6. Call `irag_update` after changing files, with the same `session_key` on a
    modern stateless connection.
-6. Call `irag_finish_session` with that key before the conversation ends.
+7. Call `irag_finish_session` with that key before the conversation ends.
 
 Legacy clients may rely on one MCP process retaining the active key. Modern
 `2026-07-28` clients carry the returned key explicitly, so requests may land on
@@ -124,6 +133,10 @@ rows.
 - The server is local stdio: it opens no port and has no network transport.
 - Source and memory values are treated as untrusted data. Tool results are
   encoded as JSON; the contradiction report escapes them before rendering.
+- Each newline-delimited request is capped at 2 MB and an oversized frame is
+  drained before the next request, so one malformed client message cannot
+  desynchronize or grow the local server without bound. Team bundles have
+  tighter record, field, and total-size limits inside that envelope.
 - A tool failure is returned as `isError: true`; it does not corrupt the MCP
   stream or terminate the server.
 - Run `irag doctor` for storage/configuration health and `irag provider` for

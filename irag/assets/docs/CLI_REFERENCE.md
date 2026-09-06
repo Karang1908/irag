@@ -275,11 +275,12 @@ the operator manual that teaches agents to use `irag map`/`impact`/
 `search`/`why` instead of exploring, and to log with `irag learn`/
 `irag record-decision`.
 
-### `irag session-begin` / `irag session-end [--no-narrate] [--transcript FILE]`
+### `irag session-begin [--task LABEL]` / `irag session-end [--no-narrate] [--transcript FILE]`
 
 The conversation logger (called automatically by the Claude Code hooks;
 usable by any agent or human). `session-begin` opens a diary entry and
-records ID high-water marks; a still-open previous session (crashed
+records ID high-water marks plus the optional task label, branch, worktree,
+and starting commit; a still-open previous session (crashed
 terminal) is closed as `interrupted` first. `session-end` closes the
 entry and logs exactly what that conversation did — files changed, page
 versions written, decisions and lessons recorded, commit messages — plus
@@ -329,13 +330,17 @@ streaming progress, and validated controls for changing the summary model and
 web-search provider without editing TOML. **Main Summary** — the complete body
 of every current memory page together with currentness, project status,
 contradictions, recent session evidence, and latest audit state; structural
-truth refreshes automatically. **Code Audit** — the same deterministic report
+truth refreshes automatically, with an explained Memory Trust score. **Code
+Audit** — the same deterministic report
 as `irag audit`, filterable by severity/category, with source coverage, API
 inventory, OSV state, dependency cycles, recommendations, and a live checker
-restricted to discovered loopback read routes. **Thinking Studio** — a
-persistent code-review/product/business/marketing/creative conversation beside
-a durable recommendation board; optional live research displays source URLs,
-provider, and retrieval time. **Chat** — chat with the knowledge base; each
+restricted to discovered, current loopback read routes. Findings retain review
+status, required rationale, optional acceptance expiry, and can export as SARIF
+2.1.0. **Thinking Studio** — a persistent code-review/product/business/
+marketing/creative conversation beside a durable recommendation board and
+experiment ledger; optional live research and explicitly refreshed watchlists
+display source URLs, provider, retrieval time, and what changed. **Chat** — chat
+with the knowledge base; each
 message is auto-routed like the original DBS project: keyword/path/symbol
 lookups → instant SQL search (green badge), natural-language questions →
 AI answer with citations (purple badge); a keyword miss falls through to
@@ -355,8 +360,12 @@ symbol count, coloured by top-level folder), edges are real imports. Drag
 to orbit, scroll to zoom, click a file to inspect what it defines, what it
 imports, what depends on it, and everything irag has written about it; the
 map is re-read every few seconds so new files appear without a refresh.
-**Tools** — core CLI operations: *What your agent sees* renders
-the exact `irag context` briefing with its token count and tier
+**Delivery** — turns a validated Git diff (or snapshot-mode drift) into changed
+paths, transitive blast radius, contract removals, risk, related tests,
+repository-native verification gates, release readiness, and a copyable agent
+brief. It can export/import bounded reviewable team memory without copying
+source, transcripts, prompts, or executable facts. Below that, *What your agent
+sees* renders the exact `irag context` briefing with its token count and tier
 breakdown; *Time travel* runs `asof` for any date; *Operations* runs
 `sync`, `scan`, `lint`, `check`, `export`, `obsidian`, `claude-setup`,
 `backup`, and `doctor` (a strict server-side allowlist of Python

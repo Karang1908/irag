@@ -23,19 +23,25 @@ SQLite file — instead of a flat context file that silently rots.
   recap of what previous sessions did and changed, injected
   automatically. No more "let me look around the codebase first."
 - 🤝 **Actually works with every agent** — `irag mcp` is a standard stdio
-  MCP server, not a Claude-only wrapper. Sixteen tools, one contract, one
+  MCP server, not a Claude-only wrapper. Twenty-one tools, one contract, one
   memory; Git is optional.
 - 🧨 **Contradictions become repair packets** — one button per issue and one
   master button generate self-contained HTML handoffs ready for a coding agent.
 - 🔬 **Audits with receipts** — security patterns, API routes, architecture,
   quality, and exact dependency advisories with redacted evidence and concrete
-  remediation.
+  remediation. Triage persists with rationale and expiry; open work exports as
+  SARIF 2.1.0.
 - 🧠 **A thinking room connected to now** — project memory and the current diff
   meet explicitly sourced live trends for code review, product, business,
-  marketing, and creative work.
+  marketing, and creative work, with measured experiments and change-aware
+  source watchlists.
 - 📚 **The whole project on one living page** — every current summary,
   decision, lesson, contradiction, session, and audit state without an
-  abridging model pass.
+  abridging model pass, plus an explained Memory Trust signal.
+- 🚢 **A release brain, not just a memory** — Delivery turns the current diff
+  into contract risk, blast radius, mapped tests, release gates, and a copyable
+  agent brief. Reviewable team bundles share durable knowledge without source,
+  transcripts, prompts, or executable facts.
 
 ```
 Claude Code   →     irag      →   agy / any LLM CLI

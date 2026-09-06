@@ -62,7 +62,8 @@ Core relations plus an FTS5 inverted index:
   timestamps, so same-second sessions can't steal each other's rows),
   summary, and `changes_detail` (the full per-file
   `{subject_id, version_number, change_summary}` list, deliberately
-  redundant with `revisions` so reading a session never needs a join)
+  redundant with `revisions` so reading a session never needs a join), plus
+  task, branch, worktree, and starting commit identity
 - **session_messages** — the opt-in verbatim transcript
   (`[sessions].capture_transcript`): user/assistant messages per session,
   so the diary can hold the actual conversation, not only its file
@@ -83,10 +84,18 @@ Core relations plus an FTS5 inverted index:
   status, and optional user-rate-based cost for every model invocation
 - **audit_runs** — immutable defensive-scan snapshots: source fingerprint,
   coverage, counts, duration, and the complete redacted JSON report
+- **audit_triage** — stable finding ID → disposition, rationale, optional
+  expiry, and reviewer timestamp; expired acceptances reopen automatically
 - **studio_messages** — durable user/assistant Thinking Studio messages with
   mode and the exact source records attached to each answer
 - **studio_ideas** — persistent recommendation cards with mode, markdown body,
   source records, and active/archived state
+- **experiments** — hypothesis, metric, target, status, observed outcome, and
+  decision for turning recommendations into measurable learning
+- **watchlists / watchlist_snapshots** — explicit live-search questions plus
+  immutable provider/URL/retrieval-time snapshots and added/removed sources
+- **memory_imports** — stable logical record IDs and content hashes used to
+  make team-memory imports idempotent while allowing later outcomes to merge
 - **facts** — executable memory: a `claim` plus the `cmd` that
   demonstrates it, an expected substring and/or exit code, and the last
   run's status. The only relation whose contents irag can *re-establish*
@@ -153,20 +162,24 @@ tool calls onto the same library functions used by the CLI and dashboard. It
 supports the legacy 2024–2025 handshake era and stateless `2026-07-28`
 discovery/per-request metadata era, JSON Schema tool discovery, annotations,
 and both text and structured results. There is no client-specific branch:
-every MCP client receives the same tool names and operates on the same SQLite
-file. Full refresh/update operations use the repository lock; smaller appends
-use the core transaction boundaries. Legacy processes retain a diary key for
+every MCP client receives the same 21 tool names and operates on the same SQLite
+file. Every mutation uses the repository lock as well as its database
+transaction. Legacy processes retain a diary key for
 convenience; modern clients carry the explicit key returned by
 `irag_start_session`, so attribution does not depend on process affinity.
 
-The server publishes the same complete-project summary, defensive audit, and
+The server publishes the same complete-project summary, defensive audit,
+delivery plan, team-memory exchange, experiments, watchlists, and
 source-preserving live web search used by the dashboard. Web search and OSV are
 annotated open-world reads; the memory tools remain local and deterministic.
 
 ### Developer intelligence surfaces
 
 The **Main Summary** is a deterministic join over all live current revisions,
-status, contradictions, recent sessions, and the latest audit. Its structural
+status, contradictions, recent sessions, and the latest audit. Its explained
+Memory Trust signal scores coverage, currentness, traceability, session ledgers,
+contradictions, and effective open audit severity/freshness without claiming
+prose is proven. Structural
 fingerprint and drift refresh at read time; stale prose is labeled rather than
 silently rewritten through an LLM.
 
@@ -175,13 +188,29 @@ checks where available, conservative text checks elsewhere, route discovery,
 dependency-cycle analysis, lockfile parsing, and optional batched OSV queries.
 Evidence is redacted before report persistence. Its live API checker accepts
 only loopback hosts, discovered parameter-free read routes, bounded concurrency,
-short timeouts, and no redirects.
+short timeouts, and no redirects. Finding IDs deliberately exclude volatile
+line numbers, retaining review decisions through harmless line shifts;
+rationales are required for non-open states, accepted risks may expire, and the
+effective open set exports as SARIF 2.1.0. SARIF and live-probe endpoints first
+refresh structural drift and reject stale or missing audit inventories.
 
 The **Thinking Studio** retrieves project memory and latest audit state, adds
 the current Git diff for code-review mode, and optionally adds live search
 results. All evidence blocks are explicitly treated as untrusted data in the
 model prompt. Repo paths and `[W#]` web citations use separate namespaces;
 failed research is surfaced rather than replaced with a claim of recency.
+Its experiment ledger attaches metrics and decisions to recommendations;
+watchlists retain immutable live-search snapshots and compute source changes.
+
+The **Delivery** workspace is a deterministic projection of a validated Git
+base (or snapshot-mode drift): changed paths, transitive impact, removed public
+symbols/routes, path risk, related tests, repository-native verification
+commands, release gates, and a copyable agent brief. It plans commands but never
+executes them. Repository-controlled paths and extracted contracts are marked as
+untrusted evidence and single-line escaped in the agent handoff. Reviewable
+team-memory JSON moves explicit decisions, lessons,
+topics, experiments, watchlists, and audit triage across worktrees while
+excluding code, transcripts, prompts, narratives, and executable facts.
 
 ## Data flows
 
