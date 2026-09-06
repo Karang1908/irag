@@ -14,6 +14,8 @@ natural-language questions (how/why/what/explain/..., long, or ending in
 """
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import re
 import sqlite3
@@ -34,6 +36,10 @@ QUESTION_WORDS = ("how", "why", "what", "when", "where", "which", "who",
                   "explain", "describe", "summarize", "should", "can",
                   "does", "is", "are", "compare", "tell")
 LOOKUP_PREFIXES = ("find ", "search ", "grep ", "lookup ", "locate ")
+
+
+class ConfigConflict(RuntimeError):
+    """The config changed after the dashboard form loaded."""
 
 
 def route_query(q: str) -> str:
@@ -58,8 +64,17 @@ class _State:
     """Per-server context: repo root + config; one conn per thread."""
     def __init__(self, root: Path):
         self.root = root
-        self.cfg = config_mod.load(root)
-        self.config_error: str | None = None
+        try:
+            self.cfg = config_mod.load(root)
+            self.config_error: str | None = None
+        except BaseException as exc:
+            # Start the dashboard even when editable settings are invalid so
+            # Overview can explain and repair them. Malformed TOML remains
+            # fail-closed in update_settings(), but read-only inspection stays
+            # available with conservative built-in defaults.
+            self.cfg = copy.deepcopy(config_mod.DEFAULTS)
+            self.cfg["_runtime"] = {"root": str(root)}
+            self.config_error = str(exc)
         self._config_lock = threading.Lock()
         self._config_stamp = self._stamp()
         self._local = threading.local()
@@ -69,6 +84,7 @@ class _State:
         bootstrap.close()
         self._schema_ready = True
         self.lock = threading.Lock()          # serialize LLM-heavy operations
+        self.audit_lock = threading.Lock()    # one deep filesystem scan at a time
         self.last_live = 0.0
         # A killed dashboard cannot leave a forever-running spinner, but a
         # second live dashboard must not pronounce the first one's work dead.
@@ -92,7 +108,8 @@ class _State:
         path = config_mod.config_path(self.root)
         try:
             stat = path.stat()
-            return stat.st_mtime_ns, stat.st_size
+            digest = hashlib.sha256(path.read_bytes()).hexdigest()
+            return stat.st_mtime_ns, stat.st_size, digest
         except OSError:
             return None
 
@@ -114,6 +131,26 @@ class _State:
                 self.config_error = None
             self._config_stamp = stamp
             return self.config_error
+
+    def config_version(self) -> str:
+        stamp = self._stamp()
+        return ("missing" if stamp is None else
+                f"{stamp[0]}:{stamp[1]}:{stamp[2]}")
+
+    def save_settings(self, changes: object,
+                      expected_version: str | None) -> dict:
+        """Atomically save a validated allowlist without losing file edits."""
+        with self._config_lock:
+            actual = self.config_version()
+            if expected_version and expected_version != actual:
+                raise ConfigConflict(
+                    "config.toml changed after this form loaded; reload the "
+                    "settings and apply your choice again")
+            fresh = config_mod.update_settings(self.root, changes)
+            self.cfg = fresh
+            self.config_error = None
+            self._config_stamp = self._stamp()
+            return fresh
 
     def conn(self):
         """This request's connection.
@@ -430,6 +467,56 @@ def make_handler(state: _State):
                     s["root"] = str(state.root)
                     s["config_error"] = config_error
                     return self._json(s)
+                if url.path == "/api/settings":
+                    from . import providers, websearch
+                    ready, detail = providers.availability(state.cfg)
+                    return self._json({
+                        "settings": config_mod.editable_settings(state.cfg),
+                        "version": state.config_version(),
+                        "config_error": config_error,
+                        "llm": {"ready": ready, "detail": detail},
+                        "web": websearch.availability(state.cfg),
+                        "privacy": ("Search credentials are read from the "
+                                    "environment and are never returned or "
+                                    "written to project storage."),
+                    })
+                if url.path == "/api/main-summary":
+                    from . import main_summary
+                    if config_error:
+                        payload = main_summary.build(
+                            conn, state.cfg, state.root)
+                        payload["config_error"] = config_error
+                        return self._json(payload)
+                    refreshed, payload = self._with_live_memory(
+                        conn, lambda: main_summary.build(
+                            conn, state.cfg, state.root))
+                    if not refreshed:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    payload["config_error"] = config_error
+                    return self._json(payload)
+                if url.path == "/api/audit":
+                    from . import audit
+                    if config_error:
+                        return self._json(
+                            audit.latest(conn, state.root) or
+                            {"status": "never_run",
+                             "config_error": config_error})
+                    refreshed, value = self._with_live_memory(
+                        conn, lambda: audit.latest(conn, state.root))
+                    if not refreshed:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    return self._json(value or {"status": "never_run"})
+                if url.path == "/api/studio":
+                    from . import providers, studio, websearch
+                    value = studio.state(conn)
+                    model_ready, model_detail = providers.availability(state.cfg)
+                    value["llm"] = {"ready": model_ready,
+                                    "detail": model_detail}
+                    value["web"] = websearch.availability(state.cfg)
+                    value["config_error"] = config_error
+                    return self._json(value)
                 if url.path == "/api/tokens":
                     return self._json(stats.token_series(conn))
                 if url.path == "/api/activity":
@@ -726,10 +813,111 @@ def make_handler(state: _State):
                 data = self._body()
                 conn = state.conn()
                 if config_error and url.path in (
-                        "/api/chat", "/api/update", "/api/op"):
+                        "/api/chat", "/api/update", "/api/op", "/api/audit",
+                        "/api/studio-chat", "/api/studio-ideas"):
                     return self._json(
                         {"error": "config reload failed: " + config_error},
                         400)
+                if url.path == "/api/settings":
+                    expected = data.get("version")
+                    if not isinstance(expected, str) or not expected:
+                        return self._json(
+                            {"error": "version is required and must be a string"},
+                            400)
+                    try:
+                        fresh = state.save_settings(data.get("settings"), expected)
+                    except ConfigConflict as exc:
+                        return self._json({"error": str(exc)}, 409)
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    from . import providers, websearch
+                    ready, detail = providers.availability(fresh)
+                    return self._json({
+                        "ok": True,
+                        "settings": config_mod.editable_settings(fresh),
+                        "version": state.config_version(),
+                        "llm": {"ready": ready, "detail": detail},
+                        "web": websearch.availability(fresh),
+                    })
+                if url.path == "/api/audit":
+                    advisory = data.get("check_advisories", True)
+                    if not isinstance(advisory, bool):
+                        return self._json(
+                            {"error": "check_advisories must be a boolean"}, 400)
+                    if not state.audit_lock.acquire(blocking=False):
+                        return self._json(
+                            {"error": "a deep audit is already running"}, 409)
+                    try:
+                        refreshed, _ = self._with_live_memory(conn, lambda: None)
+                        if not refreshed:
+                            return self._json(
+                                {"error": "memory update in progress; retry"}, 409)
+                        from . import audit
+                        result = audit.run(conn, state.cfg, state.root,
+                                           check_advisories=advisory)
+                    finally:
+                        state.audit_lock.release()
+                    return self._json(result)
+                if url.path == "/api/api-check":
+                    base_url = str(data.get("base_url") or "").strip()
+                    if len(base_url) > 2000:
+                        return self._json(
+                            {"error": "base_url must be at most 2000 characters"}, 413)
+                    from . import audit
+                    report = audit.latest(conn, state.root)
+                    routes = ((report or {}).get("api") or {}).get("routes") or []
+                    try:
+                        result = audit.check_local_api(base_url, routes)
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    return self._json(result)
+                if url.path in ("/api/studio-chat", "/api/studio-ideas"):
+                    mode = str(data.get("mode") or "product")
+                    use_web = data.get("use_web", True)
+                    if not isinstance(use_web, bool):
+                        return self._json(
+                            {"error": "use_web must be a boolean"}, 400)
+                    question = str(data.get(
+                        "message" if url.path.endswith("chat") else "focus") or "")
+                    if len(question) > 20_000:
+                        return self._json(
+                            {"error": "message must be at most 20000 characters"}, 413)
+                    from . import studio
+                    try:
+                        refreshed, snapshot = self._with_live_memory(
+                            conn, lambda: studio.context_snapshot(
+                                conn, state.cfg, state.root, question, mode))
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    if not refreshed:
+                        return self._json(
+                            {"error": "memory update in progress; retry"}, 409)
+                    try:
+                        with state.lock:
+                            if url.path.endswith("chat"):
+                                result = studio.chat(
+                                    conn, state.cfg, state.root,
+                                    message=question, mode=mode,
+                                    use_web=use_web, snapshot=snapshot)
+                            else:
+                                result = studio.generate_ideas(
+                                    conn, state.cfg, state.root,
+                                    mode=mode, focus=question,
+                                    use_web=use_web, snapshot=snapshot)
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    except (RuntimeError, SystemExit) as exc:
+                        return self._json({"error": str(exc)}, 502)
+                    return self._json(result)
+                if url.path == "/api/studio-idea/archive":
+                    try:
+                        idea_id = int(data.get("id", 0))
+                    except (TypeError, ValueError):
+                        return self._json({"error": "bad idea id"}, 400)
+                    from . import studio
+                    if not studio.archive_idea(conn, idea_id):
+                        return self._json({"error": "no active idea with that id"}, 404)
+                    return self._json({"ok": True})
                 if url.path == "/api/chat":
                     question = str(data.get("message", "")).strip()
                     if not question:
