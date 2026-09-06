@@ -434,12 +434,17 @@ def sidebar(rel: str, active: str) -> str:
               "</div></nav>")
 
 
+# One stylesheet request per family, deliberately. Fontshare's v2 CSS API
+# honours only the FIRST f[] parameter and silently drops the rest, so the
+# combined "?f[]=satoshi…&f[]=clash-display…" request returned Satoshi alone
+# and every Clash Display heading fell back to the body font with no error.
 FONTS = ('<link rel="preconnect" href="https://api.fontshare.com">\n'
          '<link rel="preconnect" href="https://cdn.fontshare.com" '
          'crossorigin>\n'
          '<link rel="stylesheet" href="https://api.fontshare.com/v2/css'
-         '?f[]=satoshi@400,500,700&f[]=clash-display@500,600,700'
-         '&display=swap">')
+         '?f[]=satoshi@400,500,700&display=swap">\n'
+         '<link rel="stylesheet" href="https://api.fontshare.com/v2/css'
+         '?f[]=clash-display@500,600,700&display=swap">')
 
 
 def page_shell(title: str, desc: str, body: str, rel: str,
@@ -564,6 +569,7 @@ def landing() -> str:
 <nav aria-label="Site">
 <a class="nav-sec" href="#why">Why</a>
 <a class="nav-sec" href="#connect">Connect</a>
+<a class="nav-sec" href="#intelligence">Intelligence</a>
 <a class="nav-sec" href="#how">How</a>
 <a href="docs/quickstart/">Docs</a>
 <a href="docs/changelog/">Changelog</a>
