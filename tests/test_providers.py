@@ -43,6 +43,21 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(providers.configured_model(
             {"llm": {"provider": "ollama", "model": "qwen3"}}), "qwen3")
 
+    def test_agy_puts_print_last_so_it_cannot_eat_another_flag(self):
+        # agy's --print consumes the next argv token as its prompt. With
+        # --print first, agy took "--output-format" as the prompt and ignored
+        # the real one, so every synthesis failed with exit 2.
+        agy = providers.invocation(
+            {"llm": {"provider": "agy", "model": ""}}, "PROMPT")
+        self.assertEqual(agy.prompt_mode, "argv")
+        self.assertEqual(agy.argv[-2:], ["--print", "PROMPT"])
+        self.assertNotIn("--print", agy.argv[:-2])
+        # a configured model must also stay ahead of --print
+        with_model = providers.invocation(
+            {"llm": {"provider": "agy", "model": "gemini-test"}}, "PROMPT")
+        self.assertEqual(with_model.argv[-2:], ["--print", "PROMPT"])
+        self.assertIn("gemini-test", with_model.argv[:-2])
+
     def test_only_custom_provider_requires_a_command(self):
         builtin = config.DEFAULTS.copy()
         builtin["llm"] = dict(config.DEFAULTS["llm"], provider="codex",
