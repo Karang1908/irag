@@ -1432,6 +1432,57 @@ def cmd_provider(args) -> int:
     return 0 if ready else 1
 
 
+def cmd_audit(args) -> int:
+    """Run the deterministic code/API/security audit and optional OSV pass."""
+    from . import audit
+    conn, cfg, root = _open()
+    _refresh_live(conn, cfg, root)
+    conn.rollback()
+    report = audit.run(conn, cfg, root,
+                       check_advisories=not args.offline)
+    if args.json:
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+        return 0
+    counts = report["counts"]
+    print(f"audit #{report['audit_id']} — {report['files_scanned']} files, "
+          f"{report['lines_scanned']} lines in {report['duration_ms']}ms")
+    print("findings : " + ", ".join(
+        f"{level} {counts[level]}" for level in
+        ("critical", "high", "medium", "low")))
+    print(f"API      : {report['api']['route_count']} route(s) discovered")
+    advisory = report["dependencies"]["advisory_scan"]
+    print(f"OSV      : {advisory['status']} "
+          f"({advisory['packages_checked']} package version(s))")
+    for item in report["findings"][:20]:
+        print(f"  {item['severity'].upper():8} {item['file']}:"
+              f"{item['line']} — {item['title']}")
+    if len(report["findings"]) > 20:
+        print(f"  +{len(report['findings']) - 20} more; use --json or the dashboard")
+    # Heuristics require review; `irag check` remains the strict CI gate.
+    return 0
+
+
+def cmd_web_search(args) -> int:
+    """Return explicitly sourced live-web evidence without an LLM call."""
+    conn, cfg, _root = _open()
+    from . import websearch
+    try:
+        result = websearch.search(cfg, args.query)
+    except (ValueError, RuntimeError) as exc:
+        raise SystemExit(f"irag: {exc}") from None
+    finally:
+        conn.close()
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+        return 0
+    print(f"{result['provider']} · {result['retrieved_at']}")
+    for index, item in enumerate(result["results"], 1):
+        print(f"\n{index}. {item['title']}\n   {item['url']}")
+        if item.get("snippet"):
+            print(f"   {item['snippet']}")
+    return 0
+
+
 def cmd_contradiction_report(args) -> int:
     """Write a self-contained coding-agent repair brief as HTML."""
     from . import reports
@@ -1711,6 +1762,20 @@ def build_parser() -> argparse.ArgumentParser:
                                          "and verify its executable")
     sp.add_argument("--json", action="store_true")
     sp.set_defaults(func=cmd_provider)
+
+    sp = sub.add_parser("audit", help="deep code, API, secret-pattern, "
+                                      "dependency, and security review")
+    sp.add_argument("--offline", action="store_true",
+                    help="skip the live OSV dependency-advisory lookup")
+    sp.add_argument("--json", action="store_true",
+                    help="print the complete machine-readable report")
+    sp.set_defaults(func=cmd_audit)
+
+    sp = sub.add_parser("web-search", help="search the live web with source "
+                                           "URLs and retrieval time")
+    sp.add_argument("query")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_web_search)
 
     sub.add_parser("claude-setup",
                    help="wire irag into Claude Code (SessionStart hook + "
