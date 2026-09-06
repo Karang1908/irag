@@ -463,7 +463,11 @@ html.lenis,html.lenis body{height:auto}
   .quote{padding:84px 0}
   .closing{padding:80px 0 70px}
   .stat b{font-size:36px}
-  .install code{white-space:normal}
+  /* the install URL is one unbreakable token: white-space:normal alone only
+     wraps at spaces, so it overflowed the pill and the command read as
+     ".../Karang1908" with "/irag.git" clipped off. min-width:0 lets the
+     flex item shrink; overflow-wrap breaks the token only when it must. */
+  .install code{white-space:normal;overflow-wrap:anywhere;min-width:0}
 }
 @media (prefers-reduced-motion: no-preference){
   .side-link,.btn,.pager,.code-copy{transition:background var(--dur) var(--ease),color var(--dur),border-color var(--dur),filter var(--dur),transform var(--dur) var(--ease),box-shadow var(--dur)}
