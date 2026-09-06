@@ -67,7 +67,8 @@ a{color:var(--accent)}
 /* ---------- app shell ---------- */
 .app{display:grid;grid-template-columns:var(--sidebar-w) minmax(0,1fr);min-height:100vh;position:relative;z-index:1}
 .sidebar{background:var(--bg-inset);border-right:1px solid var(--border);
-  position:sticky;top:0;height:100vh;display:flex;flex-direction:column;padding:var(--sp-4) var(--sp-3);z-index:var(--z-nav)}
+  position:sticky;top:0;height:100vh;display:flex;flex-direction:column;padding:var(--sp-4) var(--sp-3);
+  overflow-y:auto;overscroll-behavior:contain;z-index:var(--z-nav)}
 .brand{display:flex;align-items:center;gap:var(--sp-3);padding:var(--sp-2) var(--sp-2) var(--sp-6)}
 .brand .logo{width:26px;height:26px;flex-shrink:0}
 .brand .logo .lk{stroke:rgba(242,243,245,.35);stroke-width:1.4}
@@ -628,12 +629,131 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
 
 .transcript{display:flex;flex-direction:column;gap:var(--sp-3);max-height:52vh;overflow:auto;margin-top:var(--sp-2)}
 .tmsg{border:1px solid var(--border);border-radius:var(--r-md);padding:10px 13px;background:var(--bg-inset)}
-.tmsg.user{border-left:2px solid var(--accent)}
-.tmsg.assistant{border-left:2px solid var(--purple)}
+.tmsg.user{border-left-color:var(--accent)}
+.tmsg.assistant{border-left-color:var(--purple)}
 .trole{font-family:var(--mono);font-size:var(--fs-2xs);text-transform:uppercase;letter-spacing:.1em;color:var(--text-faint);margin-bottom:5px}
 .tbody{font-size:var(--fs-sm)}
 .tbody p:first-child{margin-top:0} .tbody p:last-child{margin-bottom:0}
+
+/* ---------- provider control, main summary, audit, thinking studio ---------- */
+.provider-control{margin-bottom:var(--sp-5);padding:var(--sp-5);background:var(--panel);
+  border:1px solid var(--border);border-radius:var(--r-lg)}
+.provider-head{display:flex;align-items:flex-start;gap:var(--sp-4);justify-content:space-between;margin-bottom:var(--sp-4)}
+.provider-head h3{font-family:var(--display);font-size:var(--fs-lg);font-weight:600;line-height:1.25}
+.provider-head p{font-size:var(--fs-xs);color:var(--text-dim);max-width:68ch;margin-top:4px}
+.provider-choices{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:var(--sp-2)}
+.provider-choice{background:var(--bg-inset);border:1px solid var(--border);border-radius:var(--r-md);
+  color:var(--text-dim);padding:11px 12px;text-align:left;cursor:pointer;font:500 var(--fs-sm) var(--sans)}
+.provider-choice span{display:block;font:var(--fs-2xs) var(--mono);color:var(--text-faint);margin-top:2px}
+.provider-choice:hover{border-color:var(--border-strong);color:var(--text)}
+.provider-choice.selected{border-color:var(--accent-ring);background:var(--accent-dim);color:var(--accent)}
+.provider-choice.selected span{color:var(--accent-2)}
+.settings-form{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-3);
+  padding-top:var(--sp-4);margin-top:var(--sp-4);border-top:1px solid var(--border)}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field.wide{grid-column:span 2}.field.full{grid-column:1/-1}
+.field label{font:var(--fs-2xs) var(--mono);color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em}
+.field input,.field select,.studio-compose textarea,.audit-filter input{width:100%;background:var(--bg-inset);
+  border:1px solid var(--border);color:var(--text);border-radius:var(--r-sm);padding:9px 10px;
+  font:var(--fs-sm)/1.4 var(--sans)}
+.field input:focus,.field select:focus,.studio-compose textarea:focus,.audit-filter input:focus{
+  border-color:var(--accent-ring);outline:none}
+.settings-actions{grid-column:1/-1;display:flex;gap:var(--sp-3);align-items:center;flex-wrap:wrap}
+.settings-more{border-top:1px solid var(--border);padding-top:var(--sp-3)}
+.settings-more summary{cursor:pointer;color:var(--text-dim);font-size:var(--fs-xs);width:max-content}
+.settings-more[open] summary{color:var(--text);margin-bottom:var(--sp-3)}
+.settings-more .settings-form{margin:0;padding:0;border:0}
+.config-state{font:var(--fs-2xs) var(--mono);color:var(--text-dim)}
+.config-state.ok{color:var(--green)}.config-state.bad{color:var(--red)}
+.privacy-note{font-size:var(--fs-2xs);color:var(--text-faint);line-height:1.5}
+
+.summary-topline,.audit-toolbar,.studio-toolbar{display:flex;align-items:center;gap:var(--sp-3);
+  flex-wrap:wrap;margin-bottom:var(--sp-5)}
+.summary-topline .page-search{margin:0;max-width:420px}
+.summary-updated{margin-left:auto;color:var(--text-faint);font:var(--fs-2xs) var(--mono)}
+.summary-overview{max-width:78ch}
+.summary-overview h1,.summary-overview h2,.summary-overview h3{font-family:var(--display);line-height:1.25;
+  margin:1em 0 .35em}.summary-overview p,.summary-overview li{color:var(--text-dim)}
+.summary-ledger{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);
+  border:1px solid var(--border);margin:var(--sp-5) 0}
+.summary-ledger>div{background:var(--bg-inset);padding:12px 14px}
+.summary-ledger b{display:block;font-family:var(--display);font-size:var(--fs-xl);font-weight:600}
+.summary-ledger span{font:var(--fs-2xs) var(--mono);color:var(--text-faint);text-transform:uppercase;letter-spacing:.08em}
+.summary-pages{display:flex;flex-direction:column;border-top:1px solid var(--border)}
+.summary-page{border-bottom:1px solid var(--border)}
+.summary-page summary{display:grid;grid-template-columns:minmax(180px,1fr) auto auto;gap:var(--sp-3);
+  align-items:center;padding:11px 4px;cursor:pointer;list-style:none}
+.summary-page summary::-webkit-details-marker{display:none}
+.summary-page summary::before{content:"+";grid-column:3;grid-row:1;font:var(--fs-md) var(--mono);color:var(--text-faint)}
+.summary-page[open] summary::before{content:"−"}
+.summary-subject{font:var(--fs-xs) var(--mono);color:var(--text);overflow-wrap:anywhere}
+.summary-meta{font:var(--fs-2xs) var(--mono);color:var(--text-faint);white-space:nowrap}
+.summary-page-body{padding:0 var(--sp-4) var(--sp-5);max-width:82ch}
+.summary-page-body p,.summary-page-body li{color:var(--text-dim)}
+
+.audit-score{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--border);
+  border-top:1px solid var(--border);border-bottom:1px solid var(--border);margin-bottom:var(--sp-5)}
+.audit-score>div{background:var(--bg);padding:14px 16px}
+.audit-score b{font:600 var(--fs-xl) var(--display);display:block}.audit-score span{font:var(--fs-2xs) var(--mono);color:var(--text-faint)}
+.audit-score .critical b,.audit-score .high b{color:var(--red)}.audit-score .medium b{color:var(--orange)}
+.audit-filter{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-3)}
+.audit-filter input{max-width:320px}.audit-filter select{background:var(--bg-inset);border:1px solid var(--border);
+  color:var(--text);border-radius:var(--r-sm);padding:8px 10px;font:var(--fs-xs) var(--sans)}
+.finding-list{display:flex;flex-direction:column}
+.finding{display:grid;grid-template-columns:78px minmax(0,1fr) auto;gap:var(--sp-3);
+  padding:12px 2px;border-bottom:1px solid var(--border);align-items:start}
+.finding:last-child{border-bottom:0}.finding-sev{font:700 var(--fs-2xs) var(--mono);text-transform:uppercase}
+.finding-main b{display:block;font-size:var(--fs-sm);margin-bottom:3px}.finding-main p{font-size:var(--fs-xs);color:var(--text-dim)}
+.finding-place{font:var(--fs-2xs) var(--mono);color:var(--text-faint);text-align:right;overflow-wrap:anywhere;max-width:260px}
+.finding-fix{margin-top:6px;color:var(--text-faint);font-size:var(--fs-2xs)}
+.api-checks{display:flex;flex-direction:column}.api-row{display:grid;grid-template-columns:70px minmax(0,1fr) 100px 70px;
+  gap:var(--sp-2);padding:9px 2px;border-bottom:1px solid var(--border);font:var(--fs-xs) var(--mono)}
+.api-row .healthy{color:var(--green)}.api-row .server_error,.api-row .unreachable{color:var(--red)}
+.api-row .protected{color:var(--accent)}
+
+.studio-layout{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:var(--sp-4);align-items:start}
+.studio-chat{display:flex;flex-direction:column;height:calc(100vh - 260px);min-height:540px}
+.mode-switch{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px}
+.mode-switch button{white-space:nowrap;background:none;border:1px solid var(--border);border-radius:99px;
+  color:var(--text-dim);padding:5px 11px;font:var(--fs-2xs) var(--sans);cursor:pointer}
+.mode-switch button.active{background:var(--accent-dim);border-color:var(--accent-ring);color:var(--accent)}
+.studio-log{flex:1;overflow:auto;margin:var(--sp-3) -2px;padding:0 2px}
+.studio-msg{max-width:88%;margin:var(--sp-3) 0;padding:var(--sp-3) var(--sp-4);border-radius:var(--r-md);
+  border:1px solid var(--border);font-size:var(--fs-sm)}
+.studio-msg.user{margin-left:auto;background:var(--panel-2)}.studio-msg.assistant{background:var(--bg-inset)}
+.studio-msg-head{display:flex;gap:var(--sp-2);align-items:center;margin-bottom:5px;font:var(--fs-2xs) var(--mono);color:var(--text-faint)}
+.source-list{margin-top:var(--sp-3);padding-top:var(--sp-2);border-top:1px solid var(--border);display:flex;flex-direction:column;gap:5px}
+.source-list a{font-size:var(--fs-2xs);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.studio-compose{border-top:1px solid var(--border);padding-top:var(--sp-3)}
+.studio-compose textarea{resize:vertical;min-height:74px;max-height:220px}
+.studio-compose-actions{display:flex;align-items:center;gap:var(--sp-3);margin-top:var(--sp-2);flex-wrap:wrap}
+.check-label{display:inline-flex;align-items:center;gap:7px;font-size:var(--fs-xs);color:var(--text-dim)}
+.check-label input{accent-color:var(--accent)}
+.ideas-panel{position:sticky;top:74px;max-height:calc(100vh - 100px);overflow:auto}
+.idea-controls{display:flex;gap:var(--sp-2);margin-bottom:var(--sp-3)}
+.idea-controls input{min-width:0;flex:1;background:var(--bg-inset);border:1px solid var(--border);color:var(--text);
+  border-radius:var(--r-sm);padding:8px 9px;font:var(--fs-xs) var(--sans)}
+.idea{padding:var(--sp-3) 0;border-bottom:1px solid var(--border)}.idea:last-child{border-bottom:0}
+.idea-top{display:flex;gap:var(--sp-2);align-items:flex-start}.idea-top b{font-size:var(--fs-sm);line-height:1.35}
+.idea-top button{margin-left:auto}.idea-body{font-size:var(--fs-xs);color:var(--text-dim);margin-top:6px}
+.studio-readiness{font:var(--fs-2xs) var(--mono);color:var(--text-faint);margin-left:auto}
+.studio-readiness .ok{color:var(--green)}.studio-readiness .bad{color:var(--red)}
+
+@media (max-width:1100px) and (min-width:761px){
+  .provider-choices{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .settings-form{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .studio-layout{grid-template-columns:minmax(0,1fr) 310px}
+}
 @media (max-width:760px){
+  .provider-choices{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .settings-form{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .field.wide{grid-column:1/-1}
+  .summary-ledger,.audit-score{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .summary-page summary{grid-template-columns:minmax(0,1fr) auto}.summary-page summary::before{grid-column:2}
+  .summary-meta{grid-column:1}.studio-layout{grid-template-columns:minmax(0,1fr)}
+  .studio-chat{height:auto;min-height:620px}.ideas-panel{position:static;max-height:none}
+  .finding{grid-template-columns:68px minmax(0,1fr)}.finding-place{grid-column:2;text-align:left;max-width:none}
+  .api-row{grid-template-columns:58px minmax(0,1fr) 72px}.api-row span:last-child{display:none}
   .ver-row,.ver-row.compact{grid-template-columns:40px minmax(0,1fr);row-gap:4px}
   .ver-row .vn{grid-column:1;grid-row:1}
   .ver-row .vt{grid-column:2;grid-row:1}
@@ -661,6 +781,9 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
     </div>
     <nav class="tabs" aria-label="Dashboard sections">
       <button data-tab="overview" aria-label="Overview" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Overview</span></button>
+      <button data-tab="summary" aria-label="Main Summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>Main Summary</span></button>
+      <button data-tab="audit" aria-label="Code Audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 7.9 7.5 9.5 4.3-1.6 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-5"/></svg><span>Code Audit</span></button>
+      <button data-tab="studio" aria-label="Thinking Studio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M8.4 14.6A7 7 0 1 1 15.6 14.6C14.6 15.3 14 16.1 14 17h-4c0-.9-.6-1.7-1.6-2.4Z"/><path d="M12 5v2M6.8 7.2l1.4 1.4M17.2 7.2l-1.4 1.4"/></svg><span>Thinking Studio</span></button>
       <button data-tab="chat" aria-label="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Chat</span></button>
       <button data-tab="pages" aria-label="Pages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Pages</span></button>
       <button data-tab="health" aria-label="Health"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><span>Health</span></button>
@@ -694,6 +817,44 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
   <section id="overview" class="show">
     <h2 class="page-title">Overview</h2>
     <div class="page-sub">Live state of the knowledge base. Refreshes every 3 seconds.</div>
+    <div class="provider-control" id="provider-control">
+      <div class="provider-head">
+        <div><h3>Choose the AI that writes your project memory</h3>
+          <p>iRAG stays the same project brain. Switch the summariser at any time; every CLI, dashboard, and MCP client immediately uses this choice.</p></div>
+        <span class="config-state" id="provider-state">Loading configuration…</span>
+      </div>
+      <form id="settings-form">
+        <div class="provider-choices" role="radiogroup" aria-label="LLM provider">
+          <button type="button" class="provider-choice" data-provider="claude" role="radio">Claude<span>Claude Code CLI</span></button>
+          <button type="button" class="provider-choice" data-provider="codex" role="radio">Codex<span>Codex CLI</span></button>
+          <button type="button" class="provider-choice" data-provider="agy" role="radio">agy<span>agy CLI</span></button>
+          <button type="button" class="provider-choice" data-provider="ollama" role="radio">Ollama<span>local models</span></button>
+          <button type="button" class="provider-choice" data-provider="custom" role="radio">Custom<span>any stdin command</span></button>
+        </div>
+        <div class="settings-form">
+          <div class="field wide"><label for="cfg-model">Model</label><input id="cfg-model" placeholder="provider default"></div>
+          <div class="field wide" id="cfg-command-field"><label for="cfg-command">Custom command</label><input id="cfg-command" placeholder="my-llm --print"></div>
+          <details class="settings-more full">
+            <summary>Advanced model and live-web settings</summary>
+            <div class="settings-form">
+              <div class="field"><label for="cfg-timeout">Model timeout · seconds</label><input id="cfg-timeout" type="number" min="1" max="3600"></div>
+              <div class="field"><label for="cfg-retries">Retries</label><input id="cfg-retries" type="number" min="0" max="10"></div>
+              <div class="field"><label for="cfg-parallel">Parallel writers</label><input id="cfg-parallel" type="number" min="1" max="32"></div>
+              <div class="field"><label for="cfg-web-max">Web results</label><input id="cfg-web-max" type="number" min="1" max="10"></div>
+              <div class="field"><label for="cfg-web-provider">Web search</label><select id="cfg-web-provider"><option value="auto">Auto</option><option value="brave">Brave</option><option value="tavily">Tavily</option><option value="searxng">SearXNG</option><option value="duckduckgo">DuckDuckGo</option></select></div>
+              <div class="field"><label for="cfg-web-timeout">Search timeout · seconds</label><input id="cfg-web-timeout" type="number" min="2" max="60"></div>
+              <div class="field wide"><label for="cfg-web-endpoint">SearXNG base URL</label><input id="cfg-web-endpoint" type="url" placeholder="https://search.example.com"></div>
+              <label class="check-label full"><input id="cfg-web-enabled" type="checkbox"> Enable live web research in Thinking Studio</label>
+              <p class="privacy-note full">Brave uses <code>BRAVE_SEARCH_API_KEY</code>; Tavily uses <code>TAVILY_API_KEY</code>. Keys stay in your process environment—this form never receives or stores them. DuckDuckGo needs no key. A custom model command is a local executable and runs only when you start model-backed work.</p>
+            </div>
+          </details>
+          <div class="settings-actions">
+            <button class="primary" id="save-settings" type="submit">Save provider</button>
+            <span class="config-state" id="web-state"></span>
+          </div>
+        </div>
+      </form>
+    </div>
     <!-- first-run guidance: shown only while the memory is still empty,
          each step reflecting real state from /api/status + /api/doctor -->
     <div class="setup" id="setup" hidden>
@@ -707,7 +868,7 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
           <span class="step-mark">1</span>
           <div>
             <b>Point irag at a summariser.</b>
-            <span class="step-why">Edit <code>.irag/config.toml</code> → <code>[llm].command</code>. Use a <em>cheap</em> model here — this is the scribe, not your coding agent.</span>
+            <span class="step-why">Choose Claude, Codex, agy, Ollama, or any custom command with the buttons above. Use a <em>cheap</em> model here—this is the scribe, not your coding agent.</span>
             <span class="step-state"></span>
           </div>
         </li>
@@ -719,11 +880,11 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
             <span class="step-state"></span>
           </div>
         </li>
-        <li class="setup-step" data-step="hooks">
+        <li class="setup-step" data-step="mcp">
           <span class="step-mark">3</span>
           <div>
-            <b>Make it automatic.</b>
-            <span class="step-why">Claude Code hooks inject memory at session start and update it after every turn, so you never think about it again.</span>
+            <b>Connect any coding agent.</b>
+            <span class="step-why"><code>irag mcp --root /absolute/project/path</code> gives Codex, Claude Code, Cursor, Windsurf, VS Code, and every stdio MCP client the same project brain.</span>
             <span class="step-state"></span>
           </div>
         </li>
@@ -753,6 +914,81 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
         <h3>Live activity</h3>
         <div class="feed" id="feed"><div class="skel skel-row"></div><div class="skel skel-row"></div><div class="skel skel-row"></div></div>
       </div>
+    </div>
+  </section>
+
+  <section id="summary">
+    <h2 class="page-title">Main Summary</h2>
+    <div class="page-sub">The whole project in one living document: what it is, how it works, every current summary, every unresolved contradiction, and the sessions that shaped it.</div>
+    <div class="summary-topline">
+      <input id="summary-search" class="page-search" aria-label="Filter project summaries" placeholder="Filter every summary by path or content…" autocomplete="off">
+      <button class="mini" id="summary-refresh" type="button">Refresh live summary</button>
+      <span class="summary-updated" id="summary-updated"></span>
+    </div>
+    <div id="summary-content"><div class="empty">Building the live project view…</div></div>
+  </section>
+
+  <section id="audit">
+    <h2 class="page-title">Code Audit</h2>
+    <div class="page-sub">A defensive review of code quality, API boundaries, secret patterns, dependency cycles, and known package advisories. Local checks use no model; OSV is the only network call.</div>
+    <div class="audit-toolbar">
+      <button class="primary" id="run-audit" type="button">Run deep audit</button>
+      <label class="check-label"><input id="audit-osv" type="checkbox" checked> Check current OSV advisories</label>
+      <span class="config-state" id="audit-state">No audit loaded.</span>
+    </div>
+    <div id="audit-content">
+      <div class="empty">Run the first audit to inspect this repository. Findings are evidence to review, not automatic proof of exploitability.</div>
+    </div>
+    <div class="row equal">
+      <div class="panel">
+        <h3>Local API checker</h3>
+        <p class="hint">Start your app, then probe discovered parameter-free GET/HEAD routes. For safety, checks are loopback-only and never follow redirects or call mutating routes.</p>
+        <form id="api-check-form" class="cap-form">
+          <input id="api-base" type="url" value="http://127.0.0.1:3000" aria-label="Local API base URL" placeholder="http://127.0.0.1:3000" required>
+          <button class="primary">Check local API</button>
+        </form>
+        <div id="api-check-state" class="inline-msg"></div>
+        <div id="api-check-results" class="api-checks"></div>
+      </div>
+      <div class="panel">
+        <h3>What this scan can and cannot prove</h3>
+        <p class="hint">Static patterns are labeled with confidence and exact evidence. Auth marked “unknown” may live in middleware. OSV matches a package version, not runtime reachability. Secrets are redacted before they reach this page.</p>
+        <div id="audit-recommendations"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="studio">
+    <h2 class="page-title">Thinking Studio</h2>
+    <div class="page-sub">Code review when you need rigor; product, business, marketing, and creative thinking when you need range. Answers combine project evidence with dated live-web research and preserve the source boundary.</div>
+    <div class="studio-toolbar">
+      <div class="mode-switch" id="studio-modes" aria-label="Thinking mode"></div>
+      <span class="studio-readiness" id="studio-readiness">Loading model and search readiness…</span>
+    </div>
+    <div class="studio-layout">
+      <div class="panel studio-chat">
+        <div id="studio-log" class="studio-log" aria-live="polite">
+          <div class="empty">Ask for a code review, a launch angle, a market position, a creative direction, or what current trends mean for this exact project.</div>
+        </div>
+        <form id="studio-form" class="studio-compose">
+          <textarea id="studio-input" aria-label="Question for Thinking Studio" placeholder="What should this product add next, based on current developer-tool trends?" required></textarea>
+          <div class="studio-compose-actions">
+            <label class="check-label"><input id="studio-web" type="checkbox" checked> Use live web research</label>
+            <span class="privacy-note">Your question is sent to the configured search provider.</span>
+            <button class="primary" id="studio-send">Think with iRAG</button>
+          </div>
+        </form>
+      </div>
+      <aside class="panel ideas-panel">
+        <h3>AI recommendations <span class="pill" id="idea-count">0</span></h3>
+        <p class="hint">Generate a fresh set, then use any idea as the next chat prompt. Recommendations persist with this project.</p>
+        <form id="idea-form" class="idea-controls">
+          <input id="idea-focus" aria-label="Recommendation focus" placeholder="optional focus…">
+          <button class="mini" id="idea-generate">Generate</button>
+        </form>
+        <div id="idea-state" class="inline-msg"></div>
+        <div id="ideas-list"><div class="empty">No saved recommendations yet.</div></div>
+      </aside>
     </div>
   </section>
 
@@ -905,7 +1141,7 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
 
   <section id="tools">
     <h2 class="page-title">Tools</h2>
-    <div class="page-sub">Everything else the CLI can do. See exactly what your agent is fed, travel back in time, and run every maintenance operation without a terminal.</div>
+    <div class="page-sub">The core maintenance and provenance paths. See exactly what your agent is fed, travel back in time, diagnose the setup, and run everyday operations without a terminal.</div>
 
     <div class="panel">
       <h3>What your agent sees <span class="pill">irag context</span></h3>
@@ -982,7 +1218,7 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
   <div class="keys-head"><h3>Keyboard shortcuts</h3>
     <button class="setup-x" id="keys-close">Close</button></div>
   <dl class="keys-list">
-    <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>Jump to a tab</dd>
+    <dt><kbd>1</kbd>–<kbd>9</kbd></dt><dd>Jump to the first nine tabs</dd>
     <dt><kbd>?</kbd></dt><dd>This list</dd>
     <dt><kbd>Esc</kbd></dt><dd>Close this / clear the page filter</dd>
     <dt><kbd>/</kbd></dt><dd>Focus the filter or question box on the current tab</dd>
@@ -1019,7 +1255,7 @@ async function api(p,opt){
   return payload;
 }
 const errorText=err=>String(err&&err.message||err||"Request failed");
-function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;")}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;")}
 function fmt(n){return n>=1e6?(n/1e6).toFixed(2)+"M":n>=1e3?(n/1e3).toFixed(1)+"k":String(n)}
 const reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches;
 const MONO="ui-monospace,Menlo,monospace",SANS="-apple-system,Segoe UI,sans-serif";
@@ -1037,9 +1273,12 @@ const IC={
 };
 
 /* ---------- tabs ---------- */
-const TITLES={overview:"Overview",chat:"Chat",pages:"Pages",viz:"Visualize",health:"Health",map:"Map",sessions:"Sessions",tools:"Tools",docs:"Docs"};
+const TITLES={overview:"Overview",summary:"Main Summary",audit:"Code Audit",studio:"Thinking Studio",chat:"Chat",pages:"Pages",viz:"Visualize",health:"Health",map:"Map",sessions:"Sessions",tools:"Tools",docs:"Docs"};
 const perTab={
-  overview:()=>{refreshStatus();refreshBurn();refreshFeed()},
+  overview:()=>{refreshStatus();refreshBurn();refreshFeed();loadSettings()},
+  summary:refreshMainSummary,
+  audit:refreshAudit,
+  studio:refreshStudio,
   pages:refreshPages,
   viz:()=>VIZ.enter(),
   health:refreshHealth, map:refreshMap, sessions:refreshSessions,
@@ -1052,6 +1291,7 @@ function switchTab(name,fromHash){
   document.querySelectorAll("main section").forEach(s=>s.classList.remove("show"));
   b.classList.add("active");b.setAttribute("aria-current","page");
   $("#"+name).classList.add("show");
+  scrollTo(0,0);
   $("#crumb-tab").textContent=TITLES[name]||"";
   // the tab lives in the URL: reload keeps your place, the back button
   // works, and a view can be linked to (#pages, #health, ...)
@@ -1069,7 +1309,7 @@ addEventListener("hashchange",()=>{
 });
 document.querySelector('nav.tabs button.active')?.setAttribute("aria-current","page");
 /* keyboard: 1-9 switch tabs (ignored while typing) */
-const TAB_ORDER=["overview","chat","pages","health","viz","map","sessions","tools","docs"];
+const TAB_ORDER=["overview","summary","audit","studio","chat","pages","health","viz","map","sessions","tools","docs"];
 const typing=t=>t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT"||t.isContentEditable);
 addEventListener("keydown",e=>{
   // ⌘K / Ctrl-K opens the palette from anywhere, including while typing
@@ -1106,6 +1346,9 @@ addEventListener("keydown",e=>{
 const VIEW_CMDS=TAB_ORDER.map(t=>({kind:"view",label:TITLES[t],tab:t}));
 const ACTION_CMDS=[
   {kind:"action",label:"Build / update memory",hint:"sync, synthesize, fact-check",run:()=>{switchTab("overview");runUpdate()}},
+  {kind:"action",label:"Run deep code audit",hint:"security, APIs, dependencies",run:()=>{switchTab("audit");setTimeout(()=>$("#run-audit").click(),120)}},
+  {kind:"action",label:"Open complete project summary",hint:"every current memory page",run:()=>switchTab("summary")},
+  {kind:"action",label:"Generate strategic recommendations",hint:"live web + project evidence",run:()=>{switchTab("studio");setTimeout(()=>$("#idea-generate").click(),120)}},
   {kind:"action",label:"Preview what the agent sees",hint:"irag context",run:()=>{switchTab("tools");setTimeout(()=>$("#ctx-form").requestSubmit(),120)}},
   {kind:"action",label:"Run doctor",hint:"diagnose the setup",run:()=>{switchTab("tools");setTimeout(()=>$("#do-doctor").click(),120)}},
   {kind:"action",label:"Back up the database",hint:"timestamped copy",run:()=>{switchTab("tools");setTimeout(()=>$("#do-backup").click(),120)}},
@@ -1185,6 +1428,187 @@ $("#cmdk-open").onclick=openPalette;
 $("#keyhint").onclick=()=>$("#keys").showModal();
 $("#keys-close").onclick=()=>$("#keys").close();
 $("#keys").addEventListener("click",e=>{if(e.target.id==="keys")$("#keys").close()});
+
+/* ---------- provider + web configuration ---------- */
+let _settingsLoaded=false,_settingsBusy=false,_settingsVersion="",_selectedProvider="claude",_savedCustomCommand="";
+async function loadSettings(force=false){
+  if(_settingsBusy||(_settingsLoaded&&!force))return;_settingsBusy=true;
+  try{
+    const value=await api("/api/settings"),llm=value.settings.llm,web=value.settings.web;
+    _settingsVersion=value.version;_selectedProvider=llm.provider;_savedCustomCommand=llm.command||"";
+    $("#cfg-model").value=llm.model||"";$("#cfg-command").value=llm.command||"";
+    $("#cfg-timeout").value=llm.timeout;$("#cfg-retries").value=llm.retries;
+    $("#cfg-parallel").value=llm.parallel;$("#cfg-web-provider").value=web.provider;
+    $("#cfg-web-endpoint").value=web.endpoint||"";$("#cfg-web-max").value=web.max_results;
+    $("#cfg-web-timeout").value=web.timeout;$("#cfg-web-enabled").checked=web.enabled;
+    renderProviderChoices();
+    const ps=$("#provider-state");ps.textContent=value.config_error||value.llm.detail;
+    ps.className="config-state "+(value.config_error||!value.llm.ready?"bad":"ok");
+    const ws=$("#web-state");ws.textContent="Web: "+value.web.detail;
+    ws.className="config-state "+(value.web.ready?"ok":"bad");
+    _settingsLoaded=true;
+  }catch(err){const el=$("#provider-state");el.textContent=errorText(err);el.className="config-state bad"}
+  finally{_settingsBusy=false}
+}
+function renderProviderChoices(){
+  document.querySelectorAll(".provider-choice").forEach(button=>{
+    const on=button.dataset.provider===_selectedProvider;
+    button.classList.toggle("selected",on);button.setAttribute("aria-checked",String(on));
+  });
+  $("#cfg-command-field").hidden=_selectedProvider!=="custom";
+  $("#save-settings").textContent="Save "+(_selectedProvider==="agy"?"agy":_selectedProvider[0].toUpperCase()+_selectedProvider.slice(1))+" setup";
+}
+document.querySelectorAll(".provider-choice").forEach(button=>button.onclick=()=>{
+  if(_selectedProvider==="custom")_savedCustomCommand=$("#cfg-command").value;
+  _selectedProvider=button.dataset.provider;
+  if(_selectedProvider==="custom")$("#cfg-command").value=_savedCustomCommand==="claude -p"?"":_savedCustomCommand;
+  renderProviderChoices();
+});
+$("#settings-form").onsubmit=async event=>{
+  event.preventDefault();const button=$("#save-settings"),stateEl=$("#provider-state");
+  button.disabled=true;button.textContent="Saving…";stateEl.textContent="Validating and writing config.toml…";stateEl.className="config-state";
+  const llm={provider:_selectedProvider,model:$("#cfg-model").value.trim(),
+    model_label:$("#cfg-model").value.trim()||_selectedProvider,
+    timeout:Number($("#cfg-timeout").value),retries:Number($("#cfg-retries").value),
+    parallel:Number($("#cfg-parallel").value)};
+  if(_selectedProvider==="custom")llm.command=$("#cfg-command").value.trim();
+  else if(_selectedProvider==="claude")llm.command="claude -p";
+  const web={enabled:$("#cfg-web-enabled").checked,provider:$("#cfg-web-provider").value,
+    endpoint:$("#cfg-web-endpoint").value.trim(),max_results:Number($("#cfg-web-max").value),
+    timeout:Number($("#cfg-web-timeout").value)};
+  try{
+    const value=await api("/api/settings",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({version:_settingsVersion,settings:{llm,web}})});
+    _settingsVersion=value.version;_settingsLoaded=false;await loadSettings(true);
+    showToast("Provider configuration saved.",value.llm.detail);
+  }catch(err){stateEl.textContent=errorText(err);stateEl.className="config-state bad";
+    if(err.status===409){_settingsLoaded=false;await loadSettings(true)}}
+  finally{button.disabled=false;renderProviderChoices()}
+};
+
+/* ---------- complete living summary ---------- */
+let _summaryData=null,_summaryBusy=false;
+async function refreshMainSummary(){
+  if(_summaryBusy)return;_summaryBusy=true;$("#summary-updated").textContent="Refreshing repository truth…";
+  try{_summaryData=await api("/api/main-summary");renderMainSummary();}
+  catch(err){$("#summary-content").innerHTML=`<div class="empty">${esc(errorText(err))}</div>`;$("#summary-updated").textContent="Refresh failed"}
+  finally{_summaryBusy=false}
+}
+function renderMainSummary(){
+  const data=_summaryData;if(!data)return;
+  const needle=$("#summary-search").value.trim().toLowerCase();
+  const pages=(data.pages||[]).filter(page=>!needle||(page.subject_id+" "+page.title+" "+page.body_markdown).toLowerCase().includes(needle));
+  const status=data.status||{},audit=data.latest_audit;
+  const rootSummary=data.overview_markdown
+    ?`<div class="summary-overview">${md(esc(data.overview_markdown))}</div>`
+    :`<div class="empty">The root project summary has not been written yet. Run Update to synthesize it; all available page summaries are still listed below.</div>`;
+  const warning=(!data.overview_current||status.pages_due||status.drifted_files?.length)
+    ?`<div class="confirm-bar"><b>Some prose needs an update.</b> ${status.pages_due||0} page(s) are due and ${(status.drifted_files||[]).length} file(s) changed after their summary. <button class="mini" type="button" onclick="switchTab('overview')">Open Update</button></div>`:"";
+  const pageHtml=pages.length?pages.map(page=>`<details class="summary-page">
+      <summary><span class="summary-subject">${esc(page.subject_id)}</span><span class="summary-meta">${esc(page.page_type)} · ${page.version_number?"v"+page.version_number:"not written"} · stale ${page.staleness_score}</span></summary>
+      <div class="summary-page-body">${page.body_markdown?md(esc(page.body_markdown)):`<div class="empty">No generated summary yet.</div>`}</div>
+    </details>`).join(""):`<div class="empty">No summary matches this filter.</div>`;
+  const contradictions=(data.contradictions||[]).slice(0,20).map(item=>
+    `<div class="prob"><span class="sev-${esc(item.severity)}">${esc(item.severity)}</span><div><b>${esc(item.subject_id)}</b><span class="prob-truth">${esc(item.claim)} → ${esc(item.truth)}</span></div></div>`).join("")||`<div class="empty">No open contradictions.</div>`;
+  const sessions=(data.sessions||[]).slice(0,12).map(item=>
+    `<div class="fr"><span class="t">${esc((item.ended_at||item.started_at||"").slice(0,16))}</span><span class="subj">#${item.session_id} · ${esc(item.agent||"")}</span><span class="detail">${esc(item.summary||"No narrative summary")}</span></div>`).join("")||`<div class="empty">No project sessions recorded.</div>`;
+  $("#summary-content").innerHTML=`${warning}<div class="summary-ledger">
+      <div><b>${fmt(data.pages.length)}</b><span>current pages</span></div><div><b>${fmt(status.revisions||0)}</b><span>versions retained</span></div>
+      <div><b>${fmt((data.contradictions||[]).length)}</b><span>contradictions</span></div><div><b>${audit?Object.values(audit.counts||{}).reduce((a,b)=>a+b,0):"—"}</b><span>${audit?(audit.stale?"stale audit findings":"audit findings"):"audit not run"}</span></div>
+    </div><div class="panel"><h3>Project-wide synthesis <span class="pill">${data.overview_current?"current":"update due"}</span></h3>${rootSummary}</div>
+    <div class="panel" style="margin-top:var(--sp-4)"><h3>Every current summary <span class="pill">${pages.length} of ${data.pages.length}</span></h3><div class="summary-pages">${pageHtml}</div></div>
+    <div class="row equal"><div class="panel"><h3>Unresolved contradictions</h3>${contradictions}</div><div class="panel"><h3>Recent project sessions</h3><div class="feed">${sessions}</div></div></div>`;
+  $("#summary-updated").textContent="Live view · "+new Date(data.generated_at).toLocaleString();
+}
+$("#summary-search").addEventListener("input",renderMainSummary);
+$("#summary-refresh").onclick=refreshMainSummary;
+
+/* ---------- deep audit + local API check ---------- */
+let _auditData=null,_auditBusy=false;
+async function refreshAudit(){
+  if(_auditBusy)return;_auditBusy=true;
+  try{const value=await api("/api/audit");if(value.status!=="never_run"){_auditData=value;renderAudit()}}
+  catch(err){const el=$("#audit-state");el.textContent=errorText(err);el.className="config-state bad"}
+  finally{_auditBusy=false}
+}
+async function runAudit(){
+  if(_auditBusy)return;_auditBusy=true;const button=$("#run-audit"),el=$("#audit-state");
+  button.disabled=true;button.textContent="Auditing…";el.textContent="Scanning code, APIs, architecture, and dependencies…";el.className="config-state";
+  try{_auditData=await api("/api/audit",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({check_advisories:$("#audit-osv").checked})});renderAudit();showToast("Deep audit complete.",`${_auditData.findings.length} finding(s) ready to review.`)}
+  catch(err){el.textContent=errorText(err);el.className="config-state bad"}
+  finally{_auditBusy=false;button.disabled=false;button.textContent="Run deep audit"}
+}
+function renderAudit(){
+  const data=_auditData;if(!data)return;const counts=data.counts||{};
+  const filter=$("#audit-text")?.value.trim().toLowerCase()||"",severity=$("#audit-severity")?.value||"all",category=$("#audit-category")?.value||"all";
+  const findings=(data.findings||[]).filter(item=>(severity==="all"||item.severity===severity)&&(category==="all"||item.category===category)&&(!filter||JSON.stringify(item).toLowerCase().includes(filter)));
+  const categories=[...new Set((data.findings||[]).map(item=>item.category))];
+  const findingHtml=findings.length?findings.map(item=>`<div class="finding">
+      <span class="finding-sev sev-${esc(item.severity)}">${esc(item.severity)}</span><div class="finding-main"><b>${esc(item.title)}</b><p>${esc(item.evidence)}</p><div class="finding-fix">Fix: ${esc(item.remediation)}${item.url?` · <a href="${esc(item.url)}" target="_blank" rel="noopener">advisory ↗</a>`:""}</div></div><span class="finding-place">${esc(item.file)}:${item.line}<br>${esc(item.confidence)} confidence</span>
+    </div>`).join(""):`<div class="empty">No findings match this filter.</div>`;
+  const routes=(data.api?.routes||[]).slice(0,200).map(route=>`<tr><td>${esc(route.method)}</td><td>${esc(route.path)}</td><td>${esc(route.file)}:${route.line}</td><td>${route.auth==="observed"?'<span class="sev-low">observed</span>':'<span class="sev-medium">unknown</span>'}</td></tr>`).join("")||`<tr><td colspan="4">No framework routes detected.</td></tr>`;
+  $("#audit-content").innerHTML=`${data.stale?'<div class="confirm-bar"><b>This report is stale.</b> The code changed after it ran. Run a fresh audit before acting on it.</div>':""}
+    <div class="audit-score"><div class="critical"><b>${counts.critical||0}</b><span>critical</span></div><div class="high"><b>${counts.high||0}</b><span>high</span></div><div class="medium"><b>${counts.medium||0}</b><span>medium</span></div><div><b>${counts.low||0}</b><span>low</span></div></div>
+    <div class="row"><div class="panel"><h3>Review queue <span class="pill">${findings.length} shown · ${data.findings.length} total</span></h3>
+      <div class="audit-filter"><input id="audit-text" placeholder="Filter findings…" value="${esc(filter).replace(/"/g,"&quot;")}"><select id="audit-severity"><option value="all">All severities</option>${["critical","high","medium","low"].map(v=>`<option value="${v}"${severity===v?" selected":""}>${v}</option>`).join("")}</select><select id="audit-category"><option value="all">All categories</option>${categories.map(v=>`<option value="${esc(v)}"${category===v?" selected":""}>${esc(v)}</option>`).join("")}</select></div><div class="finding-list">${findingHtml}</div></div>
+      <div class="panel"><h3>Scan coverage</h3><div class="prov-card"><div class="prov-row"><span class="pk">scope</span><span>${fmt(data.files_scanned)} files · ${fmt(data.lines_scanned)} lines</span></div><div class="prov-row"><span class="pk">API</span><span>${data.api.route_count} routes · ${data.api.auth_observed} auth marker(s) observed</span></div><div class="prov-row"><span class="pk">tests</span><span>${data.quality.test_files} test files / ${data.quality.source_files} source files</span></div><div class="prov-row"><span class="pk">cycles</span><span>${data.quality.dependency_cycles.length} dependency cycle(s)</span></div><div class="prov-row"><span class="pk">OSV</span><span>${esc(data.dependencies.advisory_scan.status)} · ${data.dependencies.advisory_scan.packages_checked} versions${data.dependencies.advisory_scan.error?" · "+esc(data.dependencies.advisory_scan.error):""}</span></div></div></div></div>
+    <div class="panel" style="margin-top:var(--sp-4)"><h3>Discovered API routes <span class="pill">${data.api.route_count}</span></h3><table><thead><tr><th>method</th><th>path</th><th>source</th><th>auth marker</th></tr></thead><tbody>${routes}</tbody></table></div>`;
+  const filterInput=$("#audit-text");filterInput.addEventListener("input",()=>{
+    clearTimeout(filterInput._timer);filterInput._timer=setTimeout(()=>{renderAudit();const next=$("#audit-text");next.focus();next.setSelectionRange(next.value.length,next.value.length)},140)});
+  $("#audit-severity").onchange=renderAudit;$("#audit-category").onchange=renderAudit;
+  const advisory=data.dependencies.advisory_scan;
+  const stateEl=$("#audit-state");stateEl.textContent=`Audit #${data.audit_id} · ${new Date(data.created_at).toLocaleString()} · ${data.duration_ms}ms${advisory.status==="unavailable"?" · OSV unavailable":""}`;
+  stateEl.className="config-state "+(data.stale||advisory.status==="unavailable"?"bad":"ok");
+  $("#audit-recommendations").innerHTML=(data.recommendations||[]).map(item=>`<div class="prov-row"><span class="pk">${esc(item.priority)}</span><span><b>${esc(item.title)}</b><br>${esc(item.detail)}</span></div>`).join("")||`<div class="empty">No recommendations generated.</div>`;
+}
+$("#run-audit").onclick=runAudit;
+$("#api-check-form").onsubmit=async event=>{
+  event.preventDefault();const button=event.currentTarget.querySelector("button"),state=$("#api-check-state");button.disabled=true;state.textContent="Probing read-only local routes…";state.className="inline-msg";
+  try{const data=await api("/api/api-check",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({base_url:$("#api-base").value})});
+    state.textContent=`Checked ${data.checks.length} route(s) · ${new Date(data.checked_at).toLocaleTimeString()}`;state.className="inline-msg ok";
+    $("#api-check-results").innerHTML=data.checks.map(item=>`<div class="api-row"><span>${esc(item.method)}</span><span>${esc(item.path)}</span><span class="${esc(item.outcome)}">${esc(item.outcome)}</span><span>${item.status||"—"} · ${item.duration_ms}ms</span></div>`).join("");
+  }catch(err){state.textContent=errorText(err);state.className="inline-msg bad"}finally{button.disabled=false}
+};
+
+/* ---------- thinking studio ---------- */
+let _studioData=null,_studioBusy=false,_studioMode="product";
+async function refreshStudio(){
+  if(_studioBusy)return;
+  try{_studioData=await api("/api/studio");renderStudio()}
+  catch(err){$("#studio-readiness").innerHTML=`<span class="bad">${esc(errorText(err))}</span>`}
+}
+function renderStudio(){
+  const data=_studioData;if(!data)return;
+  $("#studio-modes").innerHTML=data.modes.map(mode=>`<button type="button" data-mode="${mode.id}" aria-pressed="${mode.id===_studioMode}" class="${mode.id===_studioMode?"active":""}">${esc(mode.label)}</button>`).join("");
+  $("#studio-modes").querySelectorAll("button").forEach(button=>button.onclick=()=>{_studioMode=button.dataset.mode;renderStudio()});
+  const readiness=[];readiness.push(`<span class="${data.llm.ready?"ok":"bad"}">Model: ${esc(data.llm.detail)}</span>`);readiness.push(`<span class="${data.web.ready?"ok":"bad"}">Web: ${esc(data.web.detail)}</span>`);$("#studio-readiness").innerHTML=readiness.join(" · ");
+  const messages=(data.messages||[]).map(item=>`<div class="studio-msg ${item.role==="assistant"?"assistant":"user"}"><div class="studio-msg-head"><span>${esc(item.role)}</span><span>${esc((data.modes.find(m=>m.id===item.mode)||{}).label||item.mode)}</span><span>${esc((item.created_at||"").slice(0,16))}</span></div><div class="tbody">${md(esc(item.content))}</div>${sourceList(item.sources)}</div>`).join("");
+  $("#studio-log").innerHTML=messages||`<div class="empty">No Studio conversation yet. Ask a question below; it will stay with this project.</div>`;
+  $("#studio-log").scrollTop=$("#studio-log").scrollHeight;
+  $("#idea-count").textContent=(data.ideas||[]).length;
+  $("#ideas-list").innerHTML=(data.ideas||[]).map(item=>`<div class="idea"><div class="idea-top"><b>${esc(item.title)}</b><button class="mini danger" type="button" data-archive="${item.idea_id}">Archive</button></div><div class="idea-body">${md(esc(item.body_markdown))}</div>${sourceList(item.sources)}<button class="mini" type="button" data-use-idea="${item.idea_id}">Discuss this idea</button></div>`).join("")||`<div class="empty">No saved recommendations yet.</div>`;
+  $("#ideas-list").querySelectorAll("[data-use-idea]").forEach(button=>button.onclick=()=>{const idea=data.ideas.find(x=>x.idea_id===Number(button.dataset.useIdea));if(!idea)return;$("#studio-input").value=`Pressure-test this recommendation for our project:\n\n${idea.title}\n${idea.body_markdown}`;$("#studio-input").focus()});
+  $("#ideas-list").querySelectorAll("[data-archive]").forEach(button=>button.onclick=()=>archiveIdea(Number(button.dataset.archive)));
+}
+function sourceList(sources){
+  if(!sources||!sources.length)return "";
+  const first=sources[0]||{},meta=(first.provider||first.retrieved_at)
+    ?`<span class="privacy-note">Live web · ${esc(first.provider||"source")} · retrieved ${esc((first.retrieved_at||"").replace("T"," ").slice(0,19))} UTC</span>`:"";
+  return `<div class="source-list">${meta}${sources.map((item,index)=>/^(https?:\/\/)[^\s"'<>]+$/i.test(item.url||"")?`<a href="${esc(item.url)}" target="_blank" rel="noopener">${esc(item.reference||`W${index+1}`)} · ${esc(item.title||item.domain||item.url)}</a>`:"").join("")}</div>`;
+}
+$("#studio-form").onsubmit=async event=>{
+  event.preventDefault();if(_studioBusy)return;const message=$("#studio-input").value.trim();if(!message)return;
+  _studioBusy=true;const button=$("#studio-send");button.disabled=true;button.textContent="Thinking…";
+  try{await api("/api/studio-chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message,mode:_studioMode,use_web:$("#studio-web").checked})});$("#studio-input").value="";await refreshStudio();}
+  catch(err){showToast("Thinking Studio could not answer.",errorText(err))}finally{_studioBusy=false;button.disabled=false;button.textContent="Think with iRAG";await refreshStudio()}
+};
+$("#idea-form").onsubmit=async event=>{
+  event.preventDefault();if(_studioBusy)return;_studioBusy=true;const button=$("#idea-generate"),state=$("#idea-state");button.disabled=true;button.textContent="Generating…";state.textContent="Combining project evidence and current web sources…";
+  try{await api("/api/studio-ideas",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({focus:$("#idea-focus").value,mode:_studioMode,use_web:$("#studio-web").checked})});state.textContent="Five recommendations saved.";state.className="inline-msg ok";}
+  catch(err){state.textContent=errorText(err);state.className="inline-msg bad"}finally{_studioBusy=false;button.disabled=false;button.textContent="Generate";await refreshStudio()}
+};
+async function archiveIdea(id){try{await api("/api/studio-idea/archive",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id})});await refreshStudio()}catch(err){showToast("Could not archive that idea.",errorText(err))}}
 
 /* ---------- count-up ---------- */
 function countUp(el,to){
@@ -1373,7 +1797,7 @@ $("#run-update").onclick=runUpdate;
 /* ---------- first-run guidance ----------
    Three real blockers, each reflecting live state rather than a canned
    checklist: is a summariser configured, has anything been synthesized,
-   are the hooks wired. Self-clears once the memory exists and stays gone
+   is universal MCP access available. Self-clears once the memory exists and stays gone
    once dismissed. */
 let _doctor=null;
 // keyed by project root, not origin: the dashboard reuses ports across
@@ -1392,20 +1816,20 @@ function docPass(fragment){
 function renderSetup(){
   const box=$("#setup");if(!box)return;
   const built=(_lastStatus?_lastStatus.revisions:0)>0;
-  const llm=docPass("llm command"), hooks=docPass("claude code hook");
-  if(setupDismissed()||(built&&hooks!==false)){box.hidden=true;return}
+  const llm=docPass("llm command"), mcp=true;
+  if(setupDismissed()||built){box.hidden=true;return}
   box.hidden=false;
   // the lede has to track the same live state as the steps, or it ends up
   // saying "nothing has been written" directly above "memory built ✓"
   $("#setup-lede").innerHTML=!built
     ? "Your project is initialised but <b>no summaries have been written yet</b>, so there is nothing for an agent to read."
-    : "The memory is built. <b>One step left</b>: wire the hooks so it stays current on its own.";
-  const state={llm:llm,build:built?true:false,hooks:hooks};
+    : "The memory is built and ready for every connected MCP coding agent.";
+  const state={llm:llm,build:built?true:false,mcp:mcp};
   const label={
     llm:{yes:"summariser responds ✓",no:"not reachable yet — check [llm].command",
          wait:"checking…"},
     build:{yes:"memory built ✓",no:"nothing written yet",wait:""},
-    hooks:{yes:"hooks wired ✓",no:"not wired — runs manually until you do",wait:"checking…"},
+    mcp:{yes:"universal MCP server included ✓",no:"",wait:""},
   };
   box.querySelectorAll(".setup-step").forEach(li=>{
     const k=li.dataset.step,v=state[k];
@@ -1414,15 +1838,14 @@ function renderSetup(){
     st.className="step-state "+(v===true?"ok":v===false?"todo":"");
     st.textContent=v===true?label[k].yes:v===false?label[k].no:label[k].wait;
     let btn=li.querySelector("button");
-    const needs=(k==="build"&&!built)||(k==="hooks"&&hooks===false)||(k==="llm"&&llm!==true);
+    const needs=(k==="build"&&!built)||(k==="llm"&&llm!==true);
     if(needs&&!btn){
       btn=document.createElement("button");btn.className="mini";
-      btn.textContent=k==="llm"?"Re-check":k==="build"?"Build memory now":"Wire hooks";
+      btn.textContent=k==="llm"?"Re-check":"Build memory now";
       btn.onclick=async()=>{
         btn.disabled=true;
         try{
           if(k==="build"){switchTab("overview");await runUpdate()}
-          else if(k==="hooks"){await postJSON("/api/op",{op:"claude-setup"})}
           await refreshDoctorState();
         }catch(err){showToast("Action failed.",errorText(err))}
         finally{btn.disabled=false}
@@ -2348,10 +2771,12 @@ const quiet=fn=>fn().catch(()=>{});
 // the palette matches page names locally, so it needs the list even if
 // the Pages tab was never opened
 quiet(async()=>{if(!_pages.length)_pages=await api("/api/pages")});
-quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed);quiet(refreshDoctorState);
+quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed);quiet(refreshDoctorState);quiet(loadSettings);
 quiet(resumeUpdate);
 setInterval(()=>{quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed)},3000);
 setInterval(()=>{if($("#health").classList.contains("show"))quiet(refreshHealth)},8000);
+setInterval(()=>{if($("#summary").classList.contains("show"))quiet(refreshMainSummary)},12000);
+setInterval(()=>{if($("#audit").classList.contains("show")&&!_auditBusy)quiet(refreshAudit)},12000);
 </script>
 </body>
 </html>
