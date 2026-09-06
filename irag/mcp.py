@@ -15,6 +15,7 @@ from . import (config as config_mod, db, ingest, linter, provenance,
 from .locking import UpdateLock
 
 LATEST_PROTOCOL = "2026-07-28"
+MAX_REQUEST_BYTES = 2_000_000
 LATEST_LEGACY_PROTOCOL = "2025-11-25"
 LEGACY_PROTOCOLS = {LATEST_LEGACY_PROTOCOL, "2025-06-18", "2025-03-26",
                     "2024-11-05"}
@@ -44,11 +45,16 @@ TOOLS = [
     {"name": "irag_get_main_summary", "description": "Return the complete live project summary: every current memory page, status, sessions, contradictions, and latest audit state.", "inputSchema": _schema({}), "annotations": {"readOnlyHint": True, "openWorldHint": False}},
     {"name": "irag_audit", "description": "Run a defensive code, API, secret-pattern, architecture, and dependency audit. Optional live OSV lookups never call an LLM.", "inputSchema": _schema({"check_advisories": {"type": "boolean"}}), "annotations": {"destructiveHint": False, "idempotentHint": True, "openWorldHint": True}},
     {"name": "irag_web_search", "description": "Search the live web for current technical, product, business, marketing, or design evidence. Returns source URLs and retrieval time; never calls an LLM.", "inputSchema": _schema({"query": {"type": "string", "minLength": 1, "maxLength": 1000}}, ["query"]), "annotations": {"readOnlyHint": True, "openWorldHint": True}},
+    {"name": "irag_delivery_plan", "description": "Analyze the live Git diff into change risk, API/public-contract changes, blast radius, impacted tests, and release gates without executing commands.", "inputSchema": _schema({"base": {"type": "string", "maxLength": 200}}), "annotations": {"readOnlyHint": True, "openWorldHint": False}},
+    {"name": "irag_team_memory", "description": "Export a reviewable merge-safe memory bundle, or idempotently import one. Bundles exclude source, transcripts, prompts, and executable facts.", "inputSchema": _schema({"action": {"type": "string", "enum": ["export", "import"]}, "bundle": {"type": "object"}}), "annotations": {"destructiveHint": False, "idempotentHint": True, "openWorldHint": False}},
+    {"name": "irag_audit_triage", "description": "Record a rationale-backed status for a stable finding from the latest code audit.", "inputSchema": _schema({"id": {"type": "string", "pattern": "^[0-9a-f]{12}$"}, "status": {"type": "string", "enum": ["open", "resolved", "false-positive", "risk-accepted"]}, "rationale": {"type": "string", "maxLength": 5000}, "expires_at": {"type": "string", "maxLength": 10}}, ["id", "status"]), "annotations": {"destructiveHint": False, "idempotentHint": True, "openWorldHint": False}},
+    {"name": "irag_experiment", "description": "Create or update a durable product experiment linking hypothesis, metric, result, and decision.", "inputSchema": _schema({"id": {"type": "integer", "minimum": 1}, "title": {"type": "string", "maxLength": 300}, "hypothesis": {"type": "string", "maxLength": 20000}, "metric": {"type": "string", "maxLength": 500}, "target": {"type": "string", "maxLength": 500}, "status": {"type": "string", "enum": ["planned", "running", "won", "lost", "inconclusive", "archived"]}, "outcome": {"type": "string", "maxLength": 20000}, "decision": {"type": "string", "maxLength": 20000}}, ["title", "hypothesis", "metric"]), "annotations": {"destructiveHint": False, "idempotentHint": False, "openWorldHint": False}},
+    {"name": "irag_watchlist", "description": "Create, refresh, archive, or list a source-backed live-web watchlist; refreshes retain dated evidence and changes since the prior run.", "inputSchema": _schema({"action": {"type": "string", "enum": ["list", "create", "refresh", "archive"]}, "id": {"type": "integer", "minimum": 1}, "name": {"type": "string", "maxLength": 200}, "query": {"type": "string", "maxLength": 1000}}, ["action"]), "annotations": {"destructiveHint": False, "idempotentHint": False, "openWorldHint": True}},
     {"name": "irag_update", "description": "Synchronize changes, incrementally scan, synthesize due pages, and lint memory.", "inputSchema": _schema({"limit": {"type": "integer", "minimum": 1, "maximum": 10000}, "session_key": {"type": "string", "maxLength": 500}}), "annotations": {"destructiveHint": False, "idempotentHint": True, "openWorldHint": False}},
     {"name": "irag_learn", "description": "Persist a durable project lesson without calling a model.", "inputSchema": _schema({"text": {"type": "string", "minLength": 1, "maxLength": 20000}, "module": {"type": "string", "maxLength": 2000}, "session_key": {"type": "string", "maxLength": 500}}, ["text"]), "annotations": {"destructiveHint": False, "idempotentHint": False, "openWorldHint": False}},
     {"name": "irag_record_decision", "description": "Persist an architectural or product decision without calling a model.", "inputSchema": _schema({"text": {"type": "string", "minLength": 1, "maxLength": 20000}, "module": {"type": "string", "maxLength": 2000}, "session_key": {"type": "string", "maxLength": 500}}, ["text"]), "annotations": {"destructiveHint": False, "idempotentHint": False, "openWorldHint": False}},
     {"name": "irag_resolve_contradiction", "description": "Dismiss a proven detector false positive, or reopen one. This never edits page text.", "inputSchema": _schema({"id": {"type": "integer", "minimum": 1}, "notes": {"type": "string", "maxLength": 5000}, "undo": {"type": "boolean"}}, ["id"]), "annotations": {"destructiveHint": True, "idempotentHint": False, "openWorldHint": False}},
-    {"name": "irag_start_session", "description": "Start an agent-owned project diary session and return its durable key.", "inputSchema": _schema({"agent": {"type": "string", "maxLength": 200}, "key": {"type": "string", "maxLength": 500}}), "annotations": {"destructiveHint": False, "idempotentHint": False, "openWorldHint": False}},
+    {"name": "irag_start_session", "description": "Start an agent-owned, branch/worktree-scoped project diary session and return its durable key.", "inputSchema": _schema({"agent": {"type": "string", "maxLength": 200}, "key": {"type": "string", "maxLength": 500}, "task": {"type": "string", "maxLength": 500}}), "annotations": {"destructiveHint": False, "idempotentHint": False, "openWorldHint": False}},
     {"name": "irag_finish_session", "description": "Close a diary session and retain critical changes, decisions, and lessons. Pass the key returned by irag_start_session for stateless MCP clients.", "inputSchema": _schema({"narrate": {"type": "boolean"}, "session_key": {"type": "string", "maxLength": 500}}), "annotations": {"destructiveHint": False, "idempotentHint": False, "openWorldHint": False}},
 ]
 
@@ -167,16 +173,86 @@ class MCPServer:
                 advisories = args.get("check_advisories", True)
                 if not isinstance(advisories, bool):
                     raise ValueError("check_advisories must be a boolean")
-                # Refresh structural truth under the writer lock, then release
-                # it before the bounded network advisory lookup.
-                self._live(conn, cfg, lambda: None)
-                value = audit.run(conn, cfg, self.root,
-                                  check_advisories=advisories)
+                def run_audit():
+                    ingest.sync(conn, cfg, self.root)
+                    structure.scan(conn, cfg, self.root)
+                    return audit.run(
+                        conn, cfg, self.root, check_advisories=advisories)
+                value = self._locked(
+                    "run code audit", run_audit)
                 return value, _pretty(value)
             if name == "irag_web_search":
                 from . import websearch
                 query = _required_text(args, "query", 1000)
                 value = websearch.search(cfg, query)
+                return value, _pretty(value)
+            if name == "irag_delivery_plan":
+                from . import delivery
+                base = str(args.get("base") or "HEAD")
+                value = self._live(
+                    conn, cfg,
+                    lambda: delivery.plan(conn, cfg, self.root, base))
+                return value, value["agent_brief"]
+            if name == "irag_team_memory":
+                from . import team_memory
+                action = str(args.get("action") or "export")
+                if action == "export":
+                    conn.execute("BEGIN")
+                    try:
+                        value = team_memory.export_bundle(conn, self.root)
+                    finally:
+                        conn.rollback()
+                elif action == "import":
+                    value = self._locked(
+                        "import team memory",
+                        lambda: team_memory.import_bundle(
+                            conn, args.get("bundle")))
+                else:
+                    raise ValueError("action must be export or import")
+                return value, _pretty(value)
+            if name == "irag_audit_triage":
+                from . import audit
+                finding_id = _required_text(args, "id", 12)
+                status = _required_text(args, "status", 30)
+                rationale = str(args.get("rationale") or "")
+                expires_at = str(args.get("expires_at") or "")
+                value = self._locked(
+                    "triage audit finding",
+                    lambda: audit.triage_finding(
+                        conn, self.root, finding_id, status, rationale,
+                        expires_at))
+                return value, _pretty(value)
+            if name == "irag_experiment":
+                from . import studio
+                value = self._locked(
+                    "save experiment", lambda: studio.save_experiment(conn, args))
+                return value, _pretty(value)
+            if name == "irag_watchlist":
+                from . import studio
+                action = _required_text(args, "action", 20)
+                if action == "list":
+                    value = {"watchlists": studio.state(conn)["watchlists"]}
+                elif action == "create":
+                    value = self._locked(
+                        "create watchlist",
+                        lambda: studio.create_watchlist(
+                            conn, args.get("name"), args.get("query")))
+                elif action == "refresh":
+                    watchlist_id = int(args.get("id", 0))
+                    value = self._locked(
+                        "refresh watchlist",
+                        lambda: studio.refresh_watchlist(
+                            conn, cfg, watchlist_id))
+                elif action == "archive":
+                    watchlist_id = int(args.get("id", 0))
+                    archived = self._locked(
+                        "archive watchlist",
+                        lambda: studio.archive_watchlist(conn, watchlist_id))
+                    if not archived:
+                        raise ValueError("no active watchlist with that id")
+                    value = {"watchlist_id": watchlist_id, "status": "archived"}
+                else:
+                    raise ValueError("action must be list, create, refresh, or archive")
                 return value, _pretty(value)
             if name == "irag_update":
                 limit = args.get("limit")
@@ -201,18 +277,28 @@ class MCPServer:
                 module = str(args.get("module") or "")[:2000] or None
                 from .cli import _append_log
                 if name == "irag_learn":
-                    _append_log(conn, "lessons", "lessons", "Lessons",
-                                "session", text, module)
+                    self._locked(
+                        "record lesson",
+                        lambda: _append_log(
+                            conn, "lessons", "lessons", "Lessons",
+                            "session", text, module))
                 else:
-                    _append_log(conn, "decisions", "decisions", "Decisions",
-                                "decision", text, module)
+                    self._locked(
+                        "record decision",
+                        lambda: _append_log(
+                            conn, "decisions", "decisions", "Decisions",
+                            "decision", text, module))
                 value = {"recorded": True, "module": module, "text": text}
                 return value, _pretty(value)
             if name == "irag_resolve_contradiction":
                 cid = int(args.get("id", 0))
-                row = (linter.undo_resolve(conn, cid) if args.get("undo")
-                       else linter.resolve(conn, cid, args.get("notes") or
-                                           "dismissed through MCP"))
+                row = self._locked(
+                    "change contradiction status",
+                    lambda: (linter.undo_resolve(conn, cid)
+                             if args.get("undo") else
+                             linter.resolve(
+                                 conn, cid, args.get("notes") or
+                                 "dismissed through MCP")))
                 value = {"id": cid, "subject": row["subject_id"],
                          "reopened": bool(args.get("undo")),
                          "page_unchanged": True}
@@ -222,12 +308,21 @@ class MCPServer:
                           f"mcp-{uuid.uuid4().hex[:20]}")[:500]
                 agent = str(args.get("agent") or client_name or
                             self.client_name)[:200]
-                sid = sessions.begin(conn, agent=agent, key=key)
+                task = str(args.get("task") or "")[:500] or None
+                sid = self._locked(
+                    "start session",
+                    lambda: sessions.begin(
+                        conn, agent=agent, key=key, root=self.root, task=task))
                 # Legacy stdio clients keep one process/session. Modern MCP
                 # clients receive this key as an explicit handle and pass it
                 # back, so correctness does not depend on process affinity.
                 self.session_key = key
-                value = {"session_id": sid, "session_key": key, "agent": agent}
+                scope = conn.execute(
+                    "SELECT task_label,branch_name,worktree_path,head_sha "
+                    "FROM sessions WHERE session_id=?", (sid,)).fetchone()
+                value = {"session_id": sid, "session_key": key, "agent": agent,
+                         "task": scope["task_label"], "branch": scope["branch_name"],
+                         "worktree": scope["worktree_path"], "head": scope["head_sha"]}
                 return value, _pretty(value)
             if name == "irag_finish_session":
                 finish_key = call_key
@@ -235,9 +330,11 @@ class MCPServer:
                     raise ValueError(
                         "session_key is required unless this legacy MCP "
                         "process started the session")
-                value = sessions.end(conn, cfg,
-                                     narrate=bool(args.get("narrate", True)),
-                                     key=finish_key)
+                value = self._locked(
+                    "finish session",
+                    lambda: sessions.end(
+                        conn, cfg, narrate=bool(args.get("narrate", True)),
+                        key=finish_key))
                 if finish_key == self.session_key:
                     self.session_key = None
                 return value or {"closed": False}, _pretty(value or {})
@@ -418,7 +515,24 @@ def _version() -> str:
 def serve_stdio(root: Path) -> None:
     """Read and write newline-delimited JSON-RPC without stdout pollution."""
     server = MCPServer(root)
-    for raw in sys.stdin.buffer:
+    stream = sys.stdin.buffer
+    while True:
+        raw = stream.readline(MAX_REQUEST_BYTES + 1)
+        if not raw:
+            break
+        if len(raw) > MAX_REQUEST_BYTES:
+            # readline's limit can stop in the middle of a frame. Drain the
+            # remainder so the next iteration starts at a real JSON-RPC line.
+            while raw and not raw.endswith(b"\n"):
+                raw = stream.readline(MAX_REQUEST_BYTES + 1)
+            too_large_response = _error(
+                None, -32600,
+                f"request exceeds the {MAX_REQUEST_BYTES}-byte limit")
+            sys.stdout.write(json.dumps(
+                too_large_response, separators=(",", ":"),
+                ensure_ascii=False) + "\n")
+            sys.stdout.flush()
+            continue
         try:
             message = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
