@@ -40,6 +40,7 @@ BASE = "https://karang1908.github.io/irag/"
 # (slug, sidebar title, source path relative to repo root)
 PAGES = [
     ("quickstart", "Quickstart", "irag/assets/docs/QUICKSTART.md"),
+    ("mcp", "Connect with MCP", "docs/MCP.md"),
     ("setup", "Setup Guide", "docs/SETUP.md"),
     ("architecture", "Architecture", "docs/ARCHITECTURE.md"),
     ("cli-reference", "CLI Reference", "docs/CLI_REFERENCE.md"),
@@ -51,7 +52,7 @@ PAGES = [
 # NOTE: docs/HANDOFF.md is deliberately NOT published — it is the
 # internal handoff for AI agents developing irag itself, not user docs.
 SECTIONS = [
-    ("Using irag", ["quickstart", "setup", "cli-reference"]),
+    ("Using irag", ["quickstart", "mcp", "setup", "cli-reference"]),
     ("Understanding it", ["architecture", "comparison", "story"]),
     ("Contributing", ["development", "changelog"]),
 ]
@@ -103,7 +104,8 @@ MD_LINK_MAP = {Path(src).name: slug for slug, _t, src in PAGES}
 # ---------------------------------------------------------------------
 def esc(s: str) -> str:
     return (s.replace("&", "&amp;").replace("<", "&lt;")
-             .replace(">", "&gt;"))
+             .replace(">", "&gt;").replace('"', "&quot;")
+             .replace("'", "&#39;"))
 
 
 # build-time syntax highlighting for the languages the docs actually use
@@ -272,7 +274,7 @@ def md_to_html(src: str, rel: str) -> tuple[str, list, str]:
                 i += 1
             close_lists()
             close_quote()
-            html_rows = []
+            html_rows: list[str] = []
             header_done = False
             for r in rows:
                 if re.match(r"^\|[\s:|-]+\|$", r):
@@ -561,6 +563,7 @@ def landing() -> str:
 <a class="side-brand" href="index.html">{LOGO}<b>irag</b></a>
 <nav aria-label="Site">
 <a class="nav-sec" href="#why">Why</a>
+<a class="nav-sec" href="#connect">Connect</a>
 <a class="nav-sec" href="#how">How</a>
 <a href="docs/quickstart/">Docs</a>
 <a href="docs/changelog/">Changelog</a>
@@ -572,12 +575,12 @@ def landing() -> str:
 <nav class="rail" id="rail" aria-label="Sections"></nav>
 <section class="hero">
 <div class="hero-copy">
-<p class="eyebrow hero-eyebrow">Pluggable memory for AI coding agents</p>
 <h1 class="hero-name" aria-label="irag"><span>i</span><span>r</span><span>a</span><span>g</span><span class="hn-dot">.</span></h1>
-<p class="lede">Your coding agent re-reads your codebase every session,
-and you pay for it every time. <b>irag pays that cost once, writes it
-down, and hands it back for free</b> — one SQLite file in your repo,
-fact-checked against your real code so it can never quietly lie.</p>
+<p class="lede"><b>Give every coding agent the same second brain — and give
+yourself a command center for the entire project.</b> irag remembers the whole
+codebase, proves its checkable claims against the real source, audits the code,
+and turns live market evidence into grounded product thinking. Codex today,
+Claude tomorrow, Cursor after lunch — the project never forgets.</p>
 <div class="cta">
 <a class="btn primary" href="docs/quickstart/">Get started</a>
 <a class="btn ghost" href="{GITHUB}" target="_blank" rel="noopener">GitHub ↗</a>
@@ -594,13 +597,13 @@ fact-checked against your real code so it can never quietly lie.</p>
 or trace a claim: those paths never call a model</span></div>
 <div class="stat"><b data-cnt="87" data-pre="~">~87</b><span>tokens to
 resume any past conversation, with its per-file changes</span></div>
-<div class="stat"><b data-cnt="1" data-suf=" file">1 file</b><span>the
-entire memory: SQLite, inside your repo, mounts anywhere</span></div>
+<div class="stat"><b data-cnt="16" data-suf=" tools">16 tools</b><span>one
+standard MCP contract, identical in every connected coding agent</span></div>
 <div class="stat"><b data-cnt="0">0</b><span>runtime dependencies,
-services, or API keys</span></div>
+services, or required API keys</span></div>
 </section>
 <section class="sec" id="why">
-<h2 class="sec-t">Context files rot. Databases don't.</h2>
+<h2 class="sec-t">Your agent forgets. Your project does not have to.</h2>
 <div class="why-cols">
 <p>Every coding agent ships the same fix for amnesia: a markdown file it
 re-reads at startup. Claims go stale, nobody notices, and the agent keeps
@@ -629,6 +632,51 @@ calls (pluggable: point them at a free-quota model), it needs Python
 3.11+, and the linter verifies checkable claims (paths, symbols,
 versions), not opinions. <a href="docs/comparison/">Full comparison →</a></p>
 </section>
+<section class="sec" id="connect">
+<h2 class="sec-t">One project brain. Every coding agent.</h2>
+<div class="why-cols">
+<p><b><code>irag mcp</code> is a real Model Context Protocol server, not a
+Claude-specific adapter.</b> Every client gets the same context, search, map,
+impact, provenance, contradiction, update, lesson, decision, and session
+tools — backed by the same SQLite file.</p>
+<p>Switch tools without starting over. Run Codex and Claude in parallel
+without mixing their session history. Read operations never call a model;
+mutations share one repository lock so two agents cannot publish half an
+update.</p>
+</div>
+<div class="term reveal tilt" role="img" aria-label="Connect Codex and Claude Code to the same irag MCP server">
+<div class="term-bar" aria-hidden="true"><span class="tb"></span><span class="tb"></span><span class="tb"></span><span class="term-title">connect once</span></div>
+<pre class="term-body">codex mcp add irag -- irag mcp --root /absolute/project
+claude mcp add --scope project irag -- irag mcp --root /absolute/project
+
+✓ 16 tools · same memory · live evidence · isolated sessions</pre>
+</div>
+<p class="fineprint"><a href="docs/mcp/">Connect Cursor, Windsurf, VS Code, or any MCP client →</a></p>
+</section>
+<section class="sec" id="intelligence">
+<h2 class="sec-t">One machine remembers. One audits. One helps you decide what to build next.</h2>
+<div class="why-cols">
+<p><b>Main Summary is the whole project on one living page.</b> Not a vague
+executive abstract: every current file, folder, decision, and lesson in full,
+beside drift, contradictions, sessions, and audit state. Structural truth
+refreshes automatically and stale prose says that it is stale.</p>
+<p><b>Code Audit turns review risk into evidence.</b> It maps APIs, finds
+dependency cycles, checks exact package versions against OSV, redacts suspected
+secrets, and attaches file, line, confidence, and remediation to every finding.
+The live API checker cannot wander beyond loopback or follow a redirect.</p>
+</div>
+<div class="term reveal tilt" role="img" aria-label="irag developer intelligence workspace">
+<div class="term-bar" aria-hidden="true"><span class="tb"></span><span class="tb"></span><span class="tb"></span><span class="term-title">thinking studio</span></div>
+<pre class="term-body">REPO   verified memory · current diff · latest audit
+WEB    Brave / Tavily / SearXNG / DuckDuckGo · URL + retrieval time
+MODES  code review · product · business · marketing · creative
+
+→ sourced conversation + five concrete experiments + durable idea board</pre>
+</div>
+<p class="fineprint">Current trend claims require live sources. Search failure
+is disclosed. Repository text and web snippets are treated as untrusted data,
+never as instructions.</p>
+</section>
 <section class="showcase" id="showcase" aria-label="irag turns your files into a graph">
 <div class="sc-sticky">
 <div class="sc-cap">
@@ -644,20 +692,20 @@ agent queries instead of re-reading your tree, instantly and for zero tokens.</p
 </div>
 </section>
 <section class="sec" id="how">
-<h2 class="sec-t">Three actors. One loop.</h2>
+<h2 class="sec-t">Memory in. Work happens. Truth comes back.</h2>
 <div class="pipe">
 <em class="pd1" aria-hidden="true"></em><em class="pd2" aria-hidden="true"></em>
 <div class="pipe-col reveal">
 <p class="mono-cap">reads · zero tokens</p>
 <h3>Your agent</h3>
-<p>Claude Code, Cursor, Codex: starts every session already briefed,
-through SQL. It never greps to remember.</p>
+<p>Codex, Claude Code, Cursor, Windsurf, or the next tool: starts with the
+same ranked context through MCP. No fresh-chat amnesia.</p>
 </div>
 <div class="pipe-col mid reveal">
 <p class="mono-cap">the memory</p>
 <h3>irag</h3>
-<p>One SQLite file in your repo. Versions every page, logs every session,
-fact-checks every claim. Never calls a model itself.</p>
+<p>One SQLite file in your repo. Versions every page, logs isolated sessions,
+fact-checks checkable claims, and remembers renames. Reads call no model.</p>
 </div>
 <div class="pipe-col reveal">
 <p class="mono-cap">writes · cheap quota</p>
@@ -672,45 +720,54 @@ model, so bookkeeping never touches your agent's limits.</p>
 </div>
 </section>
 <section class="sec" id="built">
-<h2 class="sec-t">Built like a database, because it is one.</h2>
+<h2 class="sec-t">This is infrastructure, not another prompt file.</h2>
 <ol class="featlist">
-<li class="reveal"><h3>Pluggable memory</h3>
-<p>One <code>pip install</code>, one <code>irag init</code>. The whole
-memory is a single SQLite file in your repo: no service, no cloud, no
-keys. Unplug it, move it, mount it from any agent on any machine.</p></li>
+<li class="reveal"><h3>One MCP brain for every agent</h3>
+<p>Sixteen standard tools. The same names, schemas, results, lock, and
+database in Codex, Claude, Cursor, Windsurf, VS Code, and any MCP client.</p></li>
 <li class="reveal"><h3>Your agent never greps again</h3>
 <p>Search, code map, blast radius, and context come from SQL, not from
 the model re-reading your tree.</p></li>
-<li class="reveal"><h3>Memory that can't quietly lie</h3>
-<p>The only memory tool that fact-checks its own claims against your
-code, records what's wrong, and fails CI while memory and code
-disagree.</p></li>
-<li class="reveal"><h3>Reads cost ~nothing</h3>
-<p>A ~3k-token briefing replaces 20–100k tokens of re-exploration,
-and writes go on whatever cheap or free model you point at it.</p></li>
+<li class="reveal"><h3>Contradictions arrive ready to fix</h3>
+<p>Open one issue or a master HTML repair packet: claim, truth, source-grounded
+context, and a complete prompt you can hand straight to a coding agent.</p></li>
+<li class="reveal"><h3>Choose the cheapest writer</h3>
+<p>Explicit adapters for Claude, Codex, agy, Ollama, and custom CLIs normalize
+retries and output while recording model, latency, tokens, and optional cost.</p></li>
+<li class="reveal"><h3>Upgrades that respect the only copy of your memory</h3>
+<p>Ordered migrations create an automatic backup first, record their history,
+and refuse a downgrade instead of gambling with newer data.</p></li>
+<li class="reveal"><h3>Large repositories stop paying the full-scan tax</h3>
+<p>Content edits reparse only changed source files. Topology changes stay
+conservative, and renames keep their complete revision lineage.</p></li>
+<li class="reveal"><h3>Live updates that survive the tab</h3>
+<p>Every dashboard run has a durable job ID, SQLite-backed progress, and an SSE
+stream that reconnects after refresh instead of losing the operation.</p></li>
 <li class="reveal"><h3>Every chat resumes where the last ended</h3>
-<p>A ~150-token recap of what previous sessions did and changed,
-injected automatically.</p></li>
-<li class="reveal"><h3>Works with every agent</h3>
-<p>Claude Code hooks make it fully automatic; the generated
-<code>AGENTS.md</code> reaches Codex, Antigravity, and Cursor. Git is
-optional.</p></li>
+<p>Isolated session diaries retain changed behavior, decisions, invariants,
+failures, validation, and the exact per-file revision trail.</p></li>
+<li class="reveal"><h3>Live trends without pretending the model is current</h3>
+<p>Every external result keeps its URL and retrieval time. Search failure stays
+visible, and current claims never quietly fall back to model memory.</p></li>
+<li class="reveal"><h3>A complete summary that refuses to summarize things away</h3>
+<p>Every live memory page appears in full beside drift, audit, contradictions,
+and sessions — searchable, filterable, and continuously refreshed.</p></li>
 </ol>
 </section>
 <section class="sec" id="proof">
 <h2 class="sec-t">Measured, not claimed.</h2>
-<p class="lede">Run on irag's own source: 22 modules, 9,056 lines. The read
+<p class="lede">Run on irag's own source. The read
 path costs nothing because nothing on it calls a model, which is a
 property of the architecture rather than a benchmark you have to trust.</p>
 <div class="proof">
-<div class="pf"><b>259 symbols · 83 edges</b><span>full structural scan
-in 0.12s, zero tokens</span></div>
+<div class="pf"><b>0 model calls</b><span>for search, context, code maps,
+blast radius, provenance, and contradiction reads</span></div>
 <div class="pf"><b>13 modules</b><span>blast radius of one file,
 transitive, parsed from the code</span></div>
 <div class="pf"><b>~87 tokens</b><span>to resume a past conversation with
 its per-file changes</span></div>
-<div class="pf"><b>0 dependencies</b><span>stdlib only, one SQLite file,
-Ruff + mypy clean</span></div>
+<div class="pf"><b>3 native operating systems</b><span>focused protocol and
+storage tests on Linux, macOS, and Windows</span></div>
 </div>
 <p class="lede">One command runs the whole lifecycle end-to-end: ingest,
 synthesize, fact-check, CI gate, rollback, sessions, dashboard API,
