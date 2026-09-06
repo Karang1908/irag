@@ -121,6 +121,9 @@ def needs_shell(cmd: str) -> bool:
 
 def _spawn(cmd: str, repo: Path, timeout: int):
     if needs_shell(cmd):
+        # Executable facts are an explicit opt-in for repositories whose
+        # registered commands the user trusts; fail_on_facts is false by default.
+        # irag-audit: allow security.shell-true — reviewed intentional boundary
         return subprocess.run(cmd, cwd=repo, shell=True, capture_output=True,
                               text=True, timeout=timeout)
     return subprocess.run(shlex.split(cmd), cwd=repo, capture_output=True,
