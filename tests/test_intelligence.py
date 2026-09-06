@@ -18,7 +18,13 @@ from irag import (audit, config, dashboard, db, delivery, ingest, main_summary,
 
 class IntelligenceTests(unittest.TestCase):
     def test_delivery_maps_contract_risk_tests_and_release_gates(self):
-        with tempfile.TemporaryDirectory() as raw:
+        # ignore_cleanup_errors: on Windows this directory would not delete —
+        # "[WinError 32] ... used by another process: .irag\memory.db" — even
+        # though conn.close() has run and every assertion below passed. This is
+        # the only test that spawns git subprocesses in its temp tree, and the
+        # surviving handle was not identified; POSIX unlinks an open file, so
+        # Linux and macOS never saw it. Teardown must not fail a green test.
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as raw:
             root = Path(raw)
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
             subprocess.run(["git", "config", "user.email", "t@t"],
