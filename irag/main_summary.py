@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from . import audit, stats, structure
+from . import audit, delivery, stats, structure
 
 
 def build(conn: sqlite3.Connection, cfg: dict, root: Path) -> dict[str, Any]:
@@ -77,6 +77,8 @@ def build(conn: sqlite3.Connection, cfg: dict, root: Path) -> dict[str, Any]:
             "files_scanned": latest_audit.get("files_scanned", 0),
             "recommendations": latest_audit.get("recommendations", []),
         }
+    trust = _trust_signals(pages, contradictions, sessions, latest_audit,
+                           status, cfg)
     return {
         "project": root.name or str(root),
         "root": str(root),
@@ -90,8 +92,81 @@ def build(conn: sqlite3.Connection, cfg: dict, root: Path) -> dict[str, Any]:
         "contradictions": contradictions,
         "sessions": sessions,
         "latest_audit": audit_summary,
+        "trust": trust,
+        "workspace": delivery.workspace(root),
         "freshness_note": (
             "Repository structure and drift are refreshed on this view. "
             "Prose pages with staleness at or above the configured threshold "
             "need Update before their narrative is current."),
+    }
+
+
+def _trust_signals(pages: list[dict[str, Any]], contradictions: list[dict],
+                   sessions: list[dict], latest_audit: dict[str, Any] | None,
+                   status: dict[str, Any], cfg: dict) -> dict[str, Any]:
+    """Expose why the current project memory deserves—or lacks—confidence."""
+    total = len(pages)
+    written = sum(1 for page in pages if page.get("version_number") is not None)
+    current = sum(1 for page in pages if page.get("current"))
+    sourced = sum(1 for page in pages
+                  if page.get("revision_created_at") and
+                  (page.get("change_summary") or page.get("llm_model_used") == "human"))
+    average = (sum(float(page.get("confidence") or 0) for page in pages) / total
+               if total else 0.0)
+    coverage_ratio = written / total if total else 0.0
+    current_ratio = current / total if total else 0.0
+    source_ratio = sourced / total if total else 0.0
+    high = sum(1 for row in contradictions if row.get("severity") == "high")
+    medium = sum(1 for row in contradictions if row.get("severity") == "medium")
+    audit_counts = (latest_audit or {}).get("counts") or {}
+    audit_critical = int(audit_counts.get("critical") or 0)
+    audit_high = int(audit_counts.get("high") or 0)
+    audit_medium = int(audit_counts.get("medium") or 0)
+    audit_penalty = min(25, audit_critical * 15 + audit_high * 8 +
+                        audit_medium * 2)
+    audit_points = (10 if latest_audit and not latest_audit.get("stale")
+                    else 4 if latest_audit else 0)
+    score = round(
+        coverage_ratio * 20 + current_ratio * 30 + source_ratio * 10 +
+        min(1.0, average) * 20 + audit_points +
+        max(0, 10 - high * 5 - medium * 2) - audit_penalty)
+    score = max(0, min(100, score))
+    issues = []
+    if not total:
+        issues.append("No live memory pages exist yet")
+    elif written < total:
+        issues.append(f"{total - written} live page(s) have no generated summary")
+    if status.get("pages_due"):
+        issues.append(f"{status['pages_due']} page(s) need synthesis")
+    if status.get("drifted_files"):
+        issues.append(f"{len(status['drifted_files'])} file(s) changed after memory was written")
+    if contradictions:
+        issues.append(f"{len(contradictions)} unresolved contradiction(s)")
+    if not latest_audit:
+        issues.append("No code-audit baseline exists")
+    elif latest_audit.get("stale"):
+        issues.append("The latest code audit is stale")
+    if audit_critical or audit_high:
+        issues.append(
+            f"{audit_critical + audit_high} open critical/high audit finding(s)")
+    completed = [row for row in sessions if row.get("status") != "open"]
+    missing_ledger = sum(1 for row in completed if not row.get("critical_context"))
+    if missing_ledger:
+        issues.append(f"{missing_ledger} older session(s) lack a lossless critical-context ledger")
+    label = "strong" if score >= 85 else "usable" if score >= 65 else "needs attention"
+    return {
+        "score": score, "label": label, "issues": issues,
+        "signals": {
+            "summary_coverage": round(coverage_ratio * 100),
+            "current_pages": round(current_ratio * 100),
+            "traceable_pages": round(source_ratio * 100),
+            "average_page_confidence": round(average * 100),
+            "audit_current": bool(latest_audit and not latest_audit.get("stale")),
+            "open_audit_critical": audit_critical,
+            "open_audit_high": audit_high,
+            "contradictions": len(contradictions),
+            "staleness_threshold": int(cfg.get("staleness", {}).get("threshold", 1)),
+        },
+        "meaning": ("A deterministic health indicator, not a claim that generated "
+                    "prose is correct. Inspect sources and contradictions for high-risk work."),
     }
