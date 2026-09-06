@@ -81,6 +81,12 @@ Core relations plus an FTS5 inverted index:
   log, timestamps, and terminal error; streamed to the browser through SSE
 - **llm_runs** — provider/model, token estimates, latency, retry count,
   status, and optional user-rate-based cost for every model invocation
+- **audit_runs** — immutable defensive-scan snapshots: source fingerprint,
+  coverage, counts, duration, and the complete redacted JSON report
+- **studio_messages** — durable user/assistant Thinking Studio messages with
+  mode and the exact source records attached to each answer
+- **studio_ideas** — persistent recommendation cards with mode, markdown body,
+  source records, and active/archived state
 - **facts** — executable memory: a `claim` plus the `cmd` that
   demonstrates it, an expected substring and/or exit code, and the last
   run's status. The only relation whose contents irag can *re-establish*
@@ -144,12 +150,38 @@ and contradiction lineage.
 
 `irag.mcp` is a newline-delimited JSON-RPC stdio server that maps standard MCP
 tool calls onto the same library functions used by the CLI and dashboard. It
-supports negotiated stable protocol versions, JSON Schema tool discovery,
-tool annotations, and both text and structured results. There is no
-client-specific branch: every MCP client receives the same tool names and
-operates on the same SQLite file. Mutating tools use the repository lock, and
-an MCP process owns an explicit diary key so concurrent clients cannot
-cross-attribute work.
+supports the legacy 2024–2025 handshake era and stateless `2026-07-28`
+discovery/per-request metadata era, JSON Schema tool discovery, annotations,
+and both text and structured results. There is no client-specific branch:
+every MCP client receives the same tool names and operates on the same SQLite
+file. Full refresh/update operations use the repository lock; smaller appends
+use the core transaction boundaries. Legacy processes retain a diary key for
+convenience; modern clients carry the explicit key returned by
+`irag_start_session`, so attribution does not depend on process affinity.
+
+The server publishes the same complete-project summary, defensive audit, and
+source-preserving live web search used by the dashboard. Web search and OSV are
+annotated open-world reads; the memory tools remain local and deterministic.
+
+### Developer intelligence surfaces
+
+The **Main Summary** is a deterministic join over all live current revisions,
+status, contradictions, recent sessions, and the latest audit. Its structural
+fingerprint and drift refresh at read time; stale prose is labeled rather than
+silently rewritten through an LLM.
+
+The **Code Audit** walks a bounded, ignore-aware source set. It performs AST
+checks where available, conservative text checks elsewhere, route discovery,
+dependency-cycle analysis, lockfile parsing, and optional batched OSV queries.
+Evidence is redacted before report persistence. Its live API checker accepts
+only loopback hosts, discovered parameter-free read routes, bounded concurrency,
+short timeouts, and no redirects.
+
+The **Thinking Studio** retrieves project memory and latest audit state, adds
+the current Git diff for code-review mode, and optionally adds live search
+results. All evidence blocks are explicitly treated as untrusted data in the
+model prompt. Repo paths and `[W#]` web citations use separate namespaces;
+failed research is surfaced rather than replaced with a claim of recency.
 
 ## Data flows
 
@@ -160,7 +192,10 @@ every folder (including the root `.`) has a `folder` page that rolls up
 its direct children. Change events target file pages and bump ancestor
 folders at half weight; synthesis runs file pages first, then folders
 deepest-first, so each folder prompt reads fresh child summaries — the
-root page is a summary of summaries. Ignoring: [modules].ignore segments,
+root page is a summary of summaries. Child evidence is section-balanced and
+bounded rather than prefix-truncated, so late invariants, failure/security
+behavior, connections, and recent changes remain available to the parent.
+Ignoring: [modules].ignore segments,
 `.iragignore` patterns (names/prefixes/globs), hidden paths, and binary
 extensions.
 
