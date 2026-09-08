@@ -667,6 +667,7 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
 .settings-more summary{cursor:pointer;color:var(--text-dim);font-size:var(--fs-xs);width:max-content}
 .settings-more[open] summary{color:var(--text);margin-bottom:var(--sp-3)}
 .settings-more .settings-form{margin:0;padding:0;border:0}
+.settings-more.full,.check-label.full,.privacy-note.full{grid-column:1/-1}
 .config-state{font:var(--fs-2xs) var(--mono);color:var(--text-dim)}
 .config-state.ok{color:var(--green)}.config-state.bad{color:var(--red)}
 .privacy-note{font-size:var(--fs-2xs);color:var(--text-faint);line-height:1.5}
@@ -802,10 +803,64 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
   padding:3px 11px;color:var(--text-dim);cursor:pointer;font-size:var(--fs-2xs)}
 .file-action:hover{color:var(--text);border-color:var(--text-dim)}.file-action input{position:absolute;width:1px;height:1px;opacity:0}
 
+/* ---------- application proof ---------- */
+.proof-config{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-3)}
+.proof-config textarea{width:100%;min-height:92px;resize:vertical;background:var(--bg-inset);
+  border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);
+  padding:9px 10px;font:var(--fs-xs)/1.5 var(--mono)}
+.proof-config textarea:focus{border-color:var(--accent-ring);outline:none}
+.proof-options{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:var(--sp-3);
+  padding-top:var(--sp-2);border-top:1px solid var(--border)}
+.proof-actions{grid-column:1/-1;display:flex;align-items:center;gap:var(--sp-3);flex-wrap:wrap}
+.proof-actions progress{width:min(220px,100%);height:6px;accent-color:var(--accent)}
+.proof-warning{grid-column:1/-1;background:var(--orange-dim);border:1px solid var(--orange-bd);
+  border-radius:var(--r-md);padding:10px 12px;color:#f1c77e;font-size:var(--fs-xs)}
+.proof-suggestions{display:flex;flex-wrap:wrap;gap:var(--sp-2);margin-top:var(--sp-2)}
+.proof-suggestions button{max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.proof-ledger{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;
+  background:var(--border);border-top:1px solid var(--border);border-bottom:1px solid var(--border);
+  margin:var(--sp-4) 0}
+.proof-ledger>div{background:var(--bg);padding:13px 15px;min-width:0}
+.proof-ledger b{display:block;font:600 var(--fs-xl) var(--display);font-variant-numeric:tabular-nums}
+.proof-ledger span{font:var(--fs-2xs) var(--mono);color:var(--text-faint);text-transform:uppercase}
+.proof-ledger .passed b{color:var(--green)}.proof-ledger .failed b{color:var(--red)}
+.proof-ledger .blocked b,.proof-ledger .untested b{color:var(--orange)}
+.proof-flow{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border:1px solid var(--border);
+  border-radius:var(--r-md);overflow:hidden;margin:var(--sp-3) 0}
+.proof-stage{position:relative;padding:12px 14px;background:var(--bg-inset);min-width:0}
+.proof-stage+.proof-stage{border-left:1px solid var(--border)}
+.proof-stage+.proof-stage::before{content:"";position:absolute;left:-4px;top:22px;width:7px;height:7px;
+  border-top:1px solid var(--accent);border-right:1px solid var(--accent);transform:rotate(45deg);background:var(--bg-inset)}
+.proof-stage b{display:block;font-size:var(--fs-xs);margin-bottom:3px}
+.proof-stage span{display:block;font:var(--fs-2xs)/1.45 var(--mono);color:var(--text-faint);overflow-wrap:anywhere}
+.proof-toolbar{display:flex;align-items:center;gap:var(--sp-2);flex-wrap:wrap;margin-bottom:var(--sp-3)}
+.proof-toolbar input{min-width:220px;flex:1;background:var(--bg-inset);border:1px solid var(--border);
+  border-radius:var(--r-sm);color:var(--text);padding:8px 10px;font:var(--fs-xs) var(--sans)}
+.proof-checks{display:flex;flex-direction:column;max-height:640px;overflow:auto}
+.proof-check{display:grid;grid-template-columns:82px 120px minmax(0,1fr) auto;gap:var(--sp-3);
+  padding:10px 2px;border-top:1px solid var(--border);align-items:start;font-size:var(--fs-xs)}
+.proof-check:first-child{border-top:0}.proof-check .outcome{font:700 var(--fs-2xs) var(--mono);text-transform:uppercase}
+.proof-check .outcome.passed{color:var(--green)}.proof-check .outcome.failed{color:var(--red)}
+.proof-check .outcome.blocked,.proof-check .outcome.untested{color:var(--orange)}
+.proof-check .outcome.excluded{color:var(--text-faint)}.proof-check .kind{font:var(--fs-2xs) var(--mono);color:var(--text-faint)}
+.proof-check .target{display:block;color:var(--text);font-weight:600;overflow-wrap:anywhere}
+.proof-check .detail{display:block;color:var(--text-dim);margin-top:2px;overflow-wrap:anywhere}
+.proof-check .duration{font:var(--fs-2xs) var(--mono);color:var(--text-faint);white-space:nowrap}
+.proof-packet{display:flex;flex-direction:column}.proof-packet-row{padding:9px 0;border-top:1px solid var(--border)}
+.proof-packet-row:first-child{border-top:0}.proof-packet-row b{display:block;font-size:var(--fs-xs);overflow-wrap:anywhere}
+.proof-packet-row span{display:block;font-size:var(--fs-2xs);color:var(--text-dim);margin-top:2px;overflow-wrap:anywhere}
+.proof-history{display:flex;flex-direction:column}.proof-history-row{display:grid;grid-template-columns:58px 80px 100px minmax(0,1fr) auto;
+  gap:var(--sp-2);align-items:center;padding:8px 2px;border-top:1px solid var(--border);font:var(--fs-2xs) var(--mono)}
+.proof-history-row:first-child{border-top:0}.proof-status{font-weight:700}.proof-status.proven{color:var(--green)}
+.proof-status.failed{color:var(--red)}.proof-status.incomplete{color:var(--orange)}
+.proof-status.passed{color:var(--green)}.proof-status.blocked,.proof-status.untested{color:var(--orange)}
+.proof-status.excluded{color:var(--text-faint)}
+
 @media (max-width:1100px) and (min-width:761px){
   .provider-choices{grid-template-columns:repeat(3,minmax(0,1fr))}
   .settings-form{grid-template-columns:repeat(2,minmax(0,1fr))}
   .studio-layout{grid-template-columns:minmax(0,1fr) 310px}
+  .proof-config{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
 @media (max-width:760px){
   .provider-choices{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -829,6 +884,15 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
   .ver-row.compact .vs{grid-column:2;grid-row:1}
   .ver-row.compact .vt{grid-column:2;grid-row:2}
   .prov-row,.doc-row{grid-template-columns:1fr}}
+@media (max-width:760px){
+  .proof-config,.proof-flow{grid-template-columns:minmax(0,1fr)}
+  .proof-config .field.wide{grid-column:1}.proof-ledger{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .proof-stage+.proof-stage{border-left:0;border-top:1px solid var(--border)}
+  .proof-stage+.proof-stage::before{display:none}
+  .proof-check{grid-template-columns:72px minmax(0,1fr)}
+  .proof-check .kind{grid-column:2}.proof-check>div{grid-column:1/-1}.proof-check .duration{grid-column:2}
+  .proof-history-row{grid-template-columns:46px 70px minmax(0,1fr)}
+  .proof-history-row span:nth-child(4){grid-column:1/-1}.proof-history-row .mini{grid-column:3}}
 </style>
 </head>
 <body>
@@ -850,6 +914,7 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
       <button data-tab="overview" aria-label="Overview" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg><span>Overview</span></button>
       <button data-tab="summary" aria-label="Main Summary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v16H4z"/><path d="M8 8h8M8 12h8M8 16h5"/></svg><span>Main Summary</span></button>
       <button data-tab="audit" aria-label="Code Audit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v5.5c0 4.6 3.2 7.9 7.5 9.5 4.3-1.6 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2 2 4-5"/></svg><span>Code Audit</span></button>
+      <button data-tab="proof" aria-label="App Proof"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H4z"/><path d="M8 20h8M12 16v4"/><path d="m8 10 2.3 2.3L16 7"/></svg><span>App Proof</span></button>
       <button data-tab="studio" aria-label="Thinking Studio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M8.4 14.6A7 7 0 1 1 15.6 14.6C14.6 15.3 14 16.1 14 17h-4c0-.9-.6-1.7-1.6-2.4Z"/><path d="M12 5v2M6.8 7.2l1.4 1.4M17.2 7.2l-1.4 1.4"/></svg><span>Thinking Studio</span></button>
       <button data-tab="chat" aria-label="Chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>Chat</span></button>
       <button data-tab="pages" aria-label="Pages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg><span>Pages</span></button>
@@ -1024,6 +1089,48 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
         <div id="audit-recommendations"></div>
       </div>
     </div>
+  </section>
+
+  <section id="proof">
+    <h2 class="page-title">App Proof</h2>
+    <div class="page-sub">Trace frontend calls into backend routes, crawl reachable pages and links within your limits, check APIs, collect browser evidence, run your tests, and stress read-only paths. The report shows what passed and what still needs verification.</div>
+
+    <div class="panel" style="margin-bottom:var(--sp-4)">
+      <div class="panel-heading"><h3>Proof profile <span class="pill">loopback only · durable per project</span></h3><span class="config-state" id="proof-save-state">Loading profile…</span></div>
+      <form id="proof-form" class="proof-config">
+        <div class="field wide"><label for="proof-base">Local application URL</label><input id="proof-base" type="url" placeholder="http://127.0.0.1:3000" required></div>
+        <div class="field"><label for="proof-health">Readiness path</label><input id="proof-health" placeholder="/health" required></div>
+        <div class="field"><label for="proof-mode">Proof depth</label><select id="proof-mode"><option value="quick">Quick · contracts + HTTP</option><option value="full">Full · browser + tests</option><option value="stress">Stress · full + load</option></select></div>
+        <div class="field wide"><label for="proof-start">Start command</label><input id="proof-start" placeholder="npm run dev" autocomplete="off"></div>
+        <div class="field wide"><label for="proof-auth">Authorization environment variable</label><input id="proof-auth" placeholder="IRAG_PROOF_AUTH" autocomplete="off"></div>
+        <div class="field full"><label for="proof-tests">Project test commands · one per line</label><textarea id="proof-tests" placeholder="npm test&#10;npm run test:e2e" spellcheck="false"></textarea><span class="privacy-note">Commands run directly without a shell in Full and Stress modes. Review them before saving; they have the same local permissions as iRAG.</span><div class="proof-suggestions" id="proof-suggestions"></div></div>
+        <details class="settings-more full"><summary>Coverage limits and timeouts</summary>
+          <div class="settings-form">
+            <div class="field"><label for="proof-timeout">Request timeout · sec</label><input id="proof-timeout" type="number" min="1" max="30"></div>
+            <div class="field"><label for="proof-start-timeout">Start timeout · sec</label><input id="proof-start-timeout" type="number" min="1" max="120"></div>
+            <div class="field"><label for="proof-pages">Maximum pages</label><input id="proof-pages" type="number" min="1" max="200"></div>
+            <div class="field"><label for="proof-controls">Maximum controls</label><input id="proof-controls" type="number" min="1" max="500"></div>
+            <div class="field"><label for="proof-requests">Stress requests</label><input id="proof-requests" type="number" min="1" max="1000"></div>
+            <div class="field"><label for="proof-concurrency">Stress concurrency</label><input id="proof-concurrency" type="number" min="1" max="32"></div>
+          </div>
+        </details>
+        <div class="proof-options">
+          <label class="check-label"><input id="proof-browser" type="checkbox"> Collect Playwright evidence</label>
+          <label class="check-label"><input id="proof-interact" type="checkbox"> Exercise clearly non-destructive controls</label>
+          <label class="check-label"><input id="proof-external" type="checkbox"> Check public external links</label>
+        </div>
+        <div class="proof-warning" id="proof-mode-warning">Quick mode discovers contracts, crawls pages, validates links, and executes parameter-free GET/HEAD routes. Browser controls and project tests remain untested.</div>
+        <label class="proof-warning check-label" id="proof-stress-confirm-wrap" hidden><input id="proof-stress-confirm" type="checkbox"> I confirm this bounded read-only stress run against the local application.</label>
+        <div class="proof-actions">
+          <button class="primary" id="proof-run" type="submit">Run quick proof</button>
+          <button class="mini" id="proof-save" type="button">Save profile</button>
+          <progress id="proof-progress" max="100" value="0" hidden></progress>
+          <span class="config-state" id="proof-job-state">No proof is running.</span>
+        </div>
+      </form>
+    </div>
+
+    <div id="proof-result"><div class="empty">Run App Proof while your local application is available. The first result becomes a durable evidence baseline.</div></div>
   </section>
 
   <section id="studio">
@@ -1410,11 +1517,12 @@ const IC={
 };
 
 /* ---------- tabs ---------- */
-const TITLES={overview:"Overview",summary:"Main Summary",audit:"Code Audit",studio:"Thinking Studio",chat:"Chat",pages:"Pages",viz:"Visualize",health:"Health",map:"Map",sessions:"Sessions",tools:"Delivery",docs:"Docs"};
+const TITLES={overview:"Overview",summary:"Main Summary",audit:"Code Audit",proof:"App Proof",studio:"Thinking Studio",chat:"Chat",pages:"Pages",viz:"Visualize",health:"Health",map:"Map",sessions:"Sessions",tools:"Delivery",docs:"Docs"};
 const perTab={
   overview:()=>{refreshStatus();refreshBurn();refreshFeed();loadSettings()},
   summary:refreshMainSummary,
   audit:refreshAudit,
+  proof:refreshProof,
   studio:refreshStudio,
   pages:refreshPages,
   viz:()=>VIZ.enter(),
@@ -1446,7 +1554,7 @@ addEventListener("hashchange",()=>{
 });
 document.querySelector('nav.tabs button.active')?.setAttribute("aria-current","page");
 /* keyboard: 1-9 switch tabs (ignored while typing) */
-const TAB_ORDER=["overview","summary","audit","studio","chat","pages","health","viz","map","sessions","tools","docs"];
+const TAB_ORDER=["overview","summary","audit","proof","studio","chat","pages","health","viz","map","sessions","tools","docs"];
 const typing=t=>t&&(t.tagName==="INPUT"||t.tagName==="TEXTAREA"||t.tagName==="SELECT"||t.isContentEditable);
 addEventListener("keydown",e=>{
   // ⌘K / Ctrl-K opens the palette from anywhere, including while typing
@@ -1484,6 +1592,7 @@ const VIEW_CMDS=TAB_ORDER.map(t=>({kind:"view",label:TITLES[t],tab:t}));
 const ACTION_CMDS=[
   {kind:"action",label:"Build / update memory",hint:"sync, synthesize, fact-check",run:()=>{switchTab("overview");runUpdate()}},
   {kind:"action",label:"Run deep code audit",hint:"security, APIs, dependencies",run:()=>{switchTab("audit");setTimeout(()=>$("#run-audit").click(),120)}},
+  {kind:"action",label:"Prove the full-stack application",hint:"contracts, pages, controls, APIs, browser, stress",run:()=>switchTab("proof")},
   {kind:"action",label:"Open complete project summary",hint:"every current memory page",run:()=>switchTab("summary")},
   {kind:"action",label:"Generate strategic recommendations",hint:"live web + project evidence",run:()=>{switchTab("studio");setTimeout(()=>$("#idea-generate").click(),120)}},
   {kind:"action",label:"Analyze current changes",hint:"risk, contracts, tests, release gates",run:()=>{switchTab("tools");setTimeout(()=>$("#delivery-form").requestSubmit(),120)}},
@@ -1723,6 +1832,190 @@ $("#api-check-form").onsubmit=async event=>{
     $("#api-check-results").innerHTML=data.checks.map(item=>`<div class="api-row"><span>${esc(item.method)}</span><span>${esc(item.path)}</span><span class="${esc(item.outcome)}">${esc(item.outcome)}</span><span>${item.status||"—"} · ${item.duration_ms}ms</span></div>`).join("");
   }catch(err){state.textContent=errorText(err);state.className="inline-msg bad"}finally{button.disabled=false}
 };
+
+/* ---------- App Proof: contracts → runtime → visible state ---------- */
+let _proofData=null,_proofBusy=false,_proofFormLoaded=false,_proofFormDirty=false;
+let _proofJobSource=null,_proofJobPoll=null,_proofJobId=null;
+let _proofRenderKey=null;
+const proofInputIds=["proof-base","proof-health","proof-mode","proof-start","proof-auth","proof-tests",
+  "proof-timeout","proof-start-timeout","proof-pages","proof-controls","proof-requests","proof-concurrency",
+  "proof-browser","proof-interact","proof-external"];
+proofInputIds.forEach(id=>["input","change"].forEach(type=>$("#"+id).addEventListener(type,()=>{_proofFormDirty=true})));
+
+function fillProofProfile(profile){
+  $("#proof-base").value=profile.base_url||"http://127.0.0.1:3000";
+  $("#proof-health").value=profile.health_path||"/";
+  $("#proof-start").value=profile.start_command||"";
+  $("#proof-auth").value=profile.auth_env||"";
+  $("#proof-tests").value=(profile.test_commands||[]).join("\n");
+  $("#proof-timeout").value=profile.request_timeout||5;
+  $("#proof-start-timeout").value=profile.start_timeout||30;
+  $("#proof-pages").value=profile.max_pages||60;
+  $("#proof-controls").value=profile.max_controls||200;
+  $("#proof-requests").value=profile.stress_requests||100;
+  $("#proof-concurrency").value=profile.stress_concurrency||8;
+  $("#proof-browser").checked=profile.browser_enabled!==false;
+  $("#proof-interact").checked=!!profile.allow_interactions;
+  $("#proof-external").checked=!!profile.check_external_links;
+  _proofFormLoaded=true;_proofFormDirty=false;updateProofMode();
+}
+function collectProofProfile(){
+  return {base_url:$("#proof-base").value.trim(),health_path:$("#proof-health").value.trim(),
+    start_command:$("#proof-start").value.trim(),auth_env:$("#proof-auth").value.trim(),
+    test_commands:$("#proof-tests").value.split("\n").map(v=>v.trim()).filter(Boolean),
+    request_timeout:Number($("#proof-timeout").value),start_timeout:Number($("#proof-start-timeout").value),
+    max_pages:Number($("#proof-pages").value),max_controls:Number($("#proof-controls").value),
+    stress_requests:Number($("#proof-requests").value),stress_concurrency:Number($("#proof-concurrency").value),
+    browser_enabled:$("#proof-browser").checked,allow_interactions:$("#proof-interact").checked,
+    check_external_links:$("#proof-external").checked};
+}
+function updateProofMode(){
+  const mode=$("#proof-mode").value,button=$("#proof-run"),warning=$("#proof-mode-warning");
+  button.textContent=mode==="quick"?"Run quick proof":mode==="full"?"Run full proof":"Run bounded stress proof";
+  warning.textContent=mode==="quick"
+    ?"Quick mode discovers contracts, crawls pages, validates links, and executes parameter-free GET/HEAD routes. Browser controls and project tests remain untested."
+    :mode==="full"
+      ?"Full mode adds Playwright evidence and each project test command above. Ambiguous, form, and destructive-looking controls still require a project-owned browser test."
+      :"Stress mode runs Full proof, then sends the configured bounded number of GET requests to at most ten loopback routes. It never follows redirects or calls mutating methods.";
+  $("#proof-stress-confirm-wrap").hidden=mode!=="stress";
+  if(mode!=="stress")$("#proof-stress-confirm").checked=false;
+  $("#proof-interact").disabled=!$("#proof-browser").checked;
+}
+$("#proof-mode").addEventListener("change",updateProofMode);
+$("#proof-browser").addEventListener("change",updateProofMode);
+
+function renderProofSuggestions(commands){
+  const box=$("#proof-suggestions");
+  box.innerHTML=(commands||[]).map((command,index)=>`<button class="mini" type="button" data-proof-command="${index}" title="Add this detected command">Add <code>${esc(command)}</code></button>`).join("")||`<span class="privacy-note">No standard test command was detected. Add the commands that prove your project.</span>`;
+  box.querySelectorAll("[data-proof-command]").forEach(button=>button.onclick=()=>{
+    const command=commands[Number(button.dataset.proofCommand)],area=$("#proof-tests");
+    const existing=area.value.split("\n").map(v=>v.trim()).filter(Boolean);
+    if(!existing.includes(command))area.value=[...existing,command].join("\n");
+    _proofFormDirty=true;area.focus();
+  });
+}
+
+async function refreshProof(){
+  if(_proofBusy)return;
+  try{
+    _proofData=await api("/api/proof");
+    if(!_proofFormLoaded||!_proofFormDirty)fillProofProfile(_proofData.profile||{});
+    if(!_proofFormDirty){const saved=$("#proof-save-state");saved.textContent=_proofData.profile?.updated_at?"Saved "+_proofData.profile.updated_at.replace("T"," ").slice(0,19):"Using the safe default profile.";saved.className="config-state ok"}
+    renderProofSuggestions(_proofData.suggested_test_commands||[]);
+    renderProofResult();
+    if(_proofData.job?.running&&_proofData.job.job_id)watchProofJob(_proofData.job.job_id);
+  }catch(err){const state=$("#proof-job-state");state.textContent=errorText(err);state.className="config-state bad"}
+}
+
+async function saveProofProfile(){
+  const form=$("#proof-form"),button=$("#proof-save"),state=$("#proof-save-state");
+  if(!form.reportValidity())return;
+  button.disabled=true;state.textContent="Saving…";state.className="config-state";
+  try{
+    const value=await api("/api/proof/profile",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({profile:collectProofProfile()})});
+    fillProofProfile(value.profile);state.textContent="Profile saved for this project.";state.className="config-state ok";
+  }catch(err){state.textContent=errorText(err);state.className="config-state bad"}
+  finally{button.disabled=false}
+}
+$("#proof-save").onclick=saveProofProfile;
+
+function stopProofWatch(){
+  if(_proofJobSource){_proofJobSource.close();_proofJobSource=null}
+  if(_proofJobPoll){clearInterval(_proofJobPoll);_proofJobPoll=null}
+  _proofJobId=null;
+}
+function renderProofJob(job){
+  if(!job)return;const running=!!job.running,progress=$("#proof-progress"),button=$("#proof-run");
+  button.disabled=running;progress.hidden=false;progress.value=Number(job.progress||0);
+  const tail=(job.log||[]).slice(-2).join(" · ");
+  $("#proof-job-state").textContent=tail||job.status||"idle";
+  $("#proof-job-state").className="config-state "+(job.status==="failed"?"bad":running?"":"ok");
+  if(!running){
+    const failed=job.status==="failed";stopProofWatch();button.disabled=false;
+    if(failed)showToast("App Proof failed to finish.",job.error||tail||"Review the runner output.");
+    else showToast("App Proof finished.","The evidence report is ready to inspect or hand to a coding agent.");
+    quiet(refreshProof);
+  }
+}
+function watchProofJob(id){
+  if(_proofJobId===id)return;stopProofWatch();_proofJobId=id;
+  if(window.EventSource){
+    _proofJobSource=new EventSource("/api/job-events?id="+encodeURIComponent(id));
+    _proofJobSource.addEventListener("job",event=>{try{renderProofJob(JSON.parse(event.data))}catch(_err){}});
+    _proofJobSource.onerror=()=>{if(_proofJobSource)$("#proof-job-state").textContent="Reconnecting to proof "+id.slice(0,8)+"…"};
+  }else{
+    _proofJobPoll=setInterval(()=>quiet(async()=>renderProofJob(await api("/api/job?id="+encodeURIComponent(id)))),900);
+  }
+}
+
+$("#proof-form").onsubmit=async event=>{
+  event.preventDefault();if(_proofBusy)return;
+  const mode=$("#proof-mode").value;
+  if(mode==="stress"&&!$("#proof-stress-confirm").checked){
+    $("#proof-stress-confirm").focus();showToast("Stress confirmation required.","Confirm the bounded loopback load before starting.");return;
+  }
+  _proofBusy=true;const button=$("#proof-run"),state=$("#proof-job-state");button.disabled=true;
+  state.textContent="Queueing a fresh audit and application proof…";state.className="config-state";
+  try{
+    const job=await api("/api/proof/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode,profile:collectProofProfile(),confirm_stress:mode==="stress"})});
+    _proofFormDirty=false;state.textContent="Proof "+job.job_id.slice(0,8)+" queued";
+    renderProofJob({running:true,status:"queued",progress:0,log:[state.textContent]});watchProofJob(job.job_id);
+  }catch(err){state.textContent=errorText(err);state.className="config-state bad";button.disabled=false}
+  finally{_proofBusy=false}
+};
+
+function proofStage(kinds,label,explanation){
+  const checks=(_proofData?.latest?.checks||[]).filter(item=>kinds.includes(item.kind));
+  const executed=checks.filter(item=>item.outcome==="passed"||item.outcome==="failed").length;
+  return `<div class="proof-stage"><b>${label}</b><span>${executed}/${checks.length} evidenced</span><span>${explanation}</span></div>`;
+}
+function renderProofResult(){
+  const root=$("#proof-result"),latest=_proofData?.latest,history=_proofData?.history||[];
+  const key=JSON.stringify([latest?.proof_run_id,latest?.status,latest?.finished_at,latest?.stale,latest?.error,history.length]);
+  if(_proofRenderKey===key)return;_proofRenderKey=key;
+  if(!latest){root.innerHTML=`<div class="empty">No proof has run yet. Start the local application or provide a Start command, then choose Quick or Full proof.</div>`;return}
+  if(latest.status==="running"){
+    root.innerHTML=`<div class="panel"><h3>Proof #${latest.proof_run_id} is running</h3><p class="hint">Fresh audit evidence is being connected to live HTTP and browser behavior. This result remains unproven until the run completes.</p></div>`;return;
+  }
+  if(latest.status==="failed"){
+    root.innerHTML=`<div class="panel"><h3>Proof #${latest.proof_run_id} could not complete</h3><div class="confirm-bar"><b>No success claim was recorded.</b> ${esc(latest.error||"The runner stopped unexpectedly.")}</div></div>${renderProofHistory(history)}`;return;
+  }
+  const summary=latest.summary||{},checks=latest.checks||[],failures=latest.failures||[],unknowns=latest.unknowns||[];
+  const currentOutcome=$("#proof-outcome")?.value||"all",currentKind=$("#proof-kind")?.value||"all",currentText=$("#proof-text")?.value||"";
+  const kinds=[...new Set(checks.map(item=>item.kind))].sort();
+  const packets=[...failures,...unknowns].slice(0,60).map(item=>`<div class="proof-packet-row"><b><span class="proof-status ${esc(item.outcome)}">${esc(item.outcome)}</span> · ${esc(item.target)}</b><span>${esc(item.kind)} · ${esc(item.detail)}</span></div>`).join("")||`<div class="empty">No failure or unknown packet was produced.</div>`;
+  root.innerHTML=`${latest.stale?'<div class="confirm-bar"><b>This proof is stale.</b> The tracked tree changed after it ran; rerun before relying on it.</div>':""}
+    <div class="panel">
+      <div class="panel-heading"><h3>Proof #${latest.proof_run_id} <span class="proof-status ${esc(latest.verdict)}">${esc(latest.verdict)}</span></h3><span class="config-state">${esc(latest.mode)} · ${esc(latest.base_url)} · ${Math.round((latest.duration_ms||0)/100)/10}s</span></div>
+      <div class="proof-ledger"><div><b>${summary.coverage_percent||0}%</b><span>checks executed</span></div><div class="passed"><b>${summary.passed||0}</b><span>passed</span></div><div class="failed"><b>${summary.failed||0}</b><span>failed</span></div><div class="blocked"><b>${summary.blocked||0}</b><span>blocked</span></div><div class="untested"><b>${summary.untested||0}</b><span>untested</span></div></div>
+      <div class="proof-flow">${proofStage(["contract","control"],"Frontend intent","static calls + controls")}${proofStage(["runtime","page","link","external-link"],"HTTP reality","pages + navigation")}${proofStage(["api","authentication","stress"],"Backend boundary","routes + resilience")}${proofStage(["browser-page","browser-control","test-command","browser"],"Visible behavior","browser + project suites")}</div>
+      <p class="privacy-note">Coverage applies to discovered checks in this run, including static contracts. ${summary.excluded||0} excluded controls are outside scope. Browser clicks require an observable change; business correctness needs your project tests.</p>
+      <div class="proof-actions" style="margin-top:var(--sp-3)"><button class="primary" type="button" id="proof-open-report">Open agent repair brief ↗</button><button class="mini" type="button" id="proof-copy-brief">Copy agent brief</button><button class="mini" type="button" id="proof-download">Download JSON</button><span class="config-state">${summary.pass_rate_percent||0}% pass rate among executed checks</span></div>
+    </div>
+    <div class="row"><div class="panel"><h3>Every evidence check <span class="pill" id="proof-check-count">${checks.length}</span></h3>
+      <div class="proof-toolbar"><input id="proof-text" aria-label="Filter proof evidence" placeholder="Filter by route, control, page, or evidence…" value="${esc(currentText).replace(/"/g,"&quot;")}"><select id="proof-outcome"><option value="all">All outcomes</option>${["passed","failed","blocked","untested","excluded"].map(v=>`<option value="${v}"${currentOutcome===v?" selected":""}>${v}</option>`).join("")}</select><select id="proof-kind"><option value="all">All check kinds</option>${kinds.map(v=>`<option value="${esc(v)}"${currentKind===v?" selected":""}>${esc(v)}</option>`).join("")}</select></div><div class="proof-checks" id="proof-checks"></div></div>
+      <div><div class="panel"><h3>Failure + unknown packet <span class="pill">agent-ready</span></h3><div class="proof-packet">${packets}</div></div><div class="panel" style="margin-top:var(--sp-4)"><h3>Proof history</h3>${renderProofHistory(history)}</div></div></div>`;
+  $("#proof-open-report").onclick=()=>window.open("/proof-report?id="+encodeURIComponent(latest.proof_run_id),"_blank","noopener");
+  $("#proof-copy-brief").onclick=async()=>{try{await copyText(latest.agent_brief||"");showToast("Agent brief copied.","Paste it into any coding agent.")}catch(err){showToast("Could not copy the brief.",errorText(err))}};
+  $("#proof-download").onclick=()=>downloadJSON(latest,`irag-app-proof-${latest.proof_run_id}.json`);
+  $("#proof-text").addEventListener("input",()=>{clearTimeout($("#proof-text")._timer);$("#proof-text")._timer=setTimeout(renderProofChecks,120)});
+  $("#proof-outcome").onchange=renderProofChecks;$("#proof-kind").onchange=renderProofChecks;
+  renderProofChecks();
+}
+function renderProofChecks(){
+  const box=$("#proof-checks");if(!box)return;const all=_proofData?.latest?.checks||[];
+  const outcome=$("#proof-outcome")?.value||"all",kind=$("#proof-kind")?.value||"all",text=($("#proof-text")?.value||"").trim().toLowerCase();
+  const checks=all.filter(item=>(outcome==="all"||item.outcome===outcome)&&(kind==="all"||item.kind===kind)&&(!text||JSON.stringify(item).toLowerCase().includes(text)));
+  $("#proof-check-count").textContent=`${checks.length} of ${all.length}`;
+  box.innerHTML=checks.length?checks.map(item=>`<div class="proof-check"><span class="outcome ${esc(item.outcome)}">${esc(item.outcome)}</span><span class="kind">${esc(item.kind)}</span><div><span class="target">${esc(item.target)}</span><span class="detail">${esc(item.detail)}</span>${item.evidence?`<details><summary class="privacy-note">show evidence</summary><pre class="ctx-out">${esc(item.evidence)}</pre></details>`:""}</div><span class="duration">${item.duration_ms||0}ms</span></div>`).join(""):`<div class="empty">No evidence checks match this filter.</div>`;
+}
+function renderProofHistory(history){
+  return `<div class="proof-history">${history.length?history.map(item=>`<div class="proof-history-row"><span>#${item.proof_run_id}</span><span>${esc(item.mode)}</span><span class="proof-status ${esc(item.verdict||item.status)}">${esc(item.verdict||item.status)}</span><span>${esc((item.created_at||"").replace("T"," ").slice(0,19))}</span>${item.status==="completed"?`<button class="mini" type="button" data-proof-report="${item.proof_run_id}">Open ↗</button>`:"<span></span>"}</div>`).join(""):'<div class="empty">No earlier proof runs.</div>'}</div>`;
+}
+$("#proof-result").addEventListener("click",event=>{
+  const button=event.target.closest("[data-proof-report]");
+  if(button)window.open("/proof-report?id="+encodeURIComponent(button.dataset.proofReport),"_blank","noopener");
+});
 
 /* ---------- thinking studio ---------- */
 let _studioData=null,_studioBusy=false,_studioMode="product";
@@ -2976,6 +3269,7 @@ setInterval(()=>{quiet(refreshStatus);quiet(refreshBurn);quiet(refreshFeed)},300
 setInterval(()=>{if($("#health").classList.contains("show"))quiet(refreshHealth)},8000);
 setInterval(()=>{if($("#summary").classList.contains("show"))quiet(refreshMainSummary)},12000);
 setInterval(()=>{if($("#audit").classList.contains("show")&&!_auditBusy)quiet(refreshAudit)},12000);
+setInterval(()=>{if($("#proof").classList.contains("show"))quiet(refreshProof)},8000);
 </script>
 </body>
 </html>
