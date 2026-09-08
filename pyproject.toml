@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "irag"
-version = "4.49.0"
+version = "4.50.0"
 description = "Project Knowledge Base — relational memory for AI coding agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,7 +41,7 @@ packages = ["irag"]
 include-package-data = false
 
 [tool.setuptools.package-data]
-irag = ["assets/*.html", "assets/*.md", "assets/docs/*.md"]
+irag = ["assets/*.html", "assets/*.js", "assets/*.md", "assets/docs/*.md"]
 
 # Pin the rule set explicitly. Ruff's defaults widen between releases, and
 # with an unpinned install that silently redefines what CI enforces: the

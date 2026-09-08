@@ -1,2 +1,2 @@
 """irag — Project Knowledge Base: relational memory for AI coding agents."""
-__version__ = "4.49.0"
+__version__ = "4.50.0"
