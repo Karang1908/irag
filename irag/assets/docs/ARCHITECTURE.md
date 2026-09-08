@@ -96,6 +96,12 @@ Core relations plus an FTS5 inverted index:
   immutable provider/URL/retrieval-time snapshots and added/removed sources
 - **memory_imports** — stable logical record IDs and content hashes used to
   make team-memory imports idempotent while allowing later outcomes to merge
+- **proof_profiles** — the single bounded, loopback-only App Proof profile for
+  a project; it stores an authorization environment-variable name, never its
+  value
+- **proof_runs** — durable Quick/Full/Stress status, profile snapshot, source
+  fingerprint, bounded JSON evidence, failure, timing, and optional dashboard
+  job linkage
 - **facts** — executable memory: a `claim` plus the `cmd` that
   demonstrates it, an expected substring and/or exit code, and the last
   run's status. The only relation whose contents irag can *re-establish*
@@ -162,7 +168,7 @@ tool calls onto the same library functions used by the CLI and dashboard. It
 supports the legacy 2024–2025 handshake era and stateless `2026-07-28`
 discovery/per-request metadata era, JSON Schema tool discovery, annotations,
 and both text and structured results. There is no client-specific branch:
-every MCP client receives the same 21 tool names and operates on the same SQLite
+every MCP client receives the same 22 tool names and operates on the same SQLite
 file. Every mutation uses the repository lock as well as its database
 transaction. Legacy processes retain a diary key for
 convenience; modern clients carry the explicit key returned by
@@ -172,6 +178,12 @@ The server publishes the same complete-project summary, defensive audit,
 delivery plan, team-memory exchange, experiments, watchlists, and
 source-preserving live web search used by the dashboard. Web search and OSV are
 annotated open-world reads; the memory tools remain local and deterministic.
+
+`irag_application_proof` exposes the same proof profile, runner, histories, and
+agent brief as the CLI/dashboard. MCP calls serialize through a dedicated
+cross-process proof lock; repository refresh/audit briefly takes the normal
+update lock, while the longer loopback/browser/test phase does not freeze memory
+reads or unrelated work.
 
 ### Developer intelligence surfaces
 
@@ -193,6 +205,17 @@ line numbers, retaining review decisions through harmless line shifts;
 rationales are required for non-open states, accepted risks may expire, and the
 effective open set exports as SARIF 2.1.0. SARIF and live-probe endpoints first
 refresh structural drift and reject stale or missing audit inventories.
+
+The **App Proof** layer composes Code Audit's API route inventory with a separate
+frontend call/control scanner, a no-redirect loopback crawler, link/form/control
+inventory, parameter-free GET/HEAD probes, an optional packaged Node runner that
+loads the project's Playwright (with a Python Playwright fallback), explicit project test commands, and bounded
+read-only stress. All shell-like text is parsed to an argument vector and run
+without a shell. Started applications and timed-out commands own process groups
+so children are terminated too. Reports prioritize failures and unknowns under
+storage bounds and mark any dropped discovery as blocked. Static wiring,
+protected routes, ambiguous controls, forms, and omitted suites never become
+pass evidence.
 
 The **Thinking Studio** retrieves project memory and latest audit state, adds
 the current Git diff for code-review mode, and optionally adds live search
@@ -383,8 +406,10 @@ irag/
 │   ├── doctor.py       install diagnostics
 │   ├── hooks.py        git hook installers
 │   ├── obsidian.py     db → Obsidian vault
+│   ├── proof.py        full-stack contract/runtime/browser/test evidence
+│   ├── proof_browser.py optional Python Playwright evidence collector
 │   ├── dashboard.py    stdlib HTTP server + /api/* JSON
-│   ├── assets/         dashboard.html SPA + in-app docs copies
+│   ├── assets/         dashboard SPA, Playwright runner + in-app docs copies
 │   └── cli.py          argparse entry point
 ├── hooks/post-commit   installed template
 ├── docs/               this documentation (source of truth)

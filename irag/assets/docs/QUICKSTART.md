@@ -32,7 +32,7 @@ irag mcp --root /absolute/path/to/my-project
 For Codex: `codex mcp add irag -- irag mcp --root /absolute/path/to/my-project`.
 For Claude Code: `claude mcp add --scope project irag -- irag mcp --root /absolute/path/to/my-project`.
 Cursor, Windsurf, VS Code, and other MCP clients use the same command. All of
-them see the same 21 tools, schemas, results, sessions, audits, delivery plans,
+them see the same 22 tools, schemas, results, sessions, audits, App Proof runs, delivery plans,
 experiments, watchlists, team-memory exchange, live-web search, and SQLite
 memory.
 
