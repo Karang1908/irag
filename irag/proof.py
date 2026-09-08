@@ -301,7 +301,9 @@ def run(conn: sqlite3.Connection, cfg: dict, root: Path, *, mode: str,
     try:
         step("discovering frontend and backend contracts", 8)
         report = audit_report or audit.latest(conn, root)
-        routes = list(((report or {}).get("api") or {}).get("routes") or [])
+        routes = [row for row in
+                  (((report or {}).get("api") or {}).get("routes") or [])
+                  if not _is_test_or_vendor(str(row.get("file") or ""))]
         static = _static_inventory(root, cfg)
         checks.extend(_contract_checks(static["frontend_calls"], routes))
         tree_fingerprint = structure.scan_fingerprint(conn, root) or ""
@@ -547,7 +549,7 @@ main{{max-width:1120px;margin:auto;padding:48px 24px 80px}}h1{{font-size:clamp(2
 .grid{{grid-template-columns:repeat(2,minmax(0,1fr));background:none;border:0;gap:12px}}article{{border:1px solid var(--line);background:var(--panel);padding:18px;border-radius:10px}}article h3{{font-size:1rem;margin:7px 0}}article p{{color:var(--dim)}}code,pre{{font-family:ui-monospace,monospace;white-space:pre-wrap;overflow-wrap:anywhere}}article code{{color:var(--red)}}pre{{background:#05070a;border:1px solid var(--line);padding:18px;border-radius:10px;max-height:70vh;overflow:auto}}
 button{{border:1px solid #3984d8;background:var(--blue);color:#07101c;padding:10px 15px;border-radius:7px;font-weight:700;cursor:pointer;margin-right:8px}}.secondary{{background:transparent;color:var(--text);border-color:var(--line)}}.empty{{color:var(--dim);padding:18px;border:1px dashed var(--line)}}
 @media(max-width:700px){{.meta,.grid{{grid-template-columns:1fr 1fr}}}}@media(max-width:430px){{.meta,.grid{{grid-template-columns:1fr}}}}
-</style></head><body><main><span class="tag">Deterministic runtime evidence</span>
+</style></head><body><main>
 <h1>App Proof #{int(report.get("proof_run_id") or 0)}</h1>
 <p>{escape(str(report.get("base_url") or ""))} · {escape(str(report.get("verdict") or "unknown"))}</p>
 <div class="meta"><div><b>{int(summary.get("coverage_percent") or 0)}%</b><span>coverage</span></div><div><b>{int(summary.get("passed") or 0)}</b><span>proven</span></div><div><b>{int(summary.get("failed") or 0)}</b><span>failed</span></div><div><b>{int(summary.get("blocked",0))+int(summary.get("untested",0))}</b><span>unknown</span></div></div>
