@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 from typing import Literal, TextIO
 
 
@@ -16,8 +17,10 @@ class UpdateLock:
     twice.
     """
 
-    def __init__(self, root: Path):
-        self.path = root / ".irag" / "update.lock"
+    def __init__(self, root: Path, name: str = "update"):
+        if not re.fullmatch(r"[a-z][a-z0-9-]{0,30}", name):
+            raise ValueError("lock name must be a short lowercase identifier")
+        self.path = root / ".irag" / f"{name}.lock"
         self.fh: TextIO | None = None
 
     def acquire(self) -> bool:
