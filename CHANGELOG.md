@@ -4,6 +4,50 @@ All notable changes to irag. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions follow semver
 in spirit (no public API contract yet beyond the CLI).
 
+## 4.50.0 — 2026-09-08
+
+Adds evidence-first application verification: one place to find the silent
+full-stack failures that static review misses, while refusing to call
+unexecuted behavior “working.”
+
+### Added
+
+- **App Proof** is a thirteenth dashboard workspace and a shared backend for
+  static frontend/backend contract matching, loopback crawling, internal and
+  optional external link validation, safe API execution, runtime control/form
+  inventory, optional Playwright evidence, project-owned test commands, and
+  bounded read-only stress checks.
+- Durable proof profiles and runs retain the exact limits, outcomes, tree
+  fingerprint, evidence, failures, unknowns, browser artifacts, and generated
+  coding-agent repair brief. Every result uses five explicit states: proven,
+  failed, blocked, untested, or excluded.
+- `irag proof` exposes Quick, Full, and Stress modes to terminals and CI, with
+  JSON and self-contained HTML output plus an optional strict gate.
+- The universal MCP server now publishes `irag_application_proof`, bringing
+  all compatible clients to 22 identical tools.
+
+### Safety
+
+- Runtime targets are restricted to localhost/loopback addresses. Redirects
+  are not followed; API and stress execution use GET/HEAD only; stress requires
+  explicit confirmation and is bounded to 1,000 requests and 32 workers.
+- Authorization values are read from a named environment variable and never
+  persisted. Start/test commands are parsed into argument vectors and run
+  without a shell; process groups are terminated on timeout.
+- Quick or browser-disabled runs stay incomplete, 404 readiness checks fail,
+  protected routes remain blocked, forms/destructive-looking controls require
+  project-owned journeys, and oversized reports preserve negative/unknown
+  evidence before successes.
+
+### Fixed
+
+- Dashboard startup no longer marks another process's active App Proof job as
+  failed; proof work has its own cross-process lifecycle lock and reconnectable
+  SQLite/SSE progress.
+- Runtime `<input type=submit>` controls, forms, internal-link outcomes, and
+  control-limit truncation are now visible in coverage instead of disappearing
+  from the report.
+
 ## 4.49.0 — 2026-09-07
 
 Turns project intelligence into a delivery workflow: understand the diff,
