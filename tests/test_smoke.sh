@@ -198,6 +198,49 @@ with urllib.request.urlopen("http://127.0.0.1:7911/api/studio") as r:
     assert "messages" in studio and "ideas" in studio and "web" in studio
 expect_http("/api/api-check", 400, json.dumps(
     {"base_url": "https://example.com"}).encode())
+with urllib.request.urlopen("http://127.0.0.1:7911/api/proof") as r:
+    proof_state = json.load(r)
+    assert proof_state["profile"]["base_url"].startswith("http://")
+    assert "suggested_test_commands" in proof_state
+expect_http("/api/proof/profile", 400, json.dumps({"profile": {
+    "base_url": "https://example.com"}}).encode())
+expect_http("/api/proof/run", 400, json.dumps({
+    "mode": "stress", "profile": {
+        "base_url": "http://127.0.0.1:7911"}}).encode())
+proof_request = urllib.request.Request(
+    "http://127.0.0.1:7911/api/proof/run",
+    data=json.dumps({"mode": "quick", "profile": {
+        "base_url": "http://127.0.0.1:7911",
+        "health_path": "/api/status", "browser_enabled": False,
+        "max_pages": 2, "max_controls": 5}}).encode(),
+    headers={"Content-Type": "application/json"})
+with urllib.request.urlopen(proof_request) as r:
+    queued_proof = json.load(r)
+    assert r.status == 202 and queued_proof["proof_run_id"] > 0
+for _ in range(100):
+    with urllib.request.urlopen(
+            "http://127.0.0.1:7911/api/job?id=" + queued_proof["job_id"]) as r:
+        proof_job = json.load(r)
+    if proof_job["status"] in ("completed", "failed"):
+        break
+    time.sleep(.1)
+assert proof_job["status"] == "completed", proof_job
+with urllib.request.urlopen("http://127.0.0.1:7911/api/proof") as r:
+    finished_proof = json.load(r)["latest"]
+assert finished_proof["status"] == "completed" and finished_proof["checks"]
+with urllib.request.urlopen(
+        "http://127.0.0.1:7911/proof-report?id=" +
+        str(queued_proof["proof_run_id"])) as r:
+    assert b"App Proof" in r.read()
+cli_proof = subprocess.run([
+    sys.executable, "-m", "irag", "proof", "--mode", "quick",
+    "--base-url", "http://127.0.0.1:7911", "--health-path", "/api/status",
+    "--request-timeout", "2", "--start-timeout", "3", "--max-pages", "1",
+    "--max-controls", "3", "--no-browser", "--json"],
+    cwd=pathlib.Path.cwd(), text=True, capture_output=True)
+assert cli_proof.returncode == 0, (cli_proof.stdout, cli_proof.stderr)
+cli_result = json.loads(cli_proof.stdout)
+assert cli_result["status"] == "completed" and cli_result["checks"], cli_result
 
 # Unknown impact must fail closed; malformed history dates and JSON must not
 # turn into plausible-looking current state or an internal-error response.
