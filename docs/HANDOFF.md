@@ -10,18 +10,18 @@ This document is about **building irag**. If you want to know how to *use*
 irag inside a project, read `/CLAUDE.md` at the repo root — that is the
 operator manual for agents consuming irag's memory, not developing it.
 
-Accurate as of **v4.49.0**, 2026-09-07. Every fact below was verified by
-running it on this machine by that date. Where something is inferred
-rather than observed, it says so.
+Updated for **v4.50.0**, 2026-09-08. The dated verification ledger below
+separates this pass from the earlier baseline. Environment and hosting facts
+retain their original observation dates; they are not fresh deployment checks.
 
 ---
 
-## Current working tree — reliability audit (uncommitted)
+## Current implementation — reliability audit and App Proof
 
-The broad CLI/backend/dashboard audit completed on 2026-09-07 is present
-in the working tree but has **not** been committed or pushed. Preserve it.
-It fixes the failure modes reported from real use, rather than changing the
-append-only memory model:
+The reliability and App Proof feature commits are now on the local branch;
+the finishing pass adds further verification, documentation, and scoped fixes.
+Inspect `git status` and preserve any remaining edits. This pass did not commit,
+push, publish, or deploy. The changes retain the append-only memory model:
 
 - CLI updates, direct sync/scan/synthesize/lint commands, live CLI reads,
   page-control writes, dashboard updates, live-map refreshes, and dashboard
@@ -60,7 +60,7 @@ append-only memory model:
 - The frontend distinguishes HTTP application errors from an offline server,
   prevents overlapping poll responses from rewinding the UI, stops idle graph
   animation, safely renders toast text, and has accessible controls. Its
-  responsive grids were corrected so all twelve tabs fit without body overflow
+  responsive grids were corrected so all thirteen tabs fit without body overflow
   at 390 px; only the tab strip scrolls and the brand remains visible.
 - Request sizes, list limits, and context budgets are bounded. Backup names
   include microseconds, date inputs are validated consistently, packaged docs
@@ -72,7 +72,7 @@ append-only memory model:
   is handled cleanly, `doctor` checks logical database relations in addition
   to storage integrity, and the site builder refuses to recursively replace
   directories it does not own.
-- `irag mcp` is a dependency-free stdio Model Context Protocol server with 21
+- `irag mcp` is a dependency-free stdio Model Context Protocol server with 22
   generic memory, provenance, update, contradiction, and session tools. It
   speaks JSON-RPC on stdin/stdout and is not coupled to Claude Code; Codex,
   Claude, Cursor, Windsurf, VS Code, and any other stdio MCP client can use the
@@ -86,7 +86,7 @@ append-only memory model:
 - Model invocation now goes through explicit Claude, Codex, agy, Ollama, and
   custom adapters with bounded retries, timeout/error normalization, optional
   model selection, and local run/cost telemetry. Database evolution is an
-  ordered v1→v8 migration history with an automatic SQLite backup before an
+  ordered v1→v9 migration history with an automatic SQLite backup before an
   upgrade and a hard refusal to open a newer schema with an older binary.
 - Large-repository updates reuse the structural index when topology is stable,
   reparse only changed source files, bound synthesis inputs around imports and
@@ -106,7 +106,7 @@ append-only memory model:
   recent-change causality. Session endings store a separate deterministic
   `critical_context` JSON ledger, so a weak or truncated model narrative cannot
   erase decisions, lessons, revisions, commits, or touched files.
-- The dashboard now exposes twelve developer workspaces. Main Summary is a
+- The dashboard now exposes thirteen developer workspaces. Main Summary is a
   live, deterministic whole-project read model containing every current page
   body plus drift, contradiction, session, critical-context, and audit state.
   Code Audit combines bounded static/security/API/dependency checks, optional
@@ -156,25 +156,52 @@ append-only memory model:
 - Direct SARIF downloads and API probes refresh live structural drift and reject
   missing or stale audit inventories. Finding IDs exclude volatile line numbers,
   so inserting unrelated lines does not silently reopen reviewed evidence.
+- **App Proof** is shared by the dashboard, `irag proof`, and the MCP
+  `irag_application_proof` tool. Schema 9 stores profiles and immutable run
+  results. Quick combines static contracts, loopback pages/links, and safe API
+  requests; Full adds optional Playwright plus explicitly configured project
+  tests; confirmed Stress adds bounded GET load. A separate proof lock protects
+  the long-lived run while normal repository refreshes hold the update lock
+  briefly. Dashboard jobs retain progress across reconnects and reloads.
+- Proof checks are **passed, failed, blocked, untested, or excluded**, with
+  overall verdicts **proven, failed, or incomplete**. Coverage is the executed
+  fraction of discovered checks, including static matches, not all possible
+  application behavior. No-op clicks and unavailable browser/test evidence
+  remain untested. Mutating forms, ambiguous routes, dynamic fixture values,
+  and unsupported static contracts are not guessed or silently passed.
+- Both Node and optional Python Playwright collectors detect page, console,
+  request, and HTTP failures. Auth is attached only to the configured origin,
+  never to external resources; routed redirects are blocked before following.
+  Chromium itself may block an external local-network resource before dispatch.
+  Start/test commands run without a shell but have the developer's permissions.
+  HTML/JSON reports retain failures, unknowns, artifacts, and an agent brief.
 
-Verification on the finished tree:
+Verification on 2026-09-08:
 
 ```text
-focused unittest suite on local Python 3.11 and 3.14      33 tests passed
+focused unittest suite on local Python 3.11 and 3.14      38 tests passed each
 sh tests/test_smoke.sh on local Python 3.14               SMOKE TEST PASSED
 Ruff + mypy + compileall + diff --check                   passed (silent)
 site: all 11 pages × desktop/mobile Chromium              no JS errors/overflow
-all 12 dashboard workspaces desktop/mobile Chromium       no JS errors/overflow
-live trend search + sourced Studio chat/recommendations    passed
-live dashboard update: 202 → SSE → reload persistence     passed
-Delivery/triage/SARIF/experiment/watchlist/team roundtrip passed
-offline self-audit: 44 files, 0 critical/high, 7 medium     reviewed
+all 13 dashboard workspaces desktop/mobile Chromium       no JS errors/overflow
+App Proof profile/save/run/SSE/history/report UI flow     passed
+Node + Python real-browser failure/safety regressions     passed
+managed local app + browser + tests + 8-request stress    13/13 checks passed
+offline self-audit: 49 files, 0 critical/high, 9 medium     heuristic findings
 sdist + wheel build; isolated wheel install on 3.11       passed
 ```
 
-The frontend audit used the repository's existing visual system and made
-narrow reliability/accessibility corrections; it did not redesign the
-product. Its mechanical detector reports no remaining findings.
+The 2026-09-07 baseline additionally exercised live trend search, sourced
+Studio conversations, update/reload persistence, and Delivery/triage/SARIF/
+experiment/watchlist/team round trips. These are not new live-provider calls
+in the App Proof pass. The nine current medium self-audit findings are six
+large files, two dependency cycles, and a dashboard auth-review heuristic;
+they are not a clean-security certification or a list of confirmed exploits.
+
+The frontend keeps the existing visual system. The fresh finish review drove
+mobile launch access, accessible evidence filters, and report-label fixes.
+The one mechanical detector invocation's output was truncated, so this pass
+does not claim a clean detector result.
 
 ---
 
@@ -246,7 +273,7 @@ If it points anywhere else, your edits are not what the `irag` command runs.
 
 **Note the version reported there is stale and that is normal.** pip
 records the version at the last `pip install -e .`; it currently says
-`4.40.1` while the code is `4.49.0`. `irag --version` reads
+`4.40.1` while the code is `4.50.0`. `irag --version` reads
 `irag/__init__.py` and is authoritative. Only a reinstall refreshes pip's
 copy, and a reinstall is unnecessary for ordinary source edits — editable
 installs pick those up immediately.
@@ -420,9 +447,10 @@ hundred tokens instead of thousands of tokens of re-exploration. Everything
 lives in one SQLite file
 (`.irag/memory.db`) that any agent on any machine can mount.
 
-**v4.49.0. 14,291 lines of Python. Zero runtime dependencies** — stdlib
+**v4.50.0. About 16.7k lines of Python. Zero required runtime dependencies** — stdlib
 only (`sqlite3`, `http.server`, `ast`, `tomllib`, `subprocess`). Package
-`irag`, console command `irag`, config dir `.irag/`, **50 commands**.
+`irag`, console command `irag`, config dir `.irag/`, **51 commands**.
+Optional browser evidence uses Node or Python Playwright plus Chromium.
 
 ### 2.1 The one sentence that explains every design decision
 
@@ -453,15 +481,17 @@ success. When a code path cannot know, it must say so and exit non-zero.
 
 | Module | LOC | Owns |
 |---|---:|---|
-| `cli.py` | 1900 | every command, argument parsing, repository coordination |
+| `cli.py` | 2013 | every command, argument parsing, repository coordination |
 | `synthesis.py` | 1045 | critical-context prompts, bounded page writing, injection scrubbing |
-| `dashboard.py` | 1339 | stdlib HTTP server, durable jobs/SSE, JSON API, CSRF guard |
+| `dashboard.py` | 1498 | stdlib HTTP server, durable jobs/SSE, JSON API, CSRF guard |
 | `ingest.py` | 892 | change detection, merge/rename continuity, ignoring, secrets, event queue |
 | `structure.py` | 812 | incremental symbol + dependency extraction for 10 languages |
-| `audit.py` | 969 | bounded static/security/dependency/API audit, triage/SARIF, safe probes |
+| `audit.py` | 1091 | bounded static/security/dependency/API audit, triage/SARIF, safe probes |
+| `proof.py` | 1552 | loopback contracts, crawl, API/browser/test/stress orchestration and reports |
+| `proof_browser.py` | 362 | optional Python Playwright collector; Node equivalent is `assets/proof_runner.js` |
 | `linter.py` | 658 | race-safe fact-checking pages against code; contradictions |
-| `db.py` | 773 | v1→v8 migrations/backups, schema, triggers, safe JSON helpers |
-| `mcp.py` | 567 | stdio JSON-RPC MCP protocol and 21 universal tool contracts |
+| `db.py` | 807 | v1→v9 migrations/backups, schema, triggers, safe JSON helpers |
+| `mcp.py` | 604 | stdio JSON-RPC MCP protocol and 22 universal tool contracts |
 | `delivery.py` | 542 | diff/impact/contracts/tests/release planning; executes nothing |
 | `sessions.py` | 497 | attributed scoped diary, narrative, deterministic critical-context ledger |
 | `config.py` | 474 | TOML merge, safe UI edits, provider/web and semantic validation |
@@ -601,8 +631,9 @@ migrations/backups/downgrade refusal, contradiction race safety, rename
 continuity, durable jobs, safe reports, and session critical-context
 retention. CI runs it on native Ubuntu, macOS, and Windows runners.
 
-The integration suite is `tests/test_smoke.sh`: ~2,448 lines and **40 guard
-blocks**. It runs entirely on the mock — costs nothing, takes a couple of
+The integration suite is `tests/test_smoke.sh`, including the original 40
+guard blocks plus application-proof API/CLI/report checks. It uses the mock
+model — costs nothing, takes a couple of
 minutes. It uses `set -e`, which has two consequences worth knowing:
 
 - A block that fails **silently aborts the whole run** with no `FAIL:`
@@ -869,28 +900,30 @@ conscious decision rather than a surprise.
 
 **Verified by running it**, repeatedly, on this machine:
 
-- The full smoke suite: 40 end-to-end guard blocks, including explicit
+- The full smoke suite: end-to-end guard blocks including explicit
   concurrency, migration interruption, malformed input, and stale-live-view
   regressions.
-- Thirty-three focused unittests covering MCP JSON-RPC framing/tool calls, provider
+- Thirty-eight focused unittests covering MCP JSON-RPC framing/tool calls, provider
   argument construction/retries, ordered storage migration and backup,
   contradiction uniqueness, merge commits, snapshot and replayed-Git rename
   continuity, durable job persistence, escaped HTML handoffs, and lossless
   session context, plus Delivery contracts/test mapping, audit triage/SARIF,
-  experiment/watchlist durability, and team-memory round trips.
+  experiment/watchlist durability, team-memory round trips, modern route
+  discovery, and App Proof contracts/limits/auth/report semantics.
 - Zero-token read path (sentinel test, §6).
 - Parallel synthesis produces byte-identical results to sequential — same
   page count, revision count, no duplicate versions — and a failing model
   marks every event failed and self-heals on the next run.
 - Concurrency: `update` under ten simultaneous dashboard requests, zero
   lock errors, zero tracebacks.
-- Schema migration through ordered v1→v8 history, including an automatic
+- Schema migration through ordered v1→v9 history, including an automatic
   pre-upgrade backup, a pre-upgrade human resolution correctly backfilled,
   duplicate contradiction cleanup, and refusal of an unsafe downgrade.
-- All 50 commands respond; the dashboard routes used by every one of its twelve
-  views and interactive controls are exercised.
+- All 51 commands respond. The smoke suite exercises the dashboard API
+  contracts; browser passes check all thirteen views. This does not imply
+  every possible interactive state has been exhaustively tested.
 - The rendered static site builds all eleven pages, and every route was checked
-  at desktop/mobile widths in Chromium. All twelve dashboard workspaces were
+  at desktop/mobile widths in Chromium. All thirteen dashboard workspaces were
   checked at 1440 px and 390 px with no console errors or body overflow.
   Main Summary rendered full current pages; Code Audit completed and safely
   probed the loopback dashboard; Thinking Studio returned cited live sources,
@@ -931,9 +964,14 @@ conscious decision rather than a surprise.
   contracts are unit-tested; this run did not use real Brave/Tavily keys, a
   live SearXNG instance, or an application lockfile containing vulnerable
   dependency versions.
-- **The new native OS CI matrix.** Its workflow is configured for Ubuntu,
-  macOS, and Windows, but this working tree is uncommitted, so those hosted
-  jobs have not run yet. Local macOS checks passed on Python 3.11 and 3.14.
+- **Hosted CI status for this finishing pass.** The workflow is configured for
+  Ubuntu, macOS, and Windows; hosted runs were not checked or triggered here.
+  Local macOS checks passed on Python 3.11 and 3.14.
+- **Every application journey.** App Proof does not infer safe form payloads,
+  seed users, business assertions, uploads, payment flows, or websocket
+  semantics. Supply project-owned tests and disposable fixtures. Scanner
+  coverage is framework-dependent; unknown and unexecuted behavior remains
+  visible, even when a general test command succeeds.
 
 ---
 
