@@ -23,9 +23,9 @@ class StorageTests(unittest.TestCase):
             upgraded = db.ensure_db(path)
             versions = [row[0] for row in upgraded.execute(
                 "SELECT version FROM schema_migrations ORDER BY version")]
-            self.assertEqual(versions, [2, 3, 4, 5, 6, 7, 8])
+            self.assertEqual(versions, [2, 3, 4, 5, 6, 7, 8, 9])
             self.assertTrue(list((path.parent / "backups").glob(
-                "pre-migration-v1-to-v8-*.db")))
+                "pre-migration-v1-to-v9-*.db")))
             upgraded.execute(
                 "UPDATE meta SET value='999' WHERE key='schema_version'")
             upgraded.commit()
