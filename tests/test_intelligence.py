@@ -321,6 +321,39 @@ def admin():
                              report["audit_id"])
             conn.close()
 
+    def test_audit_discovers_modern_and_stdlib_route_shapes(self):
+        next_rows = audit._routes(
+            "src/app/api/users/[id]/route.ts",
+            ["export async function GET(request) {", "export const POST = handler"])
+        self.assertEqual(
+            {(row["method"], row["path"]) for row in next_rows},
+            {("GET", "/api/users/[id]"), ("POST", "/api/users/[id]")})
+
+        stdlib_rows = audit._routes("server.py", [
+            "class Handler:",
+            "    def do_GET(self):",
+            "        if url.path == '/api/status':",
+            "            return ok()",
+            "    def do_POST(self):",
+            "        if self.path == '/api/save':",
+            "            return saved()",
+        ])
+        self.assertEqual(
+            {(row["method"], row["path"]) for row in stdlib_rows},
+            {("GET", "/api/status"), ("POST", "/api/save")})
+
+        django = audit._routes("urls.py", ["path('api/items/', views.items)"])
+        spring = audit._routes(
+            "Controller.java", ['@GetMapping(value = "/api/items")'])
+        go = audit._routes(
+            "server.go", ['router.POST("/api/items", createItem)'])
+        self.assertEqual((django[0]["method"], django[0]["path"]),
+                         ("ANY", "/api/items/"))
+        self.assertIn(("GET", "/api/items"),
+                      {(row["method"], row["path"]) for row in spring})
+        self.assertIn(("POST", "/api/items"),
+                      {(row["method"], row["path"]) for row in go})
+
     def test_audit_suppression_is_exact_and_reviewable(self):
         lines = ["# irag-audit: allow security.shell-true — trusted fixture",
                  'subprocess.run("ok", shell=True)',
