@@ -102,7 +102,7 @@ it. It's a file.
 **🔌 One protocol. Every serious coding agent.**
 `irag mcp` is a standards-compliant stdio MCP server, not a Claude wrapper.
 Codex, Claude Code, Cursor, Windsurf, VS Code and any compatible client receive
-the same 21 context, search, map, impact, provenance, audit, delivery, research,
+the same 22 context, search, map, impact, provenance, audit, application-proof, delivery, research,
 team-memory, contradiction and diary tools backed by the same file. Switch
 agents mid-project without resetting the project's brain.
 
@@ -130,6 +130,18 @@ following redirects. Review decisions persist across rescans and harmless line
 shifts, accepted risks can expire automatically, and open findings export as
 SARIF 2.1.0. Direct reports and probes fail closed when their structural
 inventory is stale.
+
+**🧪 It proves the app people are actually clicking.**
+App Proof connects the layers static tools leave separated. It matches frontend
+requests to backend routes, starts or attaches to a loopback app, crawls every
+reachable page, validates links, inventories forms and controls, executes safe
+APIs, collects optional Playwright evidence, runs the project's real test
+commands, and can hammer read-only routes with bounded concurrency. The result
+is not one reassuring green light: every behavior is labeled **proven, failed,
+blocked, untested, or excluded**. A 404 cannot become “ready,” a visible button
+cannot become “working” because it has an `onclick`, and a protected endpoint
+cannot become “passed” without credentials. Each run becomes a durable HTML/
+JSON repair packet any coding agent can execute.
 
 **🧠 It has a thinking room with access to right now.**
 The Thinking Studio combines project memory, the latest audit, the current diff,
@@ -192,6 +204,7 @@ irag ask "how does login work?"  # AI answer, with citations
 irag impact src/db/store.py      # blast radius, free
 irag recap                       # "previously on this project"
 irag dashboard                   # the whole thing, in a browser
+irag proof --mode full           # prove the running full-stack app
 ```
 
 ### Point the writer at a cheap model
@@ -250,6 +263,9 @@ your summaries. Instant, zero tokens.
 - **Code Audit** — defensive security and quality findings, dependency advisory
   checks, API inventory, architecture cycles, and a loopback-only live API
   checker; triage findings with rationale/expiry and export open work as SARIF.
+- **App Proof** — catch silent frontend/backend disconnects by tracing static
+  contracts into live pages, links, routes, controls, browser behavior, project
+  suites, and opt-in read-only stress; unknown behavior stays visibly unknown.
 - **Thinking Studio** — a persistent code-review/product/business/marketing/
   creative chat with a recommendation board, measurable experiment ledger,
   and explicitly refreshed, source-preserving trend watchlists.
@@ -392,7 +408,7 @@ moment you close the terminal.
 
 The full version: [docs/STORY.md](docs/STORY.md).
 
-## Commands (50)
+## Commands (51)
 
 `init` · `claude-setup` · `doctor` — setup ·
 `sync` · `ingest-commit` · `scan` — detect ·
@@ -405,7 +421,7 @@ The full version: [docs/STORY.md](docs/STORY.md).
 `tried` · `verify` · `topic` · `capture` — record what only you know ·
 `session-begin` · `session-end` · `sessions` · `transcript` · `recap` — diary ·
 `pin` · `unpin` · `export` · `check` · `backup` — admin ·
-`dashboard` · `obsidian` · `why` · `mcp` · `provider` · `audit` · `web-search` —
+`dashboard` · `obsidian` · `why` · `mcp` · `provider` · `audit` · `proof` · `web-search` —
 views, protocol, defensive analysis, live evidence & provenance
 
 Four of these record what a summariser cannot infer:
