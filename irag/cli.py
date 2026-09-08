@@ -1463,6 +1463,84 @@ def cmd_audit(args) -> int:
     return 0
 
 
+def cmd_proof(args) -> int:
+    """Prove a local full-stack application with explicit evidence states."""
+    from . import audit, proof, structure
+    conn, cfg, root = _open()
+    if args.mode == "stress" and not args.confirm_stress:
+        raise SystemExit(
+            "irag: stress mode requires --confirm-stress; it sends only "
+            "bounded GET requests to a loopback target")
+    selected = proof.profile(conn)
+    overrides = {
+        "base_url": args.base_url,
+        "health_path": args.health_path,
+        "start_command": args.start_command,
+        "auth_env": args.auth_env,
+        "request_timeout": args.request_timeout,
+        "start_timeout": args.start_timeout,
+        "max_pages": args.max_pages,
+        "max_controls": args.max_controls,
+        "stress_requests": args.stress_requests,
+        "stress_concurrency": args.stress_concurrency,
+    }
+    selected.update({key: value for key, value in overrides.items()
+                     if value is not None})
+    if args.test_command is not None:
+        selected["test_commands"] = args.test_command
+    if args.no_browser:
+        selected["browser_enabled"] = False
+    if args.interact:
+        selected["allow_interactions"] = True
+    if args.external_links:
+        selected["check_external_links"] = True
+    selected = proof.validate_profile(selected)
+
+    proof_lock = _UpdateLock(root, "proof")
+    if not proof_lock.acquire():
+        raise SystemExit(
+            "irag: another App Proof runner is active in this repository")
+    try:
+        repo_lock = _repo_lock(root, "prepare application proof")
+        try:
+            ingest.sync(conn, cfg, root)
+            structure.scan(conn, cfg, root)
+            audit_report = audit.run(
+                conn, cfg, root, check_advisories=False)
+        finally:
+            repo_lock.release()
+        result = proof.run(
+            conn, cfg, root, mode=args.mode,
+            selected_profile=selected, audit_report=audit_report)
+    finally:
+        proof_lock.release()
+
+    if args.report:
+        out = Path(args.report).expanduser().resolve()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        export_mod._atomic_write(out, proof.report_html(result))
+    if args.json:
+        print(json.dumps(result, indent=2, ensure_ascii=False))
+    else:
+        summary = result["summary"]
+        print(f"App Proof #{result['proof_run_id']} — {result['verdict']} ")
+        print(f"evidence  : {summary['coverage_percent']}% executed · "
+              f"{summary['pass_rate_percent']}% pass rate")
+        print(f"outcomes  : {summary['passed']} proven · "
+              f"{summary['failed']} failed · {summary['blocked']} blocked · "
+              f"{summary['untested']} untested · {summary['excluded']} excluded")
+        if args.report:
+            print(f"report    : {out}")
+        for item in result["failures"][:20]:
+            print(f"  FAIL {item['kind']}: {item['target']} — {item['detail']}")
+        unknown_count = summary["blocked"] + summary["untested"]
+        if unknown_count:
+            print(f"  {unknown_count} behavior(s) remain explicitly unproven")
+    if result["verdict"] == "failed":
+        return 1
+    return 1 if args.strict and result["verdict"] != "proven" else 0
+
+
 def cmd_web_search(args) -> int:
     """Return explicitly sourced live-web evidence without an LLM call."""
     conn, cfg, _root = _open()
@@ -1772,6 +1850,41 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--json", action="store_true",
                     help="print the complete machine-readable report")
     sp.set_defaults(func=cmd_audit)
+
+    sp = sub.add_parser(
+        "proof", help="prove a local app end-to-end: pages, links, controls, "
+        "API wiring, browser behavior, tests, and bounded stress")
+    sp.add_argument("--mode", choices=("quick", "full", "stress"),
+                    default="quick")
+    sp.add_argument("--base-url", help="loopback app URL")
+    sp.add_argument("--health-path", help="readiness path beginning with /")
+    sp.add_argument("--start-command",
+                    help="explicit command used to start the local app")
+    sp.add_argument("--test-command", action="append",
+                    help="project-owned test command; repeatable")
+    sp.add_argument("--auth-env",
+                    help="environment variable containing the exact Authorization header")
+    sp.add_argument("--request-timeout", type=int,
+                    help="per-request timeout in seconds (1-30)")
+    sp.add_argument("--start-timeout", type=int,
+                    help="readiness timeout in seconds (1-120)")
+    sp.add_argument("--max-pages", type=int)
+    sp.add_argument("--max-controls", type=int)
+    sp.add_argument("--no-browser", action="store_true")
+    sp.add_argument("--interact", action="store_true",
+                    help="click only non-form, non-destructive-looking controls")
+    sp.add_argument("--external-links", action="store_true",
+                    help="probe public external links (network access)")
+    sp.add_argument("--stress-requests", type=int)
+    sp.add_argument("--stress-concurrency", type=int)
+    sp.add_argument("--confirm-stress", action="store_true",
+                    help="required acknowledgement for stress mode")
+    sp.add_argument("--strict", action="store_true",
+                    help="exit 1 when any behavior remains blocked or untested")
+    sp.add_argument("--report", metavar="HTML",
+                    help="write a self-contained coding-agent handoff")
+    sp.add_argument("--json", action="store_true")
+    sp.set_defaults(func=cmd_proof)
 
     sp = sub.add_parser("web-search", help="search the live web with source "
                                            "URLs and retrieval time")
