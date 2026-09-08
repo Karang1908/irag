@@ -52,6 +52,23 @@ class MCPTests(unittest.TestCase):
         self.assertIn("irag_audit_triage", names)
         self.assertIn("irag_experiment", names)
         self.assertIn("irag_watchlist", names)
+        self.assertIn("irag_application_proof", names)
+        proof_state = server.request({
+            "jsonrpc": "2.0", "id": "proof-state", "method": "tools/call",
+            "params": {"name": "irag_application_proof",
+                       "arguments": {"action": "state"}},
+        })["result"]
+        self.assertFalse(proof_state["isError"])
+        self.assertEqual(
+            proof_state["structuredContent"]["profile"]["base_url"],
+            "http://127.0.0.1:3000")
+        stress_without_consent = server.request({
+            "jsonrpc": "2.0", "id": "proof-stress", "method": "tools/call",
+            "params": {"name": "irag_application_proof", "arguments": {
+                "action": "run", "mode": "stress"}},
+        })["result"]
+        self.assertTrue(stress_without_consent["isError"])
+        self.assertIn("confirm_stress", stress_without_consent["content"][0]["text"])
         status = server.request({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
             "params": {"name": "irag_status", "arguments": {}},
@@ -162,7 +179,7 @@ class MCPTests(unittest.TestCase):
             "params": {"_meta": meta},
         })["result"]
         self.assertEqual(listed["resultType"], "complete")
-        self.assertEqual(len(listed["tools"]), 21)
+        self.assertEqual(len(listed["tools"]), 22)
 
         started = server.request({
             "jsonrpc": "2.0", "id": "s", "method": "tools/call",
@@ -222,7 +239,7 @@ class MCPTests(unittest.TestCase):
                          ["discover", "tools"])
         self.assertEqual(responses[0]["result"]["supportedVersions"],
                          ["2026-07-28"])
-        self.assertEqual(len(responses[1]["result"]["tools"]), 21)
+        self.assertEqual(len(responses[1]["result"]["tools"]), 22)
 
         oversized = subprocess.run(
             [sys.executable, "-m", "irag", "mcp", "--root", str(self.root)],
