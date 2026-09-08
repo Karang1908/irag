@@ -86,6 +86,7 @@ class _State:
         self._schema_ready = True
         self.lock = threading.Lock()          # serialize LLM-heavy operations
         self.audit_lock = threading.Lock()    # one deep filesystem scan at a time
+        self.proof_lock = threading.Lock()    # one application proof at a time
         self.last_live = 0.0
         # A killed dashboard cannot leave a forever-running spinner, but a
         # second live dashboard must not pronounce the first one's work dead.
@@ -99,11 +100,31 @@ class _State:
                     "UPDATE jobs SET status='failed', progress=100, "
                     "error=COALESCE(error,'dashboard stopped before completion'), "
                     "finished_at=COALESCE(finished_at,datetime('now')) "
-                    "WHERE status IN ('queued','running')")
+                    "WHERE status IN ('queued','running') "
+                    "AND kind!='application-proof'")
                 bootstrap.commit()
                 bootstrap.close()
             finally:
                 startup_lock.release()
+        proof_startup_lock = UpdateLock(root, "proof")
+        if proof_startup_lock.acquire():
+            try:
+                bootstrap = db.connect(root / ".irag" / "memory.db")
+                bootstrap.execute(
+                    "UPDATE jobs SET status='failed',progress=100,"
+                    "error=COALESCE(error,'dashboard stopped before completion'),"
+                    "finished_at=COALESCE(finished_at,datetime('now')) "
+                    "WHERE status IN ('queued','running') "
+                    "AND kind='application-proof'")
+                bootstrap.execute(
+                    "UPDATE proof_runs SET status='failed',"
+                    "error=COALESCE(error,'runner stopped before completion'),"
+                    "finished_at=COALESCE(finished_at,datetime('now')) "
+                    "WHERE status='running'")
+                bootstrap.commit()
+                bootstrap.close()
+            finally:
+                proof_startup_lock.release()
 
     def _stamp(self):
         path = config_mod.config_path(self.root)
@@ -224,7 +245,8 @@ def _create_job(conn: sqlite3.Connection, kind: str) -> dict:
     job_id = uuid.uuid4().hex
     conn.execute(
         "INSERT INTO jobs(job_id,kind,status,progress,log_json) "
-        "VALUES(?,?,'queued',0,?)", (job_id, kind, json.dumps(["update queued"])))
+        "VALUES(?,?,'queued',0,?)",
+        (job_id, kind, json.dumps([f"{kind} queued"])))
     conn.commit()
     return _job_row(conn, job_id) or {"job_id": job_id}
 
@@ -469,6 +491,21 @@ def make_handler(state: _State):
                         return self._json({"error": "bad contradiction id"}, 400)
                     return self._html(
                         reports.contradiction_html(conn, state.root, ids))
+                if url.path == "/proof-report":
+                    from . import proof
+                    raw_id = (qs.get("id") or [""])[0]
+                    try:
+                        run_id = int(raw_id)
+                    except ValueError:
+                        return self._json({"error": "bad proof run id"}, 400)
+                    report = proof.get_run(conn, run_id)
+                    if not report:
+                        return self._json({"error": "no such proof run"}, 404)
+                    if report.get("status") != "completed":
+                        return self._json(
+                            {"error": "proof report is not complete",
+                             "status": report.get("status")}, 409)
+                    return self._html(proof.report_html(report))
                 if url.path == "/api/status":
                     s = stats.status_dict(conn, state.cfg, state.root)
                     s["project"] = state.root.name or str(state.root)
@@ -534,6 +571,21 @@ def make_handler(state: _State):
                         return self._json(
                             {"error": "memory update in progress; retry"}, 409)
                     return self._json(value or {"status": "never_run"})
+                if url.path == "/api/proof":
+                    from . import proof
+                    if config_error:
+                        value = proof.state(conn, state.root)
+                    else:
+                        refreshed, value = self._with_live_memory(
+                            conn, lambda: proof.state(conn, state.root))
+                        if not refreshed:
+                            return self._json(
+                                {"error": "memory update in progress; retry"}, 409)
+                    latest_run = value.get("latest") or {}
+                    job_id = latest_run.get("job_id")
+                    value["job"] = _job_row(conn, job_id) if job_id else None
+                    value["config_error"] = config_error
+                    return self._json(value)
                 if url.path == "/api/audit-sarif":
                     from . import audit
                     if config_error:
@@ -864,7 +916,8 @@ def make_handler(state: _State):
                 if config_error and url.path in (
                         "/api/chat", "/api/update", "/api/op", "/api/audit",
                         "/api/studio-chat", "/api/studio-ideas",
-                        "/api/watchlist/refresh", "/api/api-check"):
+                        "/api/watchlist/refresh", "/api/api-check",
+                        "/api/proof/run"):
                     return self._json(
                         {"error": "config reload failed: " + config_error},
                         400)
@@ -909,6 +962,112 @@ def make_handler(state: _State):
                     finally:
                         state.audit_lock.release()
                     return self._json(result)
+                if url.path == "/api/proof/profile":
+                    from . import proof
+                    try:
+                        value = proof.save_profile(conn, data.get("profile"))
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    return self._json({"ok": True, "profile": value})
+                if url.path == "/api/proof/run":
+                    from . import proof
+                    mode = str(data.get("mode") or "quick")
+                    if mode == "stress" and data.get("confirm_stress") is not True:
+                        return self._json(
+                            {"error": "stress mode requires confirm_stress=true"},
+                            400)
+                    try:
+                        selected = proof.validate_profile(
+                            data.get("profile") if "profile" in data
+                            else proof.profile(conn))
+                    except ValueError as exc:
+                        return self._json({"error": str(exc)}, 400)
+                    if mode not in proof.RUN_MODES:
+                        return self._json(
+                            {"error": "mode must be quick, full, or stress"},
+                            400)
+                    if not state.proof_lock.acquire(blocking=False):
+                        return self._json(
+                            {"error": "an application proof is already running"},
+                            409)
+                    from .locking import UpdateLock
+                    cross_lock = UpdateLock(state.root, "proof")
+                    if not cross_lock.acquire():
+                        state.proof_lock.release()
+                        return self._json(
+                            {"error": "another App Proof runner is active in this repository"},
+                            409)
+                    try:
+                        proof.save_profile(conn, selected)
+                        job = _create_job(conn, "application-proof")
+                        job_id = job["job_id"]
+                        run_id = proof.create_run(
+                            conn, mode, selected, job_id=job_id)
+                        worker_cfg = copy.deepcopy(state.cfg)
+
+                        def proof_worker():
+                            began = False
+                            try:
+                                wconn = state.conn()
+                                _advance_job(
+                                    wconn, job_id,
+                                    "refreshing repository and audit evidence", 2)
+                                repo_lock = UpdateLock(state.root)
+                                if not repo_lock.acquire():
+                                    raise RuntimeError(
+                                        "another memory update is running; rerun App Proof when it finishes")
+                                try:
+                                    with state.audit_lock, state.lock:
+                                        from . import audit, ingest
+                                        ingest.sync(wconn, worker_cfg, state.root)
+                                        structure.scan(wconn, worker_cfg, state.root)
+                                        audit_report = audit.run(
+                                            wconn, worker_cfg, state.root,
+                                            check_advisories=False)
+                                finally:
+                                    repo_lock.release()
+                                began = True
+                                result = proof.run(
+                                    wconn, worker_cfg, state.root, mode=mode,
+                                    selected_profile=selected, run_id=run_id,
+                                    audit_report=audit_report,
+                                    progress=lambda message, percent: _advance_job(
+                                        wconn, job_id, message, percent))
+                                _advance_job(
+                                    wconn, job_id,
+                                    f"done: {result['verdict']} · "
+                                    f"{result['summary']['coverage_percent']}% evidenced",
+                                    100, status="completed")
+                            except BaseException as exc:
+                                try:
+                                    failed = state.conn()
+                                    if not began:
+                                        proof.fail_run(failed, run_id, exc)
+                                    _advance_job(
+                                        failed, job_id, f"ERROR: {exc}", 100,
+                                        status="failed", error=str(exc)[:2000])
+                                except Exception:
+                                    traceback.print_exc()
+                            finally:
+                                state.release()
+                                cross_lock.release()
+                                state.proof_lock.release()
+
+                        threading.Thread(
+                            target=proof_worker, daemon=True).start()
+                    except Exception as exc:
+                        cross_lock.release()
+                        state.proof_lock.release()
+                        if "run_id" in locals():
+                            proof.fail_run(conn, run_id, exc)
+                        if "job_id" in locals():
+                            _advance_job(conn, job_id, f"ERROR: {exc}", 100,
+                                         status="failed", error=str(exc)[:2000])
+                        raise
+                    return self._json(
+                        {"ok": True, "job_id": job_id,
+                         "proof_run_id": run_id,
+                         "events": f"/api/job-events?id={job_id}"}, 202)
                 if url.path == "/api/audit-triage":
                     from . import audit
                     try:
