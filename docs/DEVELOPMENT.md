@@ -42,6 +42,7 @@ export` installs a static operator guide without dumping memory into it.
 | `irag/db.py` | schema, ordered migrations, automatic pre-upgrade backups, downgrade refusal, triggers, shared helpers |
 | `irag/mcp.py` | standards-compliant JSON-RPC stdio MCP server and universal tool contracts |
 | `irag/proof.py` | loopback-only full-stack contract, crawl, API, browser, test-command, and stress evidence |
+| `irag/proof_browser.py`, `irag/assets/proof_runner.js` | optional Python and Node Playwright collectors with matching evidence and origin boundaries |
 | `irag/providers.py` | Claude, Codex, agy, Ollama, and custom process adapters with retries/telemetry |
 | `irag/reports.py` | escaped, self-contained contradiction repair briefs for coding agents |
 | `irag/config.py` | defaults + `.irag/config.toml` deep-merge and semantic validation (tomllib) |
@@ -62,6 +63,23 @@ export` installs a static operator guide without dumping memory into it.
 | `irag/cli.py` | argparse; every command resolves the nearest `.irag` root (or cwd for init), opens `.irag/memory.db` |
 
 ## Conventions
+
+For App Proof changes, run the focused suite and `sh tests/test_smoke.sh`.
+The optional real-browser regression is separate from the dependency-free
+core suite:
+
+```bash
+python3 -m pip install playwright
+python3 -m playwright install chromium
+python3 tests/check_proof_browser.py
+```
+
+It runs both packaged collectors against temporary local fixtures: failed
+loads/click requests, no-op clicks, visible changes, forms, control limits,
+redirects, and authorization isolation. It uses Playwright's bundled Node
+driver to test the JavaScript collector without adding a project dependency.
+Browser automation and loopback listeners must be permitted by the environment.
+An unavailable browser is an untested boundary, not a successful proof.
 
 - Product subprocesses use argument lists. The sole `shell=True` path is
   executable facts: user-authored proof commands, stored and run only after
