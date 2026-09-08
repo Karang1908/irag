@@ -44,6 +44,7 @@ TOOLS = [
     {"name": "irag_list_contradictions", "description": "List open contradictions and include a ready-to-use coding-agent repair brief.", "inputSchema": _schema({"id": {"type": "integer", "minimum": 1}}), "annotations": {"readOnlyHint": True, "openWorldHint": False}},
     {"name": "irag_get_main_summary", "description": "Return the complete live project summary: every current memory page, status, sessions, contradictions, and latest audit state.", "inputSchema": _schema({}), "annotations": {"readOnlyHint": True, "openWorldHint": False}},
     {"name": "irag_audit", "description": "Run a defensive code, API, secret-pattern, architecture, and dependency audit. Optional live OSV lookups never call an LLM.", "inputSchema": _schema({"check_advisories": {"type": "boolean"}}), "annotations": {"destructiveHint": False, "idempotentHint": True, "openWorldHint": True}},
+    {"name": "irag_application_proof", "description": "Inspect, configure, or run evidence-first proof of a loopback full-stack app: frontend/backend contracts, pages, links, controls, APIs, optional Playwright, configured tests, and bounded read-only stress. Never reports unexecuted behavior as passing.", "inputSchema": _schema({"action": {"type": "string", "enum": ["state", "save-profile", "run"]}, "mode": {"type": "string", "enum": ["quick", "full", "stress"]}, "confirm_stress": {"type": "boolean"}, "profile": {"type": "object", "additionalProperties": False, "properties": {"base_url": {"type": "string", "maxLength": 2000}, "health_path": {"type": "string", "maxLength": 1000}, "start_command": {"type": "string", "maxLength": 2000}, "test_commands": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 2000}}, "auth_env": {"type": "string", "maxLength": 200}, "request_timeout": {"type": "integer", "minimum": 1, "maximum": 30}, "start_timeout": {"type": "integer", "minimum": 1, "maximum": 120}, "max_pages": {"type": "integer", "minimum": 1, "maximum": 200}, "max_controls": {"type": "integer", "minimum": 1, "maximum": 500}, "browser_enabled": {"type": "boolean"}, "allow_interactions": {"type": "boolean"}, "check_external_links": {"type": "boolean"}, "stress_requests": {"type": "integer", "minimum": 1, "maximum": 1000}, "stress_concurrency": {"type": "integer", "minimum": 1, "maximum": 32}}}}, ["action"]), "annotations": {"destructiveHint": True, "idempotentHint": False, "openWorldHint": True}},
     {"name": "irag_web_search", "description": "Search the live web for current technical, product, business, marketing, or design evidence. Returns source URLs and retrieval time; never calls an LLM.", "inputSchema": _schema({"query": {"type": "string", "minLength": 1, "maxLength": 1000}}, ["query"]), "annotations": {"readOnlyHint": True, "openWorldHint": True}},
     {"name": "irag_delivery_plan", "description": "Analyze the live Git diff into change risk, API/public-contract changes, blast radius, impacted tests, and release gates without executing commands.", "inputSchema": _schema({"base": {"type": "string", "maxLength": 200}}), "annotations": {"readOnlyHint": True, "openWorldHint": False}},
     {"name": "irag_team_memory", "description": "Export a reviewable merge-safe memory bundle, or idempotently import one. Bundles exclude source, transcripts, prompts, and executable facts.", "inputSchema": _schema({"action": {"type": "string", "enum": ["export", "import"]}, "bundle": {"type": "object"}}), "annotations": {"destructiveHint": False, "idempotentHint": True, "openWorldHint": False}},
@@ -181,6 +182,42 @@ class MCPServer:
                 value = self._locked(
                     "run code audit", run_audit)
                 return value, _pretty(value)
+            if name == "irag_application_proof":
+                from . import audit, proof
+                action = _required_text(args, "action", 20)
+                if action == "state":
+                    value = self._live(
+                        conn, cfg, lambda: proof.state(conn, self.root))
+                    return value, _pretty(value)
+                if action == "save-profile":
+                    value = proof.save_profile(conn, args.get("profile"))
+                    return value, _pretty(value)
+                if action != "run":
+                    raise ValueError("action must be state, save-profile, or run")
+                mode = str(args.get("mode") or "quick")
+                if mode == "stress" and args.get("confirm_stress") is not True:
+                    raise ValueError("stress mode requires confirm_stress=true")
+                selected = proof.validate_profile(
+                    args.get("profile") if "profile" in args
+                    else proof.profile(conn))
+                proof_lock = UpdateLock(self.root, "proof")
+                if not proof_lock.acquire():
+                    raise RuntimeError(
+                        "another App Proof runner is active in this repository")
+                try:
+                    def prepare_proof():
+                        ingest.sync(conn, cfg, self.root)
+                        structure.scan(conn, cfg, self.root)
+                        return audit.run(
+                            conn, cfg, self.root, check_advisories=False)
+                    audit_report = self._locked(
+                        "prepare application proof", prepare_proof)
+                    value = proof.run(
+                        conn, cfg, self.root, mode=mode,
+                        selected_profile=selected, audit_report=audit_report)
+                finally:
+                    proof_lock.release()
+                return value, value["agent_brief"]
             if name == "irag_web_search":
                 from . import websearch
                 query = _required_text(args, "query", 1000)
