@@ -54,6 +54,8 @@ class AppProofTests(unittest.TestCase):
              "file": "app.py", "line": 5},
             {"method": "GET", "path": "/api/query",
              "file": "app.py", "line": 6},
+            {"method": "GET", "path": "/not-a-real-route",
+             "file": "tests/fixture.py", "line": 7},
         ]}}
         selected = proof.validate_profile({
             "base_url": self.base, "browser_enabled": False,
@@ -96,6 +98,7 @@ class AppProofTests(unittest.TestCase):
         self.assertEqual(outcomes[("api", "POST /submit")], "untested")
         self.assertEqual(outcomes[("api", "ANY /ambiguous")], "blocked")
         self.assertEqual(outcomes[("api", "GET /api/query")], "blocked")
+        self.assertNotIn(("api", "GET /not-a-real-route"), outcomes)
         self.assertEqual(
             outcomes[("test-suite", "configured project tests")], "untested")
         self.assertEqual(outcomes[("link", "/missing-page")], "failed")
