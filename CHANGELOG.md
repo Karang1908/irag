@@ -19,7 +19,7 @@ unexecuted behavior “working.”
   bounded read-only stress checks.
 - Durable proof profiles and runs retain the exact limits, outcomes, tree
   fingerprint, evidence, failures, unknowns, browser artifacts, and generated
-  coding-agent repair brief. Every result uses five explicit states: proven,
+  coding-agent repair brief. Every check uses five explicit states: passed,
   failed, blocked, untested, or excluded.
 - `irag proof` exposes Quick, Full, and Stress modes to terminals and CI, with
   JSON and self-contained HTML output plus an optional strict gate.
@@ -47,6 +47,14 @@ unexecuted behavior “working.”
 - Runtime `<input type=submit>` controls, forms, internal-link outcomes, and
   control-limit truncation are now visible in coverage instead of disappearing
   from the report.
+- Browser request/HTTP failures are recorded even when the page stays visually
+  intact. A click with no observable change remains untested. Node Playwright
+  and the optional Python fallback share redirect and credential boundaries.
+- Route discovery recognizes more framework patterns, ignores nested stdlib
+  dispatch comparisons, and keeps test fixtures out of runtime API probes.
+- Dashboard refreshes preserve in-progress profile edits and evidence filters;
+  completed jobs clear transient refresh errors. Mobile launch controls,
+  history actions, and labeled evidence filters remain directly usable.
 
 ## 4.49.0 — 2026-09-07
 
