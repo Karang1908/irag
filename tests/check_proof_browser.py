@@ -124,9 +124,15 @@ def main() -> None:
                 print(f"{label}: load/click failures, no-op, visible change, form boundary, "
                       "redirect boundary, and exact control limit passed")
             assert app_headers and secret in app_headers, "app never received its test auth"
-            assert outside_headers and all(value is None for value in outside_headers), \
+            assert all(value is None for value in outside_headers), \
                 "Authorization escaped the application origin"
-            print("Authorization stayed on the configured origin")
+            if not outside_headers:
+                assert any(outside_url in str(row.get("url")) and row.get("error")
+                           for row in value["network"]), \
+                    "external fixture was neither requested nor reported blocked"
+                print("App received its auth; Chromium blocked the external resource before dispatch")
+            else:
+                print("App received its auth; external requests received no Authorization header")
     finally:
         for server in (app, outside):
             server.shutdown()
