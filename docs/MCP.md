@@ -88,6 +88,7 @@ client's PATH, use the absolute path printed by `command -v irag` (Windows:
 | `irag_list_contradictions` | open rows plus a complete repair prompt | no |
 | `irag_get_main_summary` | every current memory page plus health, sessions, contradictions, and audit state | no |
 | `irag_audit` | defensive code/API/security/dependency report, optionally with OSV | no |
+| `irag_application_proof` | inspect/save a proof profile or run loopback contracts, pages, links, controls, APIs, browser/tests, and confirmed bounded stress | no |
 | `irag_web_search` | current web evidence with source URLs and retrieval time | no |
 | `irag_delivery_plan` | current diff, blast radius, contract risk, mapped tests, release gates, and agent brief | no |
 | `irag_team_memory` | bounded reviewable export or idempotent import of shareable project knowledge | no |
@@ -100,7 +101,15 @@ client's PATH, use the absolute path printed by `command -v irag` (Windows:
 | `irag_start_session` / `irag_finish_session` | isolated conversation diary | only optional final narration |
 | `irag_update` | sync → incremental scan → synthesis → lint | yes, for due pages |
 
-Memory read tools and the local audit are deterministic. `irag_web_search` and
+Memory read tools, the local audit, and App Proof's scanners are deterministic.
+App Proof may execute explicitly configured local app/test commands and optional
+browser interactions, so its MCP annotation is intentionally open-world and
+potentially destructive even though automatic API/stress calls remain read-only.
+The `run` action accepts Quick/Full/Stress mode plus the same bounded profile as
+the dashboard; Stress requires `confirm_stress: true`. `state` returns profile,
+history, latest evidence, and detected test-command suggestions. Authorization
+values are referenced by environment-variable name and never enter MCP results.
+`irag_web_search` and
 the optional OSV audit tier are explicit open-world reads; neither calls an
 LLM. `irag_update` is explicitly the write path and may invoke the configured
 summary provider. Every MCP mutation uses irag's cross-process repository lock,
@@ -117,11 +126,14 @@ partial state.
 4. Call `irag_delivery_plan` before declaring the task ready: inspect contract
    changes, test mapping, and release gates rather than relying on a generic
    test command.
-5. Record decisions and non-obvious lessons as they happen. Modern stateless
+5. For a full-stack change, call `irag_application_proof` with `action: run`
+   against the loopback app and hand any failed/blocked/untested packet back to
+   the coding agent.
+6. Record decisions and non-obvious lessons as they happen. Modern stateless
    clients pass `session_key` to these calls.
-6. Call `irag_update` after changing files, with the same `session_key` on a
+7. Call `irag_update` after changing files, with the same `session_key` on a
    modern stateless connection.
-7. Call `irag_finish_session` with that key before the conversation ends.
+8. Call `irag_finish_session` with that key before the conversation ends.
 
 Legacy clients may rely on one MCP process retaining the active key. Modern
 `2026-07-28` clients carry the returned key explicitly, so requests may land on
