@@ -11,7 +11,7 @@ import sqlite3
 import datetime as _datetime
 from pathlib import Path
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -358,6 +358,31 @@ CREATE TABLE IF NOT EXISTS memory_imports (
   imported_at   TEXT DEFAULT (datetime('now'))
 );
 
+-- App Proof retains the exact bounded profile and evidence from every run.
+-- A run can be associated with a dashboard job, but CLI/MCP runs remain
+-- first-class records without requiring the dashboard server.
+CREATE TABLE IF NOT EXISTS proof_profiles (
+  profile_id   INTEGER PRIMARY KEY CHECK(profile_id = 1),
+  profile_json TEXT NOT NULL,
+  updated_at   TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS proof_runs (
+  proof_run_id     INTEGER PRIMARY KEY,
+  job_id           TEXT REFERENCES jobs(job_id),
+  mode             TEXT NOT NULL,
+  status           TEXT NOT NULL,       -- running | completed | failed
+  base_url         TEXT NOT NULL,
+  tree_fingerprint TEXT NOT NULL DEFAULT '',
+  profile_json     TEXT NOT NULL,
+  result_json      TEXT,
+  error            TEXT,
+  duration_ms      INTEGER NOT NULL DEFAULT 0,
+  created_at       TEXT DEFAULT (datetime('now')),
+  finished_at      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_proof_runs_created
+  ON proof_runs(created_at DESC, proof_run_id DESC);
+
 -- ---------------------------------------------------------------
 -- Inverted index: FTS5 over revision bodies (external-content table)
 -- ---------------------------------------------------------------
@@ -641,6 +666,14 @@ def _migration_8_delivery_and_evidence(conn: sqlite3.Connection) -> None:
                            "TEXT NOT NULL DEFAULT ''")
 
 
+def _migration_9_application_proof(conn: sqlite3.Connection) -> None:
+    """Record durable full-stack proof profiles, runs, and job linkage."""
+    # Fresh and upgraded databases receive the tables from SCHEMA before the
+    # ordered ledger advances. Keep this explicit so older binaries fail
+    # closed instead of silently ignoring application-proof evidence.
+    conn.execute("SELECT 1")
+
+
 MIGRATIONS = (
     (1, "legacy columns", _migration_1_legacy_columns),
     (2, "contradiction integrity", _migration_2_resolution_integrity),
@@ -650,6 +683,7 @@ MIGRATIONS = (
     (6, "lossless session critical context", _migration_6_lossless_session_context),
     (7, "audit and thinking studio history", _migration_7_intelligence_surfaces),
     (8, "delivery, triage, and product evidence", _migration_8_delivery_and_evidence),
+    (9, "full-stack application proof", _migration_9_application_proof),
 )
 
 
