@@ -11,6 +11,7 @@
 <link rel="preconnect" href="https://cdn.fontshare.com" crossorigin>
 <link rel="stylesheet" href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&f[]=clash-display@500,600,700&display=swap">
 <style>
+[hidden]{display:none!important}
 :root{
   /* ---- color: shared with the docs site — near-black, hairline borders,
      one accent (action/state only) ---- */
@@ -805,6 +806,9 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
 
 /* ---------- application proof ---------- */
 .proof-config{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--sp-3)}
+.proof-launch{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:flex-end;gap:var(--sp-3)}
+.proof-launch>.field{flex:1 1 240px;min-width:0}
+.proof-launch>.proof-actions{flex:2 1 320px;min-width:0}
 .proof-config textarea{width:100%;min-height:92px;resize:vertical;background:var(--bg-inset);
   border:1px solid var(--border);border-radius:var(--r-sm);color:var(--text);
   padding:9px 10px;font:var(--fs-xs)/1.5 var(--mono)}
@@ -849,8 +853,10 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
 .proof-packet{display:flex;flex-direction:column}.proof-packet-row{padding:9px 0;border-top:1px solid var(--border)}
 .proof-packet-row:first-child{border-top:0}.proof-packet-row b{display:block;font-size:var(--fs-xs);overflow-wrap:anywhere}
 .proof-packet-row span{display:block;font-size:var(--fs-2xs);color:var(--text-dim);margin-top:2px;overflow-wrap:anywhere}
-.proof-history{display:flex;flex-direction:column}.proof-history-row{display:grid;grid-template-columns:58px 80px 100px minmax(0,1fr) auto;
+.proof-history{display:flex;flex-direction:column}.proof-history-row{display:flex;flex-wrap:wrap;
   gap:var(--sp-2);align-items:center;padding:8px 2px;border-top:1px solid var(--border);font:var(--fs-2xs) var(--mono)}
+.proof-history-row span:nth-child(4){flex-basis:100%;order:5;white-space:nowrap;color:var(--text-faint)}
+.proof-history-row .mini{margin-left:auto;white-space:nowrap;min-height:28px}
 .proof-history-row:first-child{border-top:0}.proof-status{font-weight:700}.proof-status.proven{color:var(--green)}
 .proof-status.failed{color:var(--red)}.proof-status.incomplete{color:var(--orange)}
 .proof-status.passed{color:var(--green)}.proof-status.blocked,.proof-status.untested{color:var(--orange)}
@@ -891,8 +897,7 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
   .proof-stage+.proof-stage::before{display:none}
   .proof-check{grid-template-columns:72px minmax(0,1fr)}
   .proof-check .kind{grid-column:2}.proof-check>div{grid-column:1/-1}.proof-check .duration{grid-column:2}
-  .proof-history-row{grid-template-columns:46px 70px minmax(0,1fr)}
-  .proof-history-row span:nth-child(4){grid-column:1/-1}.proof-history-row .mini{grid-column:3}}
+}
 </style>
 </head>
 <body>
@@ -1098,9 +1103,18 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
     <div class="panel" style="margin-bottom:var(--sp-4)">
       <div class="panel-heading"><h3>Proof profile <span class="pill">loopback only · durable per project</span></h3><span class="config-state" id="proof-save-state">Loading profile…</span></div>
       <form id="proof-form" class="proof-config">
+        <div class="proof-launch full">
+          <div class="field"><label for="proof-mode">Proof depth</label><select id="proof-mode"><option value="quick">Quick · contracts + HTTP</option><option value="full">Full · browser + tests</option><option value="stress">Stress · full + load</option></select></div>
+          <div class="proof-actions">
+            <button class="primary" id="proof-run" type="submit">Run quick proof</button>
+            <button class="mini" id="proof-save" type="button">Save profile</button>
+            <progress id="proof-progress" max="100" value="0" hidden></progress>
+            <span class="config-state" id="proof-job-state">No proof is running.</span>
+          </div>
+        </div>
+        <label class="proof-warning check-label" id="proof-stress-confirm-wrap" hidden><input id="proof-stress-confirm" type="checkbox"> I confirm this bounded read-only stress run against the local application.</label>
         <div class="field wide"><label for="proof-base">Local application URL</label><input id="proof-base" type="url" placeholder="http://127.0.0.1:3000" required></div>
-        <div class="field"><label for="proof-health">Readiness path</label><input id="proof-health" placeholder="/health" required></div>
-        <div class="field"><label for="proof-mode">Proof depth</label><select id="proof-mode"><option value="quick">Quick · contracts + HTTP</option><option value="full">Full · browser + tests</option><option value="stress">Stress · full + load</option></select></div>
+        <div class="field wide"><label for="proof-health">Readiness path</label><input id="proof-health" placeholder="/health" required></div>
         <div class="field wide"><label for="proof-start">Start command</label><input id="proof-start" placeholder="npm run dev" autocomplete="off"></div>
         <div class="field wide"><label for="proof-auth">Authorization environment variable</label><input id="proof-auth" placeholder="IRAG_PROOF_AUTH" autocomplete="off"></div>
         <div class="field full"><label for="proof-tests">Project test commands · one per line</label><textarea id="proof-tests" placeholder="npm test&#10;npm run test:e2e" spellcheck="false"></textarea><span class="privacy-note">Commands run directly without a shell in Full and Stress modes. Review them before saving; they have the same local permissions as iRAG.</span><div class="proof-suggestions" id="proof-suggestions"></div></div>
@@ -1120,13 +1134,6 @@ th[data-sort].desc::after{opacity:.9;transform:rotate(180deg)}
           <label class="check-label"><input id="proof-external" type="checkbox"> Check public external links</label>
         </div>
         <div class="proof-warning" id="proof-mode-warning">Quick mode discovers contracts, crawls pages, validates links, and executes parameter-free GET/HEAD routes. Browser controls and project tests remain untested.</div>
-        <label class="proof-warning check-label" id="proof-stress-confirm-wrap" hidden><input id="proof-stress-confirm" type="checkbox"> I confirm this bounded read-only stress run against the local application.</label>
-        <div class="proof-actions">
-          <button class="primary" id="proof-run" type="submit">Run quick proof</button>
-          <button class="mini" id="proof-save" type="button">Save profile</button>
-          <progress id="proof-progress" max="100" value="0" hidden></progress>
-          <span class="config-state" id="proof-job-state">No proof is running.</span>
-        </div>
       </form>
     </div>
 
@@ -1834,7 +1841,7 @@ $("#api-check-form").onsubmit=async event=>{
 };
 
 /* ---------- App Proof: contracts → runtime → visible state ---------- */
-let _proofData=null,_proofBusy=false,_proofFormLoaded=false,_proofFormDirty=false;
+let _proofData=null,_proofBusy=false,_proofRefreshBusy=false,_proofFormLoaded=false,_proofFormDirty=false;
 let _proofJobSource=null,_proofJobPoll=null,_proofJobId=null;
 let _proofRenderKey=null;
 const proofInputIds=["proof-base","proof-health","proof-mode","proof-start","proof-auth","proof-tests",
@@ -1896,7 +1903,7 @@ function renderProofSuggestions(commands){
 }
 
 async function refreshProof(){
-  if(_proofBusy)return;
+  if(_proofBusy||_proofRefreshBusy)return;_proofRefreshBusy=true;
   try{
     _proofData=await api("/api/proof");
     if(!_proofFormLoaded||!_proofFormDirty)fillProofProfile(_proofData.profile||{});
@@ -1904,7 +1911,11 @@ async function refreshProof(){
     renderProofSuggestions(_proofData.suggested_test_commands||[]);
     renderProofResult();
     if(_proofData.job?.running&&_proofData.job.job_id)watchProofJob(_proofData.job.job_id);
-  }catch(err){const state=$("#proof-job-state");state.textContent=errorText(err);state.className="config-state bad"}
+    else if(_proofData.latest?.status==="completed"){
+      const state=$("#proof-job-state");state.textContent="Proof #"+_proofData.latest.proof_run_id+" complete · "+_proofData.latest.verdict;state.className="config-state ok";
+    }
+  }catch(err){const state=$("#proof-job-state");state.textContent=err.status===409?"Waiting for the current memory refresh…":errorText(err);state.className="config-state "+(err.status===409?"":"bad")}
+  finally{_proofRefreshBusy=false}
 }
 
 async function saveProofProfile(){
@@ -1990,10 +2001,10 @@ function renderProofResult(){
       <div class="proof-ledger"><div><b>${summary.coverage_percent||0}%</b><span>checks executed</span></div><div class="passed"><b>${summary.passed||0}</b><span>passed</span></div><div class="failed"><b>${summary.failed||0}</b><span>failed</span></div><div class="blocked"><b>${summary.blocked||0}</b><span>blocked</span></div><div class="untested"><b>${summary.untested||0}</b><span>untested</span></div></div>
       <div class="proof-flow">${proofStage(["contract","control"],"Frontend intent","static calls + controls")}${proofStage(["runtime","page","link","external-link"],"HTTP reality","pages + navigation")}${proofStage(["api","authentication","stress"],"Backend boundary","routes + resilience")}${proofStage(["browser-page","browser-control","test-command","browser"],"Visible behavior","browser + project suites")}</div>
       <p class="privacy-note">Coverage applies to discovered checks in this run, including static contracts. ${summary.excluded||0} excluded controls are outside scope. Browser clicks require an observable change; business correctness needs your project tests.</p>
-      <div class="proof-actions" style="margin-top:var(--sp-3)"><button class="primary" type="button" id="proof-open-report">Open agent repair brief ↗</button><button class="mini" type="button" id="proof-copy-brief">Copy agent brief</button><button class="mini" type="button" id="proof-download">Download JSON</button><span class="config-state">${summary.pass_rate_percent||0}% pass rate among executed checks</span></div>
+      <div class="proof-actions" style="margin-top:var(--sp-3)"><button class="primary" type="button" id="proof-open-report">Open agent repair brief</button><button class="mini" type="button" id="proof-copy-brief">Copy agent brief</button><button class="mini" type="button" id="proof-download">Download JSON</button><span class="config-state">${summary.pass_rate_percent||0}% pass rate among executed checks</span></div>
     </div>
     <div class="row"><div class="panel"><h3>Every evidence check <span class="pill" id="proof-check-count">${checks.length}</span></h3>
-      <div class="proof-toolbar"><input id="proof-text" aria-label="Filter proof evidence" placeholder="Filter by route, control, page, or evidence…" value="${esc(currentText).replace(/"/g,"&quot;")}"><select id="proof-outcome"><option value="all">All outcomes</option>${["passed","failed","blocked","untested","excluded"].map(v=>`<option value="${v}"${currentOutcome===v?" selected":""}>${v}</option>`).join("")}</select><select id="proof-kind"><option value="all">All check kinds</option>${kinds.map(v=>`<option value="${esc(v)}"${currentKind===v?" selected":""}>${esc(v)}</option>`).join("")}</select></div><div class="proof-checks" id="proof-checks"></div></div>
+      <div class="proof-toolbar"><input id="proof-text" aria-label="Filter proof evidence" placeholder="Filter by route, control, page, or evidence…" value="${esc(currentText).replace(/"/g,"&quot;")}"><select id="proof-outcome" aria-label="Filter by outcome"><option value="all">All outcomes</option>${["passed","failed","blocked","untested","excluded"].map(v=>`<option value="${v}"${currentOutcome===v?" selected":""}>${v}</option>`).join("")}</select><select id="proof-kind" aria-label="Filter by check kind"><option value="all">All check kinds</option>${kinds.map(v=>`<option value="${esc(v)}"${currentKind===v?" selected":""}>${esc(v)}</option>`).join("")}</select></div><div class="proof-checks" id="proof-checks"></div></div>
       <div><div class="panel"><h3>Failure + unknown packet <span class="pill">agent-ready</span></h3><div class="proof-packet">${packets}</div></div><div class="panel" style="margin-top:var(--sp-4)"><h3>Proof history</h3>${renderProofHistory(history)}</div></div></div>`;
   $("#proof-open-report").onclick=()=>window.open("/proof-report?id="+encodeURIComponent(latest.proof_run_id),"_blank","noopener");
   $("#proof-copy-brief").onclick=async()=>{try{await copyText(latest.agent_brief||"");showToast("Agent brief copied.","Paste it into any coding agent.")}catch(err){showToast("Could not copy the brief.",errorText(err))}};
@@ -2010,7 +2021,7 @@ function renderProofChecks(){
   box.innerHTML=checks.length?checks.map(item=>`<div class="proof-check"><span class="outcome ${esc(item.outcome)}">${esc(item.outcome)}</span><span class="kind">${esc(item.kind)}</span><div><span class="target">${esc(item.target)}</span><span class="detail">${esc(item.detail)}</span>${item.evidence?`<details><summary class="privacy-note">show evidence</summary><pre class="ctx-out">${esc(item.evidence)}</pre></details>`:""}</div><span class="duration">${item.duration_ms||0}ms</span></div>`).join(""):`<div class="empty">No evidence checks match this filter.</div>`;
 }
 function renderProofHistory(history){
-  return `<div class="proof-history">${history.length?history.map(item=>`<div class="proof-history-row"><span>#${item.proof_run_id}</span><span>${esc(item.mode)}</span><span class="proof-status ${esc(item.verdict||item.status)}">${esc(item.verdict||item.status)}</span><span>${esc((item.created_at||"").replace("T"," ").slice(0,19))}</span>${item.status==="completed"?`<button class="mini" type="button" data-proof-report="${item.proof_run_id}">Open ↗</button>`:"<span></span>"}</div>`).join(""):'<div class="empty">No earlier proof runs.</div>'}</div>`;
+  return `<div class="proof-history">${history.length?history.map(item=>`<div class="proof-history-row"><span>#${item.proof_run_id}</span><span>${esc(item.mode)}</span><span class="proof-status ${esc(item.verdict||item.status)}">${esc(item.verdict||item.status)}</span><span>${esc((item.created_at||"").replace("T"," ").slice(0,19))}</span>${item.status==="completed"?`<button class="mini" type="button" data-proof-report="${item.proof_run_id}">Open</button>`:"<span></span>"}</div>`).join(""):'<div class="empty">No earlier proof runs.</div>'}</div>`;
 }
 $("#proof-result").addEventListener("click",event=>{
   const button=event.target.closest("[data-proof-report]");
