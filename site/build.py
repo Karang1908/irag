@@ -584,7 +584,8 @@ def landing() -> str:
 <h1 class="hero-name" aria-label="irag"><span>i</span><span>r</span><span>a</span><span>g</span><span class="hn-dot">.</span></h1>
 <p class="lede"><b>Give every coding agent the same second brain — and give
 yourself a command center for the entire project.</b> irag remembers the whole
-codebase, proves its checkable claims against the real source, audits the code,
+codebase, proves its checkable claims against the real source, proves the live
+full-stack application instead of trusting silent wiring, audits the code,
 and turns live market evidence into grounded product thinking. Codex today,
 Claude tomorrow, Cursor after lunch — the project never forgets.</p>
 <div class="cta">
@@ -603,7 +604,7 @@ Claude tomorrow, Cursor after lunch — the project never forgets.</p>
 or trace a claim: those paths never call a model</span></div>
 <div class="stat"><b data-cnt="87" data-pre="~">~87</b><span>tokens to
 resume any past conversation, with its per-file changes</span></div>
-<div class="stat"><b data-cnt="21" data-suf=" tools">21 tools</b><span>one
+<div class="stat"><b data-cnt="22" data-suf=" tools">22 tools</b><span>one
 standard MCP contract, identical in every connected coding agent</span></div>
 <div class="stat"><b data-cnt="0">0</b><span>runtime dependencies,
 services, or required API keys</span></div>
@@ -655,7 +656,7 @@ update.</p>
 <pre class="term-body">codex mcp add irag -- irag mcp --root /absolute/project
 claude mcp add --scope project irag -- irag mcp --root /absolute/project
 
-✓ 21 tools · same memory · live evidence · isolated sessions</pre>
+✓ 22 tools · same memory · live evidence · isolated sessions</pre>
 </div>
 <p class="fineprint"><a href="docs/mcp/">Connect Cursor, Windsurf, VS Code, or any MCP client →</a></p>
 </section>
@@ -673,6 +674,17 @@ secrets, and attaches file, line, confidence, and remediation to every finding.
 The live API checker cannot wander beyond loopback or follow a redirect. Review
 decisions survive harmless line shifts, risk acceptances can expire, and open
 work exports as SARIF. Stale inventories fail closed.</p>
+</div>
+<div class="why-cols">
+<p><b>App Proof catches the bugs that stay silent between layers.</b> It traces
+frontend requests into discovered backend routes, then verifies the running
+application: reachable pages, internal and external links, forms, visible
+controls, safe API calls, optional Playwright behavior, and your project's real
+test suites.</p>
+<p>Then it pressure-tests read-only loopback routes with bounded concurrency.
+There is no fake “all green”: every behavior is proven, failed, blocked,
+untested, or excluded. A run becomes a durable HTML/JSON repair packet you can
+hand directly to any coding agent.</p>
 </div>
 <div class="term reveal tilt" role="img" aria-label="irag developer intelligence workspace">
 <div class="term-bar" aria-hidden="true"><span class="tb"></span><span class="tb"></span><span class="tb"></span><span class="term-title">thinking studio</span></div>
@@ -732,8 +744,12 @@ model, so bookkeeping never touches your agent's limits.</p>
 <h2 class="sec-t">This is infrastructure, not another prompt file.</h2>
 <ol class="featlist">
 <li class="reveal"><h3>One MCP brain for every agent</h3>
-<p>Twenty-one standard tools. The same names, schemas, results, lock, and
+<p>Twenty-two standard tools. The same names, schemas, results, lock, and
 database in Codex, Claude, Cursor, Windsurf, VS Code, and any MCP client.</p></li>
+<li class="reveal"><h3>Full-stack proof, not frontend/backend hope</h3>
+<p>One run connects static contracts to live HTTP, browser controls, real test
+suites, and bounded stress—then keeps every unknown visible and produces the
+repair brief.</p></li>
 <li class="reveal"><h3>Your agent never greps again</h3>
 <p>Search, code map, blast radius, and context come from SQL, not from
 the model re-reading your tree.</p></li>
@@ -796,8 +812,9 @@ rather than assumed to.</p>
 <p class="lede"><code>irag dashboard</code> is a local, zero-dependency web UI
 &mdash; and a full peer of the CLI, not a read-only viewer. Browse every page and
 diff its history, roll one back, trace a claim to the commit that created it, read
-a past conversation verbatim, preview the exact briefing your agent receives, and
-run every maintenance operation. Anything you can type, you can click.</p>
+a past conversation verbatim, preview the exact briefing your agent receives,
+and run every maintenance operation. App Proof adds a complete runtime lab for
+contracts, pages, links, controls, APIs, browser journeys, tests, and stress.</p>
 <div class="shots">
 <figure class="tilt px"><img src="assets/pages-memory.jpg" alt="One page: summary, structure and history" loading="lazy">
 <figcaption>one page, one object: summary, structure, history, problems</figcaption></figure>
@@ -806,8 +823,8 @@ run every maintenance operation. Anything you can type, you can click.</p>
 </div>
 </section>
 <div class="marq" aria-hidden="true"><div class="marq-in">
-<span>init</span><span>update</span><span>search</span><span>ask</span><span>map</span><span>impact</span><span>context</span><span>recap</span><span>why</span><span>asof</span><span>lint</span><span>check</span><span>sessions</span><span>transcript</span><span>rollback</span><span>learn</span><span>record-decision</span><span>dashboard</span>
-<span>init</span><span>update</span><span>search</span><span>ask</span><span>map</span><span>impact</span><span>context</span><span>recap</span><span>why</span><span>asof</span><span>lint</span><span>check</span><span>sessions</span><span>transcript</span><span>rollback</span><span>learn</span><span>record-decision</span><span>dashboard</span>
+<span>init</span><span>update</span><span>search</span><span>ask</span><span>map</span><span>impact</span><span>context</span><span>recap</span><span>why</span><span>asof</span><span>lint</span><span>check</span><span>proof</span><span>sessions</span><span>transcript</span><span>rollback</span><span>learn</span><span>record-decision</span><span>dashboard</span>
+<span>init</span><span>update</span><span>search</span><span>ask</span><span>map</span><span>impact</span><span>context</span><span>recap</span><span>why</span><span>asof</span><span>lint</span><span>check</span><span>proof</span><span>sessions</span><span>transcript</span><span>rollback</span><span>learn</span><span>record-decision</span><span>dashboard</span>
 </div></div>
 <section class="quote reveal">
 <blockquote>"A <b>database system with an AI layer</b> — not an AI system
@@ -831,7 +848,7 @@ rel="noopener">Karang1908/irag</a></span>
 </main>"""
     return page_shell(
         "irag — pluggable memory for AI coding agents",
-        "Pluggable, fact-checked memory for AI coding agents. One "
+        "Pluggable, fact-checked memory and full-stack application proof for AI coding agents. One "
         "SQLite file in your repo. Reads are free SQL; writes run on "
         "any cheap model.",
         body, rel, extra_class="is-landing", anime=True)
