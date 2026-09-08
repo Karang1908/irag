@@ -137,7 +137,7 @@ requests to backend routes, starts or attaches to a loopback app, crawls every
 reachable page, validates links, inventories forms and controls, executes safe
 APIs, collects optional Playwright evidence, runs the project's real test
 commands, and can hammer read-only routes with bounded concurrency. The result
-is not one reassuring green light: every behavior is labeled **proven, failed,
+is not one reassuring green light: each discovered check is labeled **passed, failed,
 blocked, untested, or excluded**. A 404 cannot become “ready,” a visible button
 cannot become “working” because it has an `onclick`, and a protected endpoint
 cannot become “passed” without credentials. Each run becomes a durable HTML/
@@ -320,13 +320,14 @@ every few seconds, so new files show up without a refresh.
 
 ## Measured, not claimed
 
-Run on irag's own source on a laptop, re-measured on the current tree:
+Local measurements on irag's v4.50.0 source, 2026-09-08. Timings vary by
+machine; the conversation token examples depend on the session and budget.
 
 | | |
 |---|---|
-| Full structural scan | **416 symbols, 161 import edges, 0.18s, 0 tokens** |
-| `irag impact irag/db.py` | **23 dependent modules, 0.15s, 0 tokens** |
-| `irag audit --offline` | **42 files, 21.6k lines, 0.26s, 0 tokens** |
+| Full structural scan | **539 symbols, 190 import edges, 0.18s, 0 tokens** |
+| `irag impact irag/db.py` | **27 dependent modules, 0 tokens** |
+| `irag audit --offline` | **49 files, 27.1k lines, 0.47s, 0 tokens** |
 | Resume a past conversation | **~87 tokens** |
 | Brief a fresh session | **~650 tokens** effective, budget-capped |
 | Runtime dependencies | **0** |
