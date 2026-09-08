@@ -336,7 +336,12 @@ as `irag audit`, filterable by severity/category, with source coverage, API
 inventory, OSV state, dependency cycles, recommendations, and a live checker
 restricted to discovered, current loopback read routes. Findings retain review
 status, required rationale, optional acceptance expiry, and can export as SARIF
-2.1.0. **Thinking Studio** — a persistent code-review/product/business/
+2.1.0. **App Proof** — one evidence-first application test surface for static
+frontend/backend contract matching, loopback page crawling, links, controls,
+forms, safe API execution, optional Playwright, configured project suites, and
+explicitly confirmed bounded read-only stress. Profiles and results persist;
+each behavior stays proven, failed, blocked, untested, or excluded and complete
+runs open as self-contained coding-agent repair briefs. **Thinking Studio** — a persistent code-review/product/business/
 marketing/creative conversation beside a durable recommendation board and
 experiment ledger; optional live research and explicitly refreshed watchlists
 display source URLs, provider, retrieval time, and what changed. **Chat** — chat
@@ -408,6 +413,53 @@ Every finding includes rule, severity, category, file, line, redacted evidence,
 remediation, and confidence. Heuristics are review leads, not proof of an
 exploitable vulnerability. The command deliberately exits 0 when it found
 review items; `irag check` remains the strict memory-integrity gate.
+
+### `irag proof [--mode quick|full|stress] [OPTIONS]`
+
+Run App Proof against a local full-stack application. The runner refreshes the
+repository and a local, offline Code Audit first, then combines static contract
+evidence with actual loopback HTTP behavior.
+
+- `--base-url URL` — localhost or a loopback IP only; public/staging/production
+  targets are rejected
+- `--health-path PATH` — readiness endpoint, default `/`; only HTTP 2xx is
+  ready
+- `--start-command CMD` — start the app before probing; parsed into an argument
+  vector and executed without a shell
+- `--test-command CMD` — project-owned verification command; repeat up to ten
+  times. Full/Stress only, no shell, 300-second limit each
+- `--auth-env NAME` — environment variable holding the exact `Authorization`
+  header. The value is used in memory and never stored
+- `--request-timeout SECONDS`, `--start-timeout SECONDS` — per-request timeout
+  (1–30 seconds) and readiness wait (1–120 seconds)
+- `--no-browser`, `--interact`, `--external-links` — control optional browser
+  evidence, explicitly enabled safe control interaction, and public link checks
+- `--max-pages`, `--max-controls` — bound discovery; excess coverage becomes a
+  visible blocked check
+- `--stress-requests`, `--stress-concurrency`, `--confirm-stress` — bounded GET
+  load settings. Stress mode refuses to start without the confirmation flag
+- `--report FILE` — write the escaped, self-contained HTML evidence/repair
+  packet; `--json` prints the complete machine result
+- `--strict` — exit 1 when any behavior remains blocked or untested. Without
+  it, deterministic failures exit 1 and incomplete-but-failure-free coverage
+  exits 0
+
+Quick runs contracts, pages, links, forms/controls inventory, and safe read
+routes; browser and project journeys stay explicitly untested. Full adds
+Playwright and configured test commands. The runner uses project-local Node
+Playwright or the Python Playwright package available to iRAG's interpreter.
+Stress adds at most 1,000 GET requests across at most ten loopback routes with
+at most 32 workers. HTTP probes never follow redirects; browser navigation
+stays on the configured origin. Form submissions, mutating API methods, parameterized routes, and
+destructive-looking controls require a project-owned test instead of an
+automatic click.
+
+A click with no observed text or navigation change remains untested. A visible
+change without errors proves that interaction occurred; only your assertions
+establish whether its result is correct. Unknown route methods, dynamic URLs,
+missing query fixtures, and unsupported static routing remain blocked. Coverage
+is the fraction of discovered checks executed, not a claim that every possible
+application state or business rule has been tested.
 
 ### `irag web-search QUERY [--json]`
 
