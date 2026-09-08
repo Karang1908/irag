@@ -41,6 +41,7 @@ export` installs a static operator guide without dumping memory into it.
 |---|---|
 | `irag/db.py` | schema, ordered migrations, automatic pre-upgrade backups, downgrade refusal, triggers, shared helpers |
 | `irag/mcp.py` | standards-compliant JSON-RPC stdio MCP server and universal tool contracts |
+| `irag/proof.py` | loopback-only full-stack contract, crawl, API, browser, test-command, and stress evidence |
 | `irag/providers.py` | Claude, Codex, agy, Ollama, and custom process adapters with retries/telemetry |
 | `irag/reports.py` | escaped, self-contained contradiction repair briefs for coding agents |
 | `irag/config.py` | defaults + `.irag/config.toml` deep-merge and semantic validation (tomllib) |
@@ -56,7 +57,7 @@ export` installs a static operator guide without dumping memory into it.
 | `irag/check.py` | CI gate: exit 1 on open contradictions or staleness > max |
 | `irag/hooks.py` | post-commit/post-merge/post-checkout installers (never clobber foreign hooks) |
 | `irag/stats.py` | shared metric builders (status_dict, token_series, activity) for CLI + dashboard |
-| `irag/dashboard.py` | stdlib ThreadingHTTPServer on 127.0.0.1; /api/* JSON; chat router; persistent update jobs with SSE progress and reconnect/poll fallback; assets/dashboard.html SPA |
+| `irag/dashboard.py` | stdlib ThreadingHTTPServer on 127.0.0.1; /api/* JSON; chat router; persistent update/proof jobs with SSE progress and reconnect/poll fallback; assets/dashboard.html SPA |
 | `irag/doctor.py` | install diagnostics: env, db/FTS integrity, config types, LLM probe, hooks, queue health |
 | `irag/cli.py` | argparse; every command resolves the nearest `.irag` root (or cwd for init), opens `.irag/memory.db` |
 
