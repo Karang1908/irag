@@ -45,11 +45,11 @@ SECRET_RE = re.compile(
     r"secret[_-]?key)\b\s*[:=]\s*['\"]([^'\"\r\n]{8,})['\"]")
 PRIVATE_KEY_RE = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
 ROUTE_PATTERNS = (
-    re.compile(r"@(?:\w+\.)*(get|post|put|patch|delete|options|head)\(\s*['\"]([^'\"]+)"),
-    re.compile(r"@(?:\w+\.)*route\(\s*['\"]([^'\"]+)['\"]([^\n]*)"),
-    re.compile(r"(?:\bapp|\brouter|\bserver)\.(get|post|put|patch|delete|options|head)\(\s*['\"]([^'\"]+)"),
-    re.compile(r"Route::(get|post|put|patch|delete|options)\(\s*['\"]([^'\"]+)"),
-    re.compile(r"\b(get|post|put|patch|delete)\s+['\"]([^'\"]+)['\"]\s*(?:=>|,\s*to:)"),
+    re.compile(r"@(?:\w+\.)*(get|post|put|patch|delete|options|head)\(\s*['\"]([^'\"]+)", re.I),
+    re.compile(r"@(?:\w+\.)*route\(\s*['\"]([^'\"]+)['\"]([^\n]*)", re.I),
+    re.compile(r"(?:\bapp|\brouter|\bserver|\bfastify)\.(get|post|put|patch|delete|options|head)\(\s*['\"]([^'\"]+)", re.I),
+    re.compile(r"Route::(get|post|put|patch|delete|options)\(\s*['\"]([^'\"]+)", re.I),
+    re.compile(r"\b(get|post|put|patch|delete)\s+['\"]([^'\"]+)['\"]\s*(?:=>|,\s*to:)", re.I),
 )
 AUTH_RE = re.compile(
     r"(?i)\b(auth|authoriz|permission|login_required|jwt|oauth|session|"
@@ -589,7 +589,68 @@ def _python_checks(rel: str, text: str) -> list[dict]:
 
 def _routes(rel: str, lines: list[str]) -> list[dict]:
     out = []
+    handler_method: str | None = None
+    handler_indent = -1
     for index, line in enumerate(lines):
+        definition = re.match(r"^(\s*)def\s+(do_(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)|\w+)\s*\(",
+                              line, re.I)
+        if definition:
+            indent = len(definition.group(1))
+            if handler_method and indent <= handler_indent:
+                handler_method = None
+            if definition.group(2).lower().startswith("do_"):
+                handler_method = definition.group(3).upper()
+                handler_indent = indent
+        if handler_method:
+            match = re.search(
+                r"\b(?:self\.path|url\.path|parsed\.path)\s*==\s*['\"]([^'\"]+)['\"]",
+                line)
+            if match:
+                out.append(_route_row(
+                    handler_method, match.group(1), rel, index, lines))
+            membership = re.search(
+                r"\b(?:self\.path|url\.path|parsed\.path)\s+in\s+\(([^)]*)\)",
+                line)
+            if membership:
+                for path in re.findall(r"['\"]([^'\"]+)['\"]",
+                                       membership.group(1)):
+                    out.append(_route_row(
+                        handler_method, path, rel, index, lines))
+
+        # Django/Starlette URL tables carry a path but not always a method.
+        # Keep them as ANY: useful for contract coverage, never safe to call.
+        match = re.search(r"\bpath\(\s*['\"]([^'\"]+)['\"]\s*,", line)
+        if match:
+            path = match.group(1)
+            out.append(_route_row(
+                "ANY", path if path.startswith("/") else "/" + path,
+                rel, index, lines))
+
+        # Spring annotations encode the verb in GetMapping/PostMapping.
+        match = re.search(
+            r"@(Get|Post|Put|Patch|Delete|Options|Head)Mapping\s*\(\s*"
+            r"(?:value\s*=\s*)?['\"]([^'\"]+)['\"]", line, re.I)
+        if match:
+            out.append(_route_row(
+                match.group(1), match.group(2), rel, index, lines))
+
+        if Path(rel).suffix.lower() == ".go":
+            match = re.search(
+                r"\b\w+\.(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)"
+                r"\(\s*['\"]([^'\"]+)['\"]", line)
+            if match:
+                out.append(_route_row(
+                    match.group(1), match.group(2), rel, index, lines))
+            match = re.search(
+                r"\b(?:http\.)?HandleFunc\(\s*['\"]([^'\"]+)['\"]", line)
+            if match:
+                methods = re.findall(
+                    r"\.Methods\(\s*['\"](GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)['\"]",
+                    line, re.I) or ["ANY"]
+                for method in methods:
+                    out.append(_route_row(
+                        method, match.group(1), rel, index, lines))
+
         for pindex, pattern in enumerate(ROUTE_PATTERNS):
             match = pattern.search(line)
             if not match:
@@ -607,7 +668,63 @@ def _routes(rel: str, lines: list[str]) -> list[dict]:
                 out.append({"method": method.upper(), "path": path[:1000],
                             "file": rel, "line": index + 1, "auth": auth})
             break
-    return out
+
+    next_path = _next_api_path(rel)
+    if next_path:
+        for index, line in enumerate(lines):
+            match = re.search(
+                r"\b(?:export\s+)?(?:async\s+)?(?:function|const)\s+"
+                r"(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\b", line)
+            if match:
+                out.append(_route_row(
+                    match.group(1), next_path, rel, index, lines))
+    elif _pages_api_path(rel):
+        out.append(_route_row("ANY", _pages_api_path(rel) or "/api",
+                              rel, 0, lines))
+
+    unique = {}
+    for item in out:
+        key = (item["method"], item["path"], item["file"], item["line"])
+        unique[key] = item
+    return list(unique.values())
+
+
+def _route_row(method: str, path: str, rel: str, index: int,
+               lines: list[str]) -> dict:
+    if path and not path.startswith("/"):
+        path = "/" + path
+    context = "\n".join(lines[max(0, index - 4):index + 10])
+    return {"method": method.upper(), "path": path[:1000], "file": rel,
+            "line": index + 1,
+            "auth": "observed" if AUTH_RE.search(context) else "unknown"}
+
+
+def _next_api_path(rel: str) -> str | None:
+    parts = list(Path(rel).as_posix().split("/"))
+    if not parts or not re.fullmatch(r"route\.[cm]?[jt]sx?", parts[-1], re.I):
+        return None
+    for index in range(len(parts) - 2):
+        if parts[index:index + 2] == ["app", "api"]:
+            segments = [part for part in parts[index + 2:-1]
+                        if not (part.startswith("(") and part.endswith(")"))]
+            return "/api" + ("/" + "/".join(segments) if segments else "")
+    return None
+
+
+def _pages_api_path(rel: str) -> str | None:
+    parts = list(Path(rel).as_posix().split("/"))
+    for index in range(len(parts) - 1):
+        if parts[index:index + 2] != ["pages", "api"]:
+            continue
+        segments = parts[index + 2:]
+        if not segments or Path(segments[-1]).suffix.lower() not in {
+                ".js", ".jsx", ".ts", ".tsx"}:
+            return None
+        segments[-1] = Path(segments[-1]).stem
+        if segments[-1] == "index":
+            segments.pop()
+        return "/api" + ("/" + "/".join(segments) if segments else "")
+    return None
 
 
 def _api_findings(routes: list[dict]) -> list[dict]:
