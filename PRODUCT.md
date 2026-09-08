@@ -39,6 +39,8 @@ iRAG is not another chat history, vector index, or static context file. Its mean
 - Trend claims require current web evidence. When web search is unavailable, the product must say so instead of presenting model memory as current research.
 - Security scanning is defensive, local, non-destructive, and evidence-based. Heuristic findings must be labeled as findings to review rather than guaranteed vulnerabilities.
 - Configuration changes must use an explicit allowlist, validation, atomic writes, and must preserve comments and unknown settings.
+- App Proof combines static frontend/backend contracts, bounded loopback crawling and safe API checks, optional browser evidence, explicit project test commands, and confirmed read-only stress runs. Checks remain visibly passed, failed, blocked, untested, or excluded; a successful request or click is not proof of business correctness.
+- Browser collection requires optional Playwright and Chromium. Forms, destructive actions, authenticated journeys, and application-specific assertions need developer-owned fixtures and tests. Start/test commands have the developer's local permissions and must be explicitly configured.
 
 ## Evidence
 
