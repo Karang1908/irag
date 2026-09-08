@@ -682,7 +682,7 @@ application: reachable pages, internal and external links, forms, visible
 controls, safe API calls, optional Playwright behavior, and your project's real
 test suites.</p>
 <p>Then it pressure-tests read-only loopback routes with bounded concurrency.
-There is no fake “all green”: every behavior is proven, failed, blocked,
+There is no fake “all green”: each discovered check is passed, failed, blocked,
 untested, or excluded. A run becomes a durable HTML/JSON repair packet you can
 hand directly to any coding agent.</p>
 </div>
@@ -794,12 +794,12 @@ property of the architecture rather than a benchmark you have to trust.</p>
 <div class="proof">
 <div class="pf"><b>0 model calls</b><span>for search, context, code maps,
 blast radius, provenance, and contradiction reads</span></div>
-<div class="pf"><b>13 modules</b><span>blast radius of one file,
+<div class="pf"><b>27 modules</b><span>blast radius of irag/db.py,
 transitive, parsed from the code</span></div>
 <div class="pf"><b>~87 tokens</b><span>to resume a past conversation with
 its per-file changes</span></div>
-<div class="pf"><b>3 native operating systems</b><span>focused protocol and
-storage tests on Linux, macOS, and Windows</span></div>
+<div class="pf"><b>3 CI platforms</b><span>configured protocol and storage
+checks for Linux, macOS, and Windows</span></div>
 </div>
 <p class="lede">One command runs the whole lifecycle end-to-end: ingest,
 synthesize, fact-check, CI gate, rollback, sessions, dashboard API,
