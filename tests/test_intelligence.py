@@ -336,11 +336,13 @@ def admin():
             "            return ok()",
             "    def do_POST(self):",
             "        if self.path == '/api/save':",
-            "            return saved()",
+            "            if self.path == '/api/save':",
+            "                return saved()",
         ])
         self.assertEqual(
             {(row["method"], row["path"]) for row in stdlib_rows},
             {("GET", "/api/status"), ("POST", "/api/save")})
+        self.assertEqual(len(stdlib_rows), 2)
 
         django = audit._routes("urls.py", ["path('api/items/', views.items)"])
         spring = audit._routes(
