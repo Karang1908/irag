@@ -166,6 +166,48 @@ You can change both the summary writer and web-search provider at any time from
 the dashboard Overview. Saves preserve comments and unknown TOML sections and
 reject a stale browser tab instead of silently overwriting a newer change.
 
+## Configure full-stack App Proof
+
+App Proof is deliberately separate from `.irag/config.toml`: its local target,
+start command, browser choice, test commands, and bounds are a durable profile
+you can change from the dashboard's **App Proof** tab at any time. The CLI can
+override the same fields for one run.
+
+Start the application yourself, or set a direct Start command such as
+`npm run dev`. Use `http://127.0.0.1:PORT` or `http://localhost:PORT`; iRAG
+rejects non-loopback targets so a mistaken click cannot crawl, exercise, or
+stress production. If the local app requires authentication, export the exact
+Authorization header and save only its variable name:
+
+```bash
+export IRAG_PROOF_AUTH="Bearer local-test-token"
+irag proof --mode full --base-url http://127.0.0.1:3000 \
+  --auth-env IRAG_PROOF_AUTH --test-command "npm test" \
+  --report .irag/reports/latest-app-proof.html
+```
+
+Only the variable name is saved in configuration. The configured header is
+restricted to the app's origin and redacted from returned log evidence. Reports
+and screenshots can still contain the application's own displayed data; use
+test accounts and fixtures when sharing them.
+
+For browser evidence, install either Node Playwright in the project
+(`npm install --save-dev @playwright/test` then `npx playwright install chromium`)
+or Python Playwright into the interpreter running iRAG
+(`python -m pip install playwright` then `python -m playwright install chromium`).
+When no usable browser is available, the report says `blocked`.
+
+Automatic interaction is off by default. Enabling it clicks only visible,
+non-form, non-destructive-looking controls. Forms, submit/reset controls, and
+labels such as Delete/Pay/Deploy still require a project-owned test with valid
+fixture data. Stress is a separate mode with a separate confirmation and uses
+GET requests only.
+
+Clicks that produce no visible text or navigation change stay untested.
+Authenticated forms, payments, and database assertions belong in your own test
+commands. A successful test command proves that suite passed; it does not
+automatically resolve unrelated unknown checks in the report.
+
 ## Connect every coding agent through MCP
 
 The summary provider above writes memory. Your coding agent reads and manages
