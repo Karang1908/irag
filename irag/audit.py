@@ -591,6 +591,7 @@ def _routes(rel: str, lines: list[str]) -> list[dict]:
     out = []
     handler_method: str | None = None
     handler_indent = -1
+    route_indent: int | None = None
     for index, line in enumerate(lines):
         definition = re.match(r"^(\s*)def\s+(do_(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)|\w+)\s*\(",
                               line, re.I)
@@ -601,17 +602,21 @@ def _routes(rel: str, lines: list[str]) -> list[dict]:
             if definition.group(2).lower().startswith("do_"):
                 handler_method = definition.group(3).upper()
                 handler_indent = indent
+                route_indent = None
         if handler_method:
+            indent = len(line) - len(line.lstrip())
             match = re.search(
                 r"\b(?:self\.path|url\.path|parsed\.path)\s*==\s*['\"]([^'\"]+)['\"]",
                 line)
-            if match:
+            if match and (route_indent is None or indent <= route_indent):
+                route_indent = indent
                 out.append(_route_row(
                     handler_method, match.group(1), rel, index, lines))
             membership = re.search(
                 r"\b(?:self\.path|url\.path|parsed\.path)\s+in\s+\(([^)]*)\)",
                 line)
-            if membership:
+            if membership and (route_indent is None or indent <= route_indent):
+                route_indent = indent
                 for path in re.findall(r"['\"]([^'\"]+)['\"]",
                                        membership.group(1)):
                     out.append(_route_row(
